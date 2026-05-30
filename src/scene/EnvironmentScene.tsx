@@ -117,11 +117,50 @@ function Cavern({ ambience }: { ambience: number }) {
       {torches.map((torch, i) => (
         <Torch key={`torch-${i}`} index={i} {...torch} ambience={ambience} />
       ))}
+      <Brazier position={[0, 0, -8]} ambience={ambience} />
+      <Brazier position={[6, 0, 8]} ambience={ambience} small />
       <pointLight position={[-12, 5, -8]} color="#aeb8ff" intensity={7.2 + ambience * 2.6} distance={48} />
       <pointLight position={[10, 3, 12]} color="#ffdca8" intensity={3.6 + ambience * 1.4} distance={34} />
       <pointLight position={[0, 6, 0]} color="#f0e8ff" intensity={5.2 + ambience * 1.8} distance={42} />
       <Sparkles count={34} scale={[38, 8, 38]} size={0.9} speed={0.08} color="#ffddaa" opacity={0.16} />
     </>
+  );
+}
+
+function Brazier({ position, ambience, small = false }: { position: [number, number, number]; ambience: number; small?: boolean }) {
+  const light = useRef<THREE.PointLight>(null);
+  const flame = useRef<THREE.Group>(null);
+  const scale = small ? 0.72 : 1;
+
+  useFrame(({ clock }) => {
+    const t = clock.elapsedTime * 5.5 + position[0] * 0.2;
+    const flicker = 0.86 + Math.sin(t) * 0.09 + Math.sin(t * 2.2) * 0.06;
+    if (light.current) light.current.intensity = (7.5 + ambience * 2.8) * flicker;
+    if (flame.current) flame.current.scale.setScalar(scale * (0.92 + flicker * 0.14));
+  });
+
+  return (
+    <group position={position}>
+      <mesh position={[0, 0.32 * scale, 0]} scale={[scale, scale, scale]}>
+        <cylinderGeometry args={[0.72, 0.56, 0.34, 12]} />
+        <meshStandardMaterial color="#211815" roughness={0.55} metalness={0.25} />
+      </mesh>
+      <mesh position={[0, 0.53 * scale, 0]} scale={[scale, scale, scale]}>
+        <torusGeometry args={[0.64, 0.08, 8, 20]} />
+        <meshStandardMaterial color="#3a2720" roughness={0.5} metalness={0.2} />
+      </mesh>
+      <group ref={flame} position={[0, 0.8 * scale, 0]}>
+        <mesh position={[0, 0.16, 0]} scale={[0.85, 1.45, 0.85]}>
+          <coneGeometry args={[0.48, 1.1, 12]} />
+          <meshBasicMaterial color="#ff8a3d" toneMapped={false} transparent opacity={0.92} />
+        </mesh>
+        <mesh position={[0, 0.06, 0]} scale={[0.75, 0.8, 0.75]}>
+          <sphereGeometry args={[0.35, 12, 8]} />
+          <meshBasicMaterial color="#ffe0a0" toneMapped={false} transparent opacity={0.78} />
+        </mesh>
+      </group>
+      <pointLight ref={light} position={[0, 1.1 * scale, 0]} color="#ffb36f" intensity={7.5 + ambience * 2.8} distance={small ? 18 : 26} />
+    </group>
   );
 }
 
