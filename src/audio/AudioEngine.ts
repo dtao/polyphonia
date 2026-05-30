@@ -128,6 +128,23 @@ export class AudioEngine {
     if (f.rolloff !== undefined) t.panner.rolloffFactor = f.rolloff;
   }
 
+  // Stop and tear down a playing track.
+  removeTrack(id: string): void {
+    const i = this.tracks.findIndex((t) => t.def.id === id);
+    if (i < 0) return;
+    const t = this.tracks[i];
+    try {
+      t.source?.stop();
+    } catch {
+      /* already stopped */
+    }
+    t.source?.disconnect();
+    t.gain.disconnect();
+    t.panner.disconnect();
+    t.analyser.disconnect();
+    this.tracks.splice(i, 1);
+  }
+
   // Current audio level (0..1) for a track, for visual reactivity.
   level(id: string): number {
     const t = this.find(id);

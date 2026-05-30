@@ -1,6 +1,11 @@
 import { create } from "zustand";
+import * as THREE from "three";
 import { Composition, TrackDef, defaultComposition } from "./composition";
 import { AudioEngine } from "./audio/AudioEngine";
+
+// Non-reactive registry of each track marker's 3D object, so the move-gizmo
+// can attach to the selected track's object without prop-drilling refs.
+export const markerObjects = new Map<string, THREE.Object3D>();
 
 type Falloff = Pick<TrackDef, "refDistance" | "maxDistance" | "rolloff">;
 
@@ -25,6 +30,7 @@ interface StoreState {
   setTrackFalloff: (id: string, falloff: Partial<Falloff>) => void;
   renameTrack: (id: string, name: string) => void;
   setTrackColor: (id: string, color: string) => void;
+  deleteTrack: (id: string) => void;
 }
 
 // Immutably patch one track in the current composition.
@@ -63,4 +69,16 @@ export const useStore = create<StoreState>((set, get) => ({
   // Name and color are presentation-only — no audio side effects.
   renameTrack: (id, name) => set((s) => ({ composition: patchTrack(s.composition, id, { name }) })),
   setTrackColor: (id, color) => set((s) => ({ composition: patchTrack(s.composition, id, { color }) })),
+
+  deleteTrack: (id) => {
+    get().engine?.removeTrack(id);
+    markerObjects.delete(id);
+    set((s) => ({
+      composition: { ...s.composition, tracks: s.composition.tracks.filter((t) => t.id !== id) },
+      selectedId: s.selectedId === id ? null : s.selectedId,
+    }));
+  },
 }));
+
+// Dev-only handle for debugging/inspection from the console.
+if ((import.meta as any).env?.DEV) (window as any).polyStore = useStore;

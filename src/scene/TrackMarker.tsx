@@ -1,9 +1,9 @@
-import { useRef } from "react";
+import { useCallback, useRef } from "react";
 import { useFrame, ThreeEvent } from "@react-three/fiber";
 import { Text } from "@react-three/drei";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
-import { useStore } from "../store";
+import { markerObjects, useStore } from "../store";
 
 // A glowing pillar that marks where a stem lives in space and pulses with its
 // audio level — a visual anchor for the sound you hear from that direction.
@@ -35,8 +35,18 @@ export function TrackMarker({ track }: { track: TrackDef }) {
     if (useStore.getState().mode === "edit") document.body.style.cursor = c;
   }
 
+  // Register/unregister this marker's object for the move-gizmo to target.
+  const registerGroup = useCallback(
+    (g: THREE.Group | null) => {
+      if (g) markerObjects.set(track.id, g);
+      else markerObjects.delete(track.id);
+    },
+    [track.id],
+  );
+
   return (
     <group
+      ref={registerGroup}
       position={[x, 0, z]}
       onClick={handleClick}
       onPointerOver={() => setCursor("pointer")}

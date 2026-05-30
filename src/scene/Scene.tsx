@@ -3,6 +3,7 @@ import { useStore } from "../store";
 import { TrackMarker } from "./TrackMarker";
 import { Player } from "./Player";
 import { EditControls } from "./EditControls";
+import { TrackGizmo } from "./TrackGizmo";
 import { ListenerSync } from "./ListenerSync";
 
 export function Scene() {
@@ -31,7 +32,14 @@ export function Scene() {
       ))}
 
       <ListenerSync />
-      {mode === "explore" ? <Player /> : <EditControls />}
+      {mode === "explore" ? (
+        <Player />
+      ) : (
+        <>
+          <EditControls />
+          <TrackGizmo />
+        </>
+      )}
     </>
   );
 }

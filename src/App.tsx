@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Scene } from "./scene/Scene";
 import { AudioEngine } from "./audio/AudioEngine";
+import { PropertiesPanel } from "./ui/PropertiesPanel";
 import { useStore } from "./store";
 
 export default function App() {
@@ -92,6 +93,8 @@ export default function App() {
               {mode === "explore" ? "✎ Edit" : "✦ Explore"}
             </button>
           </div>
+
+          <PropertiesPanel />
         </>
       )}
     </>
