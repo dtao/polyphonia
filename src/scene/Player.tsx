@@ -14,6 +14,15 @@ export function Player({ engine }: { engine: AudioEngine | null }) {
   const right = useRef(new THREE.Vector3());
   const up = new THREE.Vector3(0, 1, 0);
 
+  // Face forward (horizontal) on load instead of inheriting R3F's default
+  // "look at the origin" — which, since we spawn above the origin, points
+  // the camera straight down. PointerLockControls only changes orientation
+  // on mouse movement, so this initial heading sticks until you look around.
+  useEffect(() => {
+    camera.position.set(0, 1.7, 0);
+    camera.lookAt(0, 1.7, -1);
+  }, [camera]);
+
   useEffect(() => {
     const down = (e: KeyboardEvent) => (keys.current[e.code] = true);
     const upFn = (e: KeyboardEvent) => (keys.current[e.code] = false);
