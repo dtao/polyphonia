@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { useStore } from "../store";
 import { isSharingConfigured, publishComposition } from "../cloud";
+import { Account } from "./Account";
 
 // Publish the current composition to the cloud and surface a shareable link.
 export function PublishControl() {
   const comp = useStore((s) => s.composition);
+  const user = useStore((s) => s.user);
   const [status, setStatus] = useState<"idle" | "publishing" | "done" | "error">("idle");
   const [link, setLink] = useState("");
   const [copied, setCopied] = useState(false);
@@ -48,17 +50,20 @@ export function PublishControl() {
             Publish again
           </button>
         </>
+      ) : !isSharingConfigured ? (
+        <button style={{ ...btn, opacity: 0.5 }} disabled title="Sharing isn't configured (Supabase env vars missing)">
+          ⬆ Publish
+        </button>
+      ) : !user ? (
+        <>
+          <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>Sign in to publish:</div>
+          <Account />
+        </>
       ) : (
         <button
-          style={{ ...btn, opacity: empty || !isSharingConfigured || status === "publishing" ? 0.5 : 1 }}
-          disabled={empty || !isSharingConfigured || status === "publishing"}
-          title={
-            !isSharingConfigured
-              ? "Sharing isn't configured (Supabase env vars missing)"
-              : empty
-                ? "Add a track first"
-                : "Publish a read-only shareable link"
-          }
+          style={{ ...btn, opacity: empty || status === "publishing" ? 0.5 : 1 }}
+          disabled={empty || status === "publishing"}
+          title={empty ? "Add a track first" : "Publish a read-only shareable link"}
           onClick={publish}
         >
           {status === "publishing" ? "Publishing…" : "⬆ Publish"}

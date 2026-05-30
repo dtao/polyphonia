@@ -16,9 +16,10 @@ export default function App() {
   const mode = useStore((s) => s.mode);
   const select = useStore((s) => s.select);
 
-  // Load the saved composition library on launch (before entering).
+  // Load the saved composition library + auth session on launch.
   useEffect(() => {
     useStore.getState().initLibrary();
+    useStore.getState().initAuth();
   }, []);
 
   // Track pointer-lock so we can hide the UI chrome during camera control and

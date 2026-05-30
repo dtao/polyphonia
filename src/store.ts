@@ -14,6 +14,7 @@ import {
   importComposition as importBundle,
 } from "./persistence";
 import { newId } from "./id";
+import { AuthUser, signInWithEmail, signOut as cloudSignOut, onAuthChange, getCurrentUser } from "./cloud";
 
 // Non-reactive registry of each track marker's 3D object, so the move-gizmo
 // can attach to the selected track's object without prop-drilling refs.
@@ -40,11 +41,17 @@ interface StoreState {
   selectedId: string | null;
   entered: boolean; // has the user started the experience (left the entry screen)
   viewer: boolean; // read-only shared-link view (no autosave, no editing)
+  user: AuthUser | null; // signed-in account (for publishing); null = anonymous
 
   setEngine: (e: AudioEngine | null) => void;
   setEntered: (entered: boolean) => void;
   setViewer: (viewer: boolean) => void;
   startAudio: () => Promise<void>;
+
+  // Auth (for publishing). Editing/playing never requires an account.
+  initAuth: () => void;
+  signIn: (email: string) => Promise<void>;
+  signOut: () => Promise<void>;
   setMode: (mode: Mode) => void;
   toggleMode: () => void;
   select: (id: string | null) => void;
@@ -99,10 +106,21 @@ export const useStore = create<StoreState>((set, get) => ({
   selectedId: null,
   entered: false,
   viewer: false,
+  user: null,
 
   setEngine: (engine) => set({ engine }),
   setEntered: (entered) => set({ entered }),
   setViewer: (viewer) => set({ viewer }),
+
+  initAuth: () => {
+    getCurrentUser().then((user) => set({ user }));
+    onAuthChange((user) => set({ user }));
+  },
+  signIn: (email) => signInWithEmail(email),
+  signOut: async () => {
+    await cloudSignOut();
+    set({ user: null });
+  },
 
   // Boot the audio engine for the current composition (idempotent). Used by both
   // the editor entry and the read-only viewer; needs a prior user gesture.

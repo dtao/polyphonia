@@ -1,5 +1,7 @@
 import { useRef, useState } from "react";
 import { useStore } from "../store";
+import { Account } from "./Account";
+import { MyPublished } from "./MyPublished";
 
 // The start screen: pick a composition from the library to enter, start a fresh
 // one, or export/import a portable bundle.
@@ -150,6 +152,11 @@ export function EntryScreen({
 
           {busy && <p style={{ opacity: 0.6, fontSize: 13, margin: 0 }}>{busy}</p>}
           {error && <p style={{ color: "#ff9b8f", fontSize: 13, margin: 0 }}>{error}</p>}
+
+          <div style={{ marginTop: 8 }}>
+            <Account />
+          </div>
+          <MyPublished />
 
           <p style={{ opacity: 0.45, fontSize: 13, marginTop: 12 }}>
             WASD to move · mouse to look · Esc to release cursor
