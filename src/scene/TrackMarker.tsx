@@ -102,6 +102,7 @@ function FalloffMap({ track }: { track: TrackDef }) {
       <mesh>
         <ringGeometry args={[near, far, 96, 12]} />
         <shaderMaterial
+          key={`${near}-${far}-${rolloff}`}
           transparent
           depthWrite={false}
           blending={THREE.AdditiveBlending}
@@ -148,7 +149,7 @@ const falloffFragmentShader = `
   void main() {
     float distanceFromStem = length(vPos);
     float t = clamp((distanceFromStem - nearRadius) / max(farRadius - nearRadius, 0.001), 0.0, 1.0);
-    float shaped = pow(t, 1.0 / max(rolloff, 0.001));
+    float shaped = 1.0 - exp(-t * max(rolloff, 0.001) * 2.5);
     vec3 color = mix(nearColor, farColor, shaped);
     float edgeFade = smoothstep(0.0, 0.08, t) * (1.0 - smoothstep(0.92, 1.0, t));
     float opacity = mix(0.18, 0.42, shaped) * edgeFade;
