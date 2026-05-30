@@ -68,8 +68,9 @@ function Cavern({ ambience }: { ambience: number }) {
           <meshStandardMaterial color="#201d24" roughness={1} />
         </mesh>
       ))}
-      <pointLight position={[-12, 4, -8]} color="#7b8cff" intensity={1.5 + ambience * 2} distance={35} />
-      <pointLight position={[10, 2, 12]} color="#ffd08a" intensity={0.6 + ambience} distance={24} />
+      <pointLight position={[-12, 4, -8]} color="#7b8cff" intensity={6.0 + ambience * 2} distance={35} />
+      <pointLight position={[10, 2, 12]} color="#ffd08a" intensity={2.4 + ambience} distance={24} />
+      <pointLight position={[0, 5, 0]} color="#d8d0ff" intensity={3.2 + ambience} distance={28} />
     </>
   );
 }
@@ -168,17 +169,17 @@ const TONES = {
     gridSection: "#2a3658",
   },
   cavern: {
-    background: "#060507",
-    fogNear: 12,
-    fogFar: 48,
-    ambient: 0.15,
-    sky: "#201c2b",
-    ground: "#080608",
-    hemi: 0.35,
-    sun: 0.35,
-    sunColor: "#9ca8ff",
-    gridCell: "#17141f",
-    gridSection: "#302844",
+    background: "#09080d",
+    fogNear: 16,
+    fogFar: 56,
+    ambient: 0.28,
+    sky: "#3a344d",
+    ground: "#141016",
+    hemi: 0.52,
+    sun: 0.7,
+    sunColor: "#c6c9ff",
+    gridCell: "#262039",
+    gridSection: "#4a3f69",
   },
   forest: {
     background: "#06100b",
