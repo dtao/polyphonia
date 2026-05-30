@@ -106,7 +106,8 @@ export async function publishComposition(comp: Composition): Promise<string> {
   }
 
   const manifest: Composition = { ...comp, tracks, publishedId: id };
-  const { error } = await sb.from(TABLE).upsert({ id, manifest, owner: user.id });
+  // title/artist are denormalized columns (for the gallery); manifest stays canonical.
+  const { error } = await sb.from(TABLE).upsert({ id, manifest, owner: user.id, title: comp.title, artist: comp.artist });
   if (error) throw error;
   return id;
 }
@@ -116,6 +117,29 @@ export async function fetchPublishedComposition(id: string): Promise<Composition
   const { data, error } = await supabase().from(TABLE).select("manifest").eq("id", id).maybeSingle();
   if (error) throw error;
   return (data?.manifest as Composition) ?? null;
+}
+
+export interface GallerySummary {
+  id: string;
+  title: string;
+  artist: string;
+  createdAt: string;
+}
+
+// The most recently published compositions, for the public gallery.
+export async function listRecent(limit = 50): Promise<GallerySummary[]> {
+  const { data, error } = await supabase()
+    .from(TABLE)
+    .select("id, title, artist, created_at")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []).map((r: any) => ({
+    id: r.id,
+    title: r.title ?? "Untitled",
+    artist: r.artist ?? "Unknown",
+    createdAt: r.created_at,
+  }));
 }
 
 // Unpublish: remove the row and its stored stems (owner-gated by RLS).

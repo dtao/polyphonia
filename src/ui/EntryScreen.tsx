@@ -1,6 +1,8 @@
 import { useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { useStore } from "../store";
 import { Account } from "./Account";
+import { isSharingConfigured } from "../cloud";
 
 // The start screen: pick a composition from the library to enter, start a fresh
 // one, or export/import a portable bundle.
@@ -169,6 +171,11 @@ export function EntryScreen({
             <button style={linkBtn} onClick={() => fileRef.current?.click()} disabled={!!busy}>
               ⤒ Import
             </button>
+            {isSharingConfigured && (
+              <Link to="/gallery" style={{ ...linkBtn, textDecoration: "underline" }}>
+                ◇ Gallery
+              </Link>
+            )}
           </div>
           <input
             ref={fileRef}

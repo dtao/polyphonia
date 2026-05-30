@@ -29,7 +29,7 @@ depends only on earlier ones.
 - [x] **13. Backend + storage** — Supabase: uploaded stems → public Storage bucket, manifest → Postgres row; anonymous publish (no custom server, gated by RLS).
 - [x] **14. Stable share URLs** — `/c/:id` loads a published composition read-only (React Router + read-only viewer).
 - [x] **15. Accounts & ownership** — email magic-link sign-in (Supabase Auth); publishing requires sign-in and ties the composition to the user (`owner` + RLS); "Your published links" manager to copy/unpublish. Editing/playing stays accountless.
-- [ ] **16. Public gallery** — browse and open compositions others have shared. _Schema note: at this point add denormalized, indexed `title` / `artist` columns to the `compositions` table (currently only in the `manifest` jsonb) plus an `owner` column (from #15), populated at publish time, for efficient listing/sorting/search. Backfill v1 rows from the manifest._
+- [x] **16. Public gallery** — `/gallery` grid of the 50 most recently published compositions (denormalized `title`/`artist` columns, populated at publish); cards open the read-only `/c/:id` viewer. _Future: an `unlisted` opt-out flag and popularity ranking (visits/shares/votes); search/sort; moderation/report flow._
 
 ## Later — Immersive environments (north star)
 
