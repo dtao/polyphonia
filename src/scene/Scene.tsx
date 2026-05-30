@@ -2,9 +2,12 @@ import { Grid } from "@react-three/drei";
 import { useStore } from "../store";
 import { TrackMarker } from "./TrackMarker";
 import { Player } from "./Player";
+import { EditControls } from "./EditControls";
+import { ListenerSync } from "./ListenerSync";
 
 export function Scene() {
   const tracks = useStore((s) => s.composition.tracks);
+  const mode = useStore((s) => s.mode);
 
   return (
     <>
@@ -27,7 +30,8 @@ export function Scene() {
         <TrackMarker key={t.id} track={t} />
       ))}
 
-      <Player />
+      <ListenerSync />
+      {mode === "explore" ? <Player /> : <EditControls />}
     </>
   );
 }

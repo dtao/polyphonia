@@ -4,11 +4,19 @@ import { AudioEngine } from "./audio/AudioEngine";
 
 type Falloff = Pick<TrackDef, "refDistance" | "maxDistance" | "rolloff">;
 
+export type Mode = "explore" | "edit";
+
 interface StoreState {
   composition: Composition;
   engine: AudioEngine | null;
 
+  mode: Mode;
+  selectedId: string | null;
+
   setEngine: (e: AudioEngine | null) => void;
+  setMode: (mode: Mode) => void;
+  toggleMode: () => void;
+  select: (id: string | null) => void;
 
   // Track edits. Those that affect audio also push the change to the engine,
   // so a playing composition responds live without ever restarting.
@@ -27,8 +35,15 @@ function patchTrack(comp: Composition, id: string, patch: Partial<TrackDef>): Co
 export const useStore = create<StoreState>((set, get) => ({
   composition: defaultComposition,
   engine: null,
+  mode: "explore",
+  selectedId: null,
 
   setEngine: (engine) => set({ engine }),
+
+  // Leaving edit mode clears the selection (the properties panel is edit-only).
+  setMode: (mode) => set((s) => ({ mode, selectedId: mode === "edit" ? s.selectedId : null })),
+  toggleMode: () => get().setMode(get().mode === "edit" ? "explore" : "edit"),
+  select: (selectedId) => set({ selectedId }),
 
   setTrackVolume: (id, volume) => {
     set((s) => ({ composition: patchTrack(s.composition, id, { volume }) }));

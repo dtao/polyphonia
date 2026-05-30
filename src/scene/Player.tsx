@@ -2,13 +2,11 @@ import { useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { PointerLockControls } from "@react-three/drei";
 import * as THREE from "three";
-import { useStore } from "../store";
 
-// WASD movement on the ground plane + mouse look, and — critically — it feeds
-// the camera's position/orientation to the AudioEngine every frame so the
-// spatial mix tracks where you are and which way you face.
+// Explore mode: WASD movement on the ground plane + pointer-lock mouse look.
+// (The AudioListener is driven separately by <ListenerSync>, which works in
+// both explore and edit mode.)
 export function Player() {
-  const engine = useStore((s) => s.engine);
   const { camera } = useThree();
   const keys = useRef<Record<string, boolean>>({});
   const forward = useRef(new THREE.Vector3());
@@ -47,10 +45,6 @@ export function Player() {
     if (keys.current["KeyD"]) camera.position.addScaledVector(right.current, speed);
     if (keys.current["KeyA"]) camera.position.addScaledVector(right.current, -speed);
     camera.position.y = 1.7; // keep eye height fixed
-
-    const dir = new THREE.Vector3();
-    camera.getWorldDirection(dir);
-    engine?.updateListener(camera.position, dir, camera.up);
   });
 
   return <PointerLockControls />;

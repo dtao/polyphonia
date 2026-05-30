@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Scene } from "./scene/Scene";
 import { AudioEngine } from "./audio/AudioEngine";
@@ -9,6 +9,9 @@ export default function App() {
   const engine = useStore((s) => s.engine);
   const setEngine = useStore((s) => s.setEngine);
   const comp = useStore((s) => s.composition);
+  const mode = useStore((s) => s.mode);
+  const toggleMode = useStore((s) => s.toggleMode);
+  const select = useStore((s) => s.select);
 
   // Browsers block audio until a user gesture — so we boot the engine on click.
   async function enter() {
@@ -22,6 +25,27 @@ export default function App() {
     setEntering(false);
   }
 
+  // Tab toggles Explore/Edit.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === "Tab" && useStore.getState().engine) {
+        e.preventDefault();
+        useStore.getState().toggleMode();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Release the pointer lock when entering edit mode; reset cursor.
+  useEffect(() => {
+    if (mode === "edit") {
+      document.exitPointerLock?.();
+    } else {
+      document.body.style.cursor = "auto";
+    }
+  }, [mode]);
+
   return (
     <>
       <Canvas
@@ -30,6 +54,10 @@ export default function App() {
         // and makes mouselook feel choppy. 1.5 is a sweet spot of crisp + fast.
         dpr={[1, 1.5]}
         gl={{ antialias: true, powerPreference: "high-performance" }}
+        // Clicking empty space in edit mode clears the selection.
+        onPointerMissed={() => {
+          if (useStore.getState().mode === "edit") select(null);
+        }}
       >
         <Scene />
       </Canvas>
@@ -38,7 +66,7 @@ export default function App() {
         <div style={overlay}>
           <h1 style={{ fontSize: 44, margin: 0, letterSpacing: 2 }}>POLYPHONIA</h1>
           <p style={{ opacity: 0.7, maxWidth: 440, textAlign: "center", lineHeight: 1.5 }}>
-            {comp.title} — walk between the four instruments and hear the mix shift around you.
+            {comp.title} — move between the instruments and hear the mix shift around you.
           </p>
           <button style={button} onClick={enter} disabled={entering}>
             {entering ? "Loading…" : "Click to enter"}
@@ -50,9 +78,21 @@ export default function App() {
       )}
 
       {engine && (
-        <div style={hud}>
-          <strong>{comp.title}</strong> — {comp.artist} · WASD + mouse
-        </div>
+        <>
+          <div style={hud}>
+            <strong>{comp.title}</strong> — {comp.artist}
+            <span style={{ opacity: 0.6 }}>
+              {" "}
+              · {mode === "explore" ? "WASD + mouse to move" : "drag to orbit · click a track to select"}
+            </span>
+          </div>
+
+          <div style={toolbar}>
+            <button style={modeBtn} onClick={toggleMode} title="Toggle with Tab">
+              {mode === "explore" ? "✎ Edit" : "✦ Explore"}
+            </button>
+          </div>
+        </>
       )}
     </>
   );
@@ -89,4 +129,21 @@ const hud: React.CSSProperties = {
   fontFamily: "system-ui, sans-serif",
   fontSize: 13,
   pointerEvents: "none",
+};
+
+const toolbar: React.CSSProperties = {
+  position: "absolute",
+  top: 12,
+  right: 12,
+  fontFamily: "system-ui, sans-serif",
+};
+
+const modeBtn: React.CSSProperties = {
+  padding: "8px 16px",
+  fontSize: 14,
+  borderRadius: 999,
+  border: "1px solid rgba(255,255,255,0.25)",
+  background: "rgba(91,140,255,0.22)",
+  color: "white",
+  cursor: "pointer",
 };
