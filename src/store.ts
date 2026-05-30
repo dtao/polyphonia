@@ -2,7 +2,17 @@ import { create } from "zustand";
 import * as THREE from "three";
 import { Composition, TrackDef, defaultComposition } from "./composition";
 import { AudioEngine } from "./audio/AudioEngine";
-import { saveComposition, stemPut, stemDelete, importComposition as importBundle } from "./persistence";
+import {
+  SerializedComposition,
+  serializeComposition,
+  resolveComposition,
+  loadLibrary,
+  persistLibrary,
+  copyComposition,
+  stemPut,
+  stemDelete,
+  importComposition as importBundle,
+} from "./persistence";
 import { newId } from "./id";
 
 // Non-reactive registry of each track marker's 3D object, so the move-gizmo
@@ -22,6 +32,8 @@ export type Mode = "explore" | "edit";
 
 interface StoreState {
   composition: Composition;
+  /** All saved compositions (manifests; the current one is also a live copy). */
+  library: SerializedComposition[];
   engine: AudioEngine | null;
 
   mode: Mode;
@@ -43,8 +55,28 @@ interface StoreState {
   setTrackColor: (id: string, color: string) => void;
   deleteTrack: (id: string) => void;
   addStem: (file: File) => Promise<void>;
+
+  // Composition library.
+  initLibrary: () => Promise<void>;
   newComposition: (meta: { title: string; artist: string; bpm: number }) => void;
   importComposition: (file: File) => Promise<void>;
+  selectComposition: (id: string) => Promise<void>;
+  renameComposition: (id: string, title: string) => void;
+  duplicateComposition: (id: string) => Promise<void>;
+  deleteComposition: (id: string) => Promise<void>;
+}
+
+// Free the object URLs of a composition's uploaded stems (memory cleanup); the
+// audio itself stays in IndexedDB, so the composition can be re-resolved later.
+function revokeBlobUrls(comp: Composition): void {
+  for (const t of comp.tracks) {
+    if (t.source.kind === "file" && t.source.url.startsWith("blob:")) URL.revokeObjectURL(t.source.url);
+  }
+}
+
+// Replace (or append) a composition's manifest in the library array.
+function upsert(library: SerializedComposition[], s: SerializedComposition): SerializedComposition[] {
+  return library.some((c) => c.id === s.id) ? library.map((c) => (c.id === s.id ? s : c)) : [...library, s];
 }
 
 const PALETTE = ["#5b8cff", "#ff7a6b", "#ffd166", "#b96bff", "#56e0c0", "#f78fb3", "#7ee081", "#ffa057"];
@@ -58,6 +90,7 @@ function patchTrack(comp: Composition, id: string, patch: Partial<TrackDef>): Co
 
 export const useStore = create<StoreState>((set, get) => ({
   composition: defaultComposition,
+  library: [],
   engine: null,
   mode: "explore",
   selectedId: null,
@@ -133,48 +166,110 @@ export const useStore = create<StoreState>((set, get) => ({
     }));
   },
 
-  // Replace the current composition with a fresh empty one. (Multiple saved
-  // compositions come later with the library; for now this is in-memory.)
-  newComposition: (meta) => {
-    // Free any uploaded object URLs + stored audio from the outgoing composition.
-    for (const t of get().composition.tracks) {
-      if (t.source.kind === "file" && t.source.url.startsWith("blob:")) {
-        URL.revokeObjectURL(t.source.url);
-        stemDelete(t.id);
-      }
-    }
-    set({
-      composition: {
-        id: newId(),
-        title: meta.title.trim() || "Untitled",
-        artist: meta.artist.trim() || "Unknown",
-        bpm: meta.bpm || 120,
-        tracks: [],
-      },
-      selectedId: null,
-    });
+  // Load the saved library (or seed/migrate) and resolve the current composition.
+  initLibrary: async () => {
+    const { library, currentId } = loadLibrary();
+    const current = library.find((c) => c.id === currentId) ?? library[0];
+    const composition = current ? await resolveComposition(current) : get().composition;
+    set({ library, composition });
   },
 
-  // Load an exported bundle as the current composition (its stems are stored in
-  // IndexedDB by the importer). Discards the outgoing composition's uploads.
+  // Switch the current composition. The outgoing one is flushed back into the
+  // library (it's kept, not discarded) and its object URLs freed.
+  selectComposition: async (id) => {
+    const { composition, library } = get();
+    if (id === composition.id) return;
+    const flushed = upsert(library, serializeComposition(composition));
+    revokeBlobUrls(composition);
+    const target = flushed.find((c) => c.id === id);
+    if (!target) return;
+    const resolved = await resolveComposition(target);
+    set({ library: flushed, composition: resolved, selectedId: null });
+    persistLibrary(flushed, id);
+  },
+
+  // Start a fresh empty composition, keeping the current one in the library.
+  newComposition: (meta) => {
+    const { composition, library } = get();
+    revokeBlobUrls(composition);
+    const comp: Composition = {
+      id: newId(),
+      title: meta.title.trim() || "Untitled",
+      artist: meta.artist.trim() || "Unknown",
+      bpm: meta.bpm || 120,
+      tracks: [],
+    };
+    const next = upsert(upsert(library, serializeComposition(composition)), serializeComposition(comp));
+    set({ composition: comp, selectedId: null, library: next });
+    persistLibrary(next, comp.id);
+  },
+
+  // Load an exported bundle as a new composition in the library and switch to it.
   importComposition: async (file) => {
     const comp = await importBundle(file);
-    for (const t of get().composition.tracks) {
-      if (t.source.kind === "file" && t.source.url.startsWith("blob:")) {
-        URL.revokeObjectURL(t.source.url);
-        stemDelete(t.id);
+    const { composition, library } = get();
+    revokeBlobUrls(composition);
+    const next = upsert(upsert(library, serializeComposition(composition)), serializeComposition(comp));
+    set({ composition: comp, selectedId: null, library: next });
+    persistLibrary(next, comp.id);
+  },
+
+  renameComposition: (id, title) => {
+    const t = title.trim() || "Untitled";
+    const library = get().library.map((c) => (c.id === id ? { ...c, title: t } : c));
+    set((s) => ({
+      library,
+      composition: s.composition.id === id ? { ...s.composition, title: t } : s.composition,
+    }));
+    persistLibrary(library, get().composition.id);
+  },
+
+  duplicateComposition: async (id) => {
+    const source = get().library.find((c) => c.id === id);
+    if (!source) return;
+    const copy = await copyComposition(source);
+    const library = [...get().library, copy];
+    set({ library });
+    persistLibrary(library, get().composition.id);
+  },
+
+  // Delete a composition and its stored stems. If it was current, switch to
+  // another (or a fresh empty one if the library is now empty).
+  deleteComposition: async (id) => {
+    const { composition, library } = get();
+    const target = library.find((c) => c.id === id);
+    if (target) {
+      for (const t of target.tracks) if (t.source.kind === "stored") stemDelete(t.source.key);
+    }
+    let nextLibrary = library.filter((c) => c.id !== id);
+    let nextComposition = composition;
+
+    if (id === composition.id) {
+      revokeBlobUrls(composition);
+      if (nextLibrary.length === 0) {
+        nextComposition = { id: newId(), title: "Untitled", artist: "Unknown", bpm: 120, tracks: [] };
+        nextLibrary = [serializeComposition(nextComposition)];
+      } else {
+        nextComposition = await resolveComposition(nextLibrary[0]);
       }
     }
-    set({ composition: comp, selectedId: null });
+    set({ library: nextLibrary, composition: nextComposition, selectedId: null });
+    persistLibrary(nextLibrary, nextComposition.id);
   },
 }));
 
-// Autosave: persist the composition (debounced) whenever it changes.
+// Autosave: fold the current composition back into the library and persist
+// (debounced) whenever it changes.
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 useStore.subscribe((state, prev) => {
   if (state.composition === prev.composition) return;
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => saveComposition(useStore.getState().composition), 400);
+  saveTimer = setTimeout(() => {
+    const { composition, library } = useStore.getState();
+    const next = upsert(library, serializeComposition(composition));
+    useStore.setState({ library: next });
+    persistLibrary(next, composition.id);
+  }, 400);
 });
 
 // Dev-only handle for debugging/inspection from the console.

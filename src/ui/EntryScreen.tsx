@@ -1,8 +1,8 @@
 import { useRef, useState } from "react";
 import { useStore } from "../store";
 
-// The start screen: enter the current composition, begin a fresh one, or
-// export/import a portable bundle.
+// The start screen: pick a composition from the library to enter, start a fresh
+// one, or export/import a portable bundle.
 export function EntryScreen({
   onEnter,
   onCreate,
@@ -14,7 +14,13 @@ export function EntryScreen({
   onExport: () => Promise<void>;
   onImport: (file: File) => Promise<void>;
 }) {
-  const comp = useStore((s) => s.composition);
+  const library = useStore((s) => s.library);
+  const currentId = useStore((s) => s.composition.id);
+  const selectComposition = useStore((s) => s.selectComposition);
+  const renameComposition = useStore((s) => s.renameComposition);
+  const duplicateComposition = useStore((s) => s.duplicateComposition);
+  const deleteComposition = useStore((s) => s.deleteComposition);
+
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
   const [artist, setArtist] = useState("");
@@ -23,27 +29,14 @@ export function EntryScreen({
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  async function handleExport() {
+  async function run(label: string, fn: () => Promise<void>) {
     setError(null);
-    setBusy("Exporting…");
+    setBusy(label);
     try {
-      await onExport();
+      await fn();
     } catch (e) {
       console.error(e);
-      setError("Export failed.");
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function handleImport(file: File) {
-    setError(null);
-    setBusy("Importing…");
-    try {
-      await onImport(file);
-    } catch (e) {
-      console.error(e);
-      setError(e instanceof Error ? e.message : "Import failed.");
+      setError(e instanceof Error ? e.message : `${label} failed.`);
     } finally {
       setBusy(null);
     }
@@ -77,18 +70,66 @@ export function EntryScreen({
         </div>
       ) : (
         <>
-          <p style={{ opacity: 0.7, maxWidth: 440, textAlign: "center", lineHeight: 1.5 }}>
-            {comp.title} — move between the instruments and hear the mix shift around you.
-          </p>
+          <p style={{ opacity: 0.6, fontSize: 14, margin: 0 }}>Choose a composition, then enter.</p>
+
+          <div style={list}>
+            {library.map((c) => {
+              const isCurrent = c.id === currentId;
+              return (
+                <div
+                  key={c.id}
+                  style={{ ...row, ...(isCurrent ? rowCurrent : null) }}
+                  onClick={() => run("Loading…", () => selectComposition(c.id))}
+                >
+                  <div style={{ flex: 1, overflow: "hidden" }}>
+                    <div style={rowTitle}>
+                      {isCurrent ? "● " : ""}
+                      {c.title}
+                    </div>
+                    <div style={rowSub}>
+                      {c.artist} · {c.tracks.length} {c.tracks.length === 1 ? "track" : "tracks"}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 4 }} onClick={(e) => e.stopPropagation()}>
+                    <button
+                      style={iconBtn}
+                      title="Rename"
+                      onClick={() => {
+                        const t = window.prompt("Rename composition", c.title);
+                        if (t != null) renameComposition(c.id, t);
+                      }}
+                    >
+                      ✎
+                    </button>
+                    <button style={iconBtn} title="Duplicate" onClick={() => run("Duplicating…", () => duplicateComposition(c.id))}>
+                      ⧉
+                    </button>
+                    <button
+                      style={iconBtn}
+                      title="Delete"
+                      onClick={() => {
+                        if (window.confirm(`Delete "${c.title}"? This can't be undone.`)) {
+                          run("Deleting…", () => deleteComposition(c.id));
+                        }
+                      }}
+                    >
+                      🗑
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
           <button id="enter-btn" style={button} onClick={onEnter}>
             Click to enter
           </button>
-          <button style={linkBtn} onClick={() => setCreating(true)}>
-            ＋ Start a new composition
-          </button>
 
           <div style={{ display: "flex", gap: 18, marginTop: 4 }}>
-            <button style={linkBtn} onClick={handleExport} disabled={!!busy}>
+            <button style={linkBtn} onClick={() => setCreating(true)} disabled={!!busy}>
+              ＋ New
+            </button>
+            <button style={linkBtn} onClick={() => run("Exporting…", onExport)} disabled={!!busy}>
               ⤓ Export
             </button>
             <button style={linkBtn} onClick={() => fileRef.current?.click()} disabled={!!busy}>
@@ -102,7 +143,7 @@ export function EntryScreen({
             style={{ display: "none" }}
             onChange={(e) => {
               const f = e.target.files?.[0];
-              if (f) handleImport(f);
+              if (f) run("Importing…", () => onImport(f));
               e.target.value = "";
             }}
           />
@@ -110,7 +151,7 @@ export function EntryScreen({
           {busy && <p style={{ opacity: 0.6, fontSize: 13, margin: 0 }}>{busy}</p>}
           {error && <p style={{ color: "#ff9b8f", fontSize: 13, margin: 0 }}>{error}</p>}
 
-          <p style={{ opacity: 0.45, fontSize: 13, marginTop: 16 }}>
+          <p style={{ opacity: 0.45, fontSize: 13, marginTop: 12 }}>
             WASD to move · mouse to look · Esc to release cursor
           </p>
         </>
@@ -126,7 +167,7 @@ const overlay: React.CSSProperties = {
   flexDirection: "column",
   alignItems: "center",
   justifyContent: "center",
-  gap: 16,
+  gap: 14,
   color: "white",
   fontFamily: "system-ui, sans-serif",
   background: "radial-gradient(circle at center, rgba(20,24,48,0.85), rgba(5,6,10,0.97))",
@@ -149,6 +190,52 @@ const linkBtn: React.CSSProperties = {
   fontSize: 14,
   cursor: "pointer",
   textDecoration: "underline",
+};
+
+const list: React.CSSProperties = {
+  width: 380,
+  maxHeight: 240,
+  overflowY: "auto",
+  display: "flex",
+  flexDirection: "column",
+  gap: 6,
+  padding: 4,
+};
+
+const row: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid rgba(255,255,255,0.1)",
+  background: "rgba(255,255,255,0.04)",
+  cursor: "pointer",
+};
+
+const rowCurrent: React.CSSProperties = {
+  border: "1px solid rgba(91,140,255,0.7)",
+  background: "rgba(91,140,255,0.16)",
+};
+
+const rowTitle: React.CSSProperties = {
+  fontWeight: 600,
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+};
+
+const rowSub: React.CSSProperties = { fontSize: 12, opacity: 0.55 };
+
+const iconBtn: React.CSSProperties = {
+  width: 30,
+  height: 30,
+  borderRadius: 6,
+  border: "1px solid rgba(255,255,255,0.15)",
+  background: "rgba(255,255,255,0.06)",
+  color: "white",
+  cursor: "pointer",
+  fontSize: 14,
 };
 
 const form: React.CSSProperties = {

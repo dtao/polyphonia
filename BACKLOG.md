@@ -22,7 +22,7 @@ depends only on earlier ones.
 
 - [x] **10. Save / load locally** — versioned JSON manifest in `localStorage` + uploaded stem audio in IndexedDB; autosaves on change, restores on launch.
 - [x] **11. Export / import** — download a composition with all stem audio embedded as a single portable `.polyphonia.json`; re-import to load it (stems restored to IndexedDB).
-- [ ] **12. Composition library** — create, duplicate, rename, delete, and switch between compositions.
+- [x] **12. Composition library** — start-screen chooser to switch, create, duplicate, rename, and delete compositions; persisted as a library (schema v2, migrates the old single slot, seeds the Journey demo).
 
 ## Milestone 4 — Backend & shareable URLs
 
