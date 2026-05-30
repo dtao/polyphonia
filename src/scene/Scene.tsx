@@ -9,6 +9,7 @@ import { ListenerSync } from "./ListenerSync";
 export function Scene() {
   const tracks = useStore((s) => s.composition.tracks);
   const mode = useStore((s) => s.mode);
+  const started = useStore((s) => s.engine !== null);
 
   return (
     <>
@@ -32,14 +33,17 @@ export function Scene() {
       ))}
 
       <ListenerSync />
-      {mode === "explore" ? (
-        <Player />
-      ) : (
-        <>
-          <EditControls />
-          <TrackGizmo />
-        </>
-      )}
+      {/* No camera controls until the experience has started — otherwise a
+          stray click on the entry screen would grab pointer control. */}
+      {started &&
+        (mode === "explore" ? (
+          <Player />
+        ) : (
+          <>
+            <EditControls />
+            <TrackGizmo />
+          </>
+        ))}
     </>
   );
 }

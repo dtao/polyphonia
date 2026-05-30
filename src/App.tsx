@@ -33,6 +33,17 @@ export default function App() {
     setEntering(false);
   }
 
+  // Stop the experience and return to the entry screen. Edits to the
+  // composition are kept in the store, so re-entering resumes where you left off.
+  function exit() {
+    useStore.getState().engine?.dispose();
+    document.exitPointerLock?.();
+    document.body.style.cursor = "auto";
+    useStore.getState().setMode("explore");
+    useStore.getState().select(null);
+    setEngine(null);
+  }
+
   // Tab toggles Explore/Edit.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -107,11 +118,14 @@ export default function App() {
             <strong>{comp.title}</strong> — {comp.artist}
             <span style={{ opacity: 0.6 }}>
               {" "}
-              · {mode === "explore" ? "WASD + mouse to move" : "WASD to move · drag to orbit · click a track"}
+              · {mode === "explore" ? "WASD + mouse to move · Esc for cursor" : "WASD to move · drag to orbit · click a track"}
             </span>
           </div>
 
           <div style={toolbar}>
+            <button style={exitBtn} onClick={exit} title="Stop and return to the start screen">
+              ⏏ Exit
+            </button>
             <button style={modeBtn} onClick={handleToggleMode} title="Toggle with Tab">
               {mode === "explore" ? "✎ Edit" : "✦ Explore"}
             </button>
@@ -162,6 +176,8 @@ const toolbar: React.CSSProperties = {
   position: "absolute",
   top: 12,
   right: 12,
+  display: "flex",
+  gap: 8,
   fontFamily: "system-ui, sans-serif",
 };
 
@@ -172,5 +188,15 @@ const modeBtn: React.CSSProperties = {
   border: "1px solid rgba(255,255,255,0.25)",
   background: "rgba(91,140,255,0.22)",
   color: "white",
+  cursor: "pointer",
+};
+
+const exitBtn: React.CSSProperties = {
+  padding: "8px 16px",
+  fontSize: 14,
+  borderRadius: 999,
+  border: "1px solid rgba(255,255,255,0.18)",
+  background: "rgba(255,255,255,0.08)",
+  color: "rgba(255,255,255,0.85)",
   cursor: "pointer",
 };

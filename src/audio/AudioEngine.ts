@@ -149,6 +149,25 @@ export class AudioEngine {
     if (f.rolloff !== undefined) t.panner.rolloffFactor = f.rolloff;
   }
 
+  // Stop everything and release the audio context. The engine is dead after.
+  dispose(): void {
+    for (const t of this.tracks) {
+      try {
+        t.source?.stop();
+      } catch {
+        /* already stopped */
+      }
+      t.source?.disconnect();
+      t.gain.disconnect();
+      t.panner.disconnect();
+      t.analyser.disconnect();
+    }
+    this.tracks = [];
+    this.master.disconnect();
+    this.started = false;
+    void this.ctx.close();
+  }
+
   // Stop and tear down a playing track.
   removeTrack(id: string): void {
     const i = this.tracks.findIndex((t) => t.def.id === id);
