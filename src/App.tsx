@@ -55,6 +55,20 @@ export default function App() {
     }
   }, [mode]);
 
+  // Guard against a stray lock in edit mode: the click that switches to edit
+  // also makes PointerLockControls request a lock, which engages *after* we've
+  // switched (requestPointerLock is async). Catch it the instant it engages and
+  // release it, so editing always keeps a visible cursor.
+  useEffect(() => {
+    const onChange = () => {
+      if (document.pointerLockElement && useStore.getState().mode === "edit") {
+        document.exitPointerLock();
+      }
+    };
+    document.addEventListener("pointerlockchange", onChange);
+    return () => document.removeEventListener("pointerlockchange", onChange);
+  }, []);
+
   return (
     <>
       <Canvas
