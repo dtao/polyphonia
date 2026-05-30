@@ -3,17 +3,18 @@ import { useFrame } from "@react-three/fiber";
 import { Text } from "@react-three/drei";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
-import { AudioEngine } from "../audio/AudioEngine";
+import { useStore } from "../store";
 
 // A glowing pillar that marks where a stem lives in space and pulses with its
 // audio level — a visual anchor for the sound you hear from that direction.
-export function TrackMarker({ track, engine }: { track: TrackDef; engine: AudioEngine | null }) {
+export function TrackMarker({ track }: { track: TrackDef }) {
+  const engine = useStore((s) => s.engine);
   const core = useRef<THREE.Mesh>(null);
   const glow = useRef<THREE.PointLight>(null);
   const [x, y, z] = track.position;
 
   useFrame(() => {
-    const level = engine?.level(track.name) ?? 0;
+    const level = engine?.level(track.id) ?? 0;
     const s = 1 + level * 1.4;
     if (core.current) core.current.scale.setScalar(s);
     if (glow.current) glow.current.intensity = 4 + level * 30;

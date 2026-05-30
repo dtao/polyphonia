@@ -12,9 +12,13 @@ export type StemSource =
   | { kind: "file"; url: string };
 
 export interface TrackDef {
+  /** Stable identity, independent of name — so renaming never breaks lookups. */
+  id: string;
   name: string;
   color: string;
   position: [number, number, number];
+  /** Linear gain, 0..1+. Defaults to 1. */
+  volume?: number;
   source: StemSource;
   /** Distance at which volume starts falling off. */
   refDistance?: number;
@@ -47,36 +51,42 @@ export const defaultComposition: Composition = {
   bars: 16,
   tracks: [
     {
+      id: "bass",
       name: "bass",
       color: "#5b8cff",
       position: [10, 1.5, 0],
       source: { kind: "file", url: "/stems/Journey_Bass.mp3" },
     },
     {
+      id: "drums",
       name: "drums",
       color: "#ff7a6b",
       position: [5, 1.5, 8.7],
       source: { kind: "file", url: "/stems/Journey_Drums.mp3" },
     },
     {
+      id: "piano",
       name: "piano",
       color: "#ffd166",
       position: [-5, 1.5, 8.7],
       source: { kind: "file", url: "/stems/Journey_Piano.mp3" },
     },
     {
+      id: "choir",
       name: "choir",
       color: "#b96bff",
       position: [-10, 1.5, 0],
       source: { kind: "file", url: "/stems/Journey_Choir.mp3" },
     },
     {
+      id: "synth",
       name: "synth",
       color: "#56e0c0",
       position: [-5, 1.5, -8.7],
       source: { kind: "file", url: "/stems/Journey_Synth.mp3" },
     },
     {
+      id: "sine",
       name: "sine",
       color: "#f78fb3",
       position: [5, 1.5, -8.7],

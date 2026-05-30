@@ -1,24 +1,23 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Scene } from "./scene/Scene";
 import { AudioEngine } from "./audio/AudioEngine";
-import { defaultComposition } from "./composition";
+import { useStore } from "./store";
 
 export default function App() {
-  const [engine, setEngine] = useState<AudioEngine | null>(null);
   const [entering, setEntering] = useState(false);
-  const engineRef = useRef<AudioEngine | null>(null);
-  const comp = defaultComposition;
+  const engine = useStore((s) => s.engine);
+  const setEngine = useStore((s) => s.setEngine);
+  const comp = useStore((s) => s.composition);
 
   // Browsers block audio until a user gesture — so we boot the engine on click.
   async function enter() {
-    if (engineRef.current) return;
+    if (useStore.getState().engine) return;
     setEntering(true);
     const e = new AudioEngine();
     await e.ctx.resume();
-    await e.load(comp);
+    await e.load(useStore.getState().composition);
     e.start();
-    engineRef.current = e;
     setEngine(e);
     setEntering(false);
   }
@@ -32,7 +31,7 @@ export default function App() {
         dpr={[1, 1.5]}
         gl={{ antialias: true, powerPreference: "high-performance" }}
       >
-        <Scene comp={comp} engine={engine} />
+        <Scene />
       </Canvas>
 
       {!engine && (

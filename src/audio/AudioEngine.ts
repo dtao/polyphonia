@@ -51,6 +51,7 @@ export class AudioEngine {
       this.setPannerPosition(panner, def.position);
 
       const gain = this.ctx.createGain();
+      gain.gain.value = def.volume ?? 1;
       const analyser = this.ctx.createAnalyser();
       analyser.fftSize = 256;
 
@@ -106,9 +107,30 @@ export class AudioEngine {
     }
   }
 
+  // --- Live edits: mutate a playing track without restarting anything. ---
+
+  setVolume(id: string, volume: number): void {
+    const t = this.find(id);
+    // Ramp to avoid clicks.
+    if (t) t.gain.gain.setTargetAtTime(volume, this.ctx.currentTime, 0.02);
+  }
+
+  setPosition(id: string, position: [number, number, number]): void {
+    const t = this.find(id);
+    if (t) this.setPannerPosition(t.panner, position);
+  }
+
+  setFalloff(id: string, f: { refDistance?: number; maxDistance?: number; rolloff?: number }): void {
+    const t = this.find(id);
+    if (!t) return;
+    if (f.refDistance !== undefined) t.panner.refDistance = f.refDistance;
+    if (f.maxDistance !== undefined) t.panner.maxDistance = f.maxDistance;
+    if (f.rolloff !== undefined) t.panner.rolloffFactor = f.rolloff;
+  }
+
   // Current audio level (0..1) for a track, for visual reactivity.
-  level(name: string): number {
-    const t = this.tracks.find((x) => x.def.name === name);
+  level(id: string): number {
+    const t = this.find(id);
     if (!t) return 0;
     t.analyser.getByteTimeDomainData(t.levelData);
     let sum = 0;
@@ -117,6 +139,10 @@ export class AudioEngine {
       sum += v * v;
     }
     return Math.min(1, Math.sqrt(sum / t.levelData.length) * 3);
+  }
+
+  private find(id: string): LiveTrack | undefined {
+    return this.tracks.find((x) => x.def.id === id);
   }
 
   private setPannerPosition(p: PannerNode, [x, y, z]: [number, number, number]) {

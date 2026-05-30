@@ -2,12 +2,13 @@ import { useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { PointerLockControls } from "@react-three/drei";
 import * as THREE from "three";
-import { AudioEngine } from "../audio/AudioEngine";
+import { useStore } from "../store";
 
 // WASD movement on the ground plane + mouse look, and — critically — it feeds
 // the camera's position/orientation to the AudioEngine every frame so the
 // spatial mix tracks where you are and which way you face.
-export function Player({ engine }: { engine: AudioEngine | null }) {
+export function Player() {
+  const engine = useStore((s) => s.engine);
   const { camera } = useThree();
   const keys = useRef<Record<string, boolean>>({});
   const forward = useRef(new THREE.Vector3());

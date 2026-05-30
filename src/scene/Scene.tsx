@@ -1,10 +1,11 @@
 import { Grid } from "@react-three/drei";
-import { Composition } from "../composition";
-import { AudioEngine } from "../audio/AudioEngine";
+import { useStore } from "../store";
 import { TrackMarker } from "./TrackMarker";
 import { Player } from "./Player";
 
-export function Scene({ comp, engine }: { comp: Composition; engine: AudioEngine | null }) {
+export function Scene() {
+  const tracks = useStore((s) => s.composition.tracks);
+
   return (
     <>
       <color attach="background" args={["#05060a"]} />
@@ -22,11 +23,11 @@ export function Scene({ comp, engine }: { comp: Composition; engine: AudioEngine
         infiniteGrid
       />
 
-      {comp.tracks.map((t) => (
-        <TrackMarker key={t.name} track={t} engine={engine} />
+      {tracks.map((t) => (
+        <TrackMarker key={t.id} track={t} />
       ))}
 
-      <Player engine={engine} />
+      <Player />
     </>
   );
 }
