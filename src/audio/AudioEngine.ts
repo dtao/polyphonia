@@ -20,7 +20,9 @@ export class AudioEngine {
   private master: GainNode;
   private tracks: LiveTrack[] = [];
   started = false;
-  private loopStart = 0; // absolute ctx time the composition loop began
+  private loopStartTime = 0; // absolute ctx time the composition loop began
+  private loopLength = 0; // musical loop length in seconds (0 = loop whole buffer)
+  private loopOffset = 0; // shared leading-silence (encoder delay) to skip
 
   constructor() {
     this.ctx = new AudioContext();
@@ -45,6 +47,35 @@ export class AudioEngine {
 
       this.tracks.push(this.buildTrack(def, buffer));
     }
+
+    // Loop bookkeeping (see startSource / loopRegion). The musical loop length
+    // comes from the composition's tempo; the offset is the smallest leading
+    // silence across file stems — the shared MP3 encoder delay to skip.
+    this.loopLength = comp.bars * 4 * (60 / comp.bpm);
+    const fileBuffers = this.tracks.filter((t) => t.def.source.kind === "file").map((t) => t.buffer);
+    this.loopOffset = fileBuffers.length
+      ? Math.min(0.1, Math.min(...fileBuffers.map((b) => this.leadingSilence(b))))
+      : 0;
+  }
+
+  // Seconds of (near-)silence before the first audible sample — i.e. the MP3
+  // encoder-delay padding the decoder prepends.
+  private leadingSilence(buffer: AudioBuffer): number {
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      if (Math.abs(data[i]) > 0.005) return i / buffer.sampleRate;
+    }
+    return 0;
+  }
+
+  // The slice of a buffer to loop. If it's longer than the musical length (it
+  // has padding), trim to [offset, offset + length]; otherwise loop the whole
+  // buffer (loopEnd 0 = end of buffer).
+  private loopRegion(buffer: AudioBuffer): { start: number; end: number } {
+    const extra = buffer.duration - this.loopLength;
+    if (!this.loopLength || extra <= 0.002) return { start: 0, end: 0 };
+    const start = Math.min(this.loopOffset, extra);
+    return { start, end: Math.min(start + this.loopLength, buffer.duration) };
   }
 
   // Build the node graph for one track (no source yet). source -> gain ->
@@ -70,21 +101,32 @@ export class AudioEngine {
     return { def, buffer, panner, gain, analyser, levelData: new Uint8Array(new ArrayBuffer(analyser.fftSize)) };
   }
 
-  // (Re)create and start a track's looping source at a given time/offset.
-  private startSource(t: LiveTrack, when: number, offset: number): void {
+  // (Re)create and start a track's looping source. `phase` is how far into the
+  // loop region to begin (0 = the region's start), used to drop a new track in
+  // aligned with the already-playing loop.
+  private startSource(t: LiveTrack, when: number, phase: number): void {
+    const { start, end } = this.loopRegion(t.buffer);
     const src = this.ctx.createBufferSource();
     src.buffer = t.buffer;
     src.loop = true;
+    src.loopStart = start;
+    src.loopEnd = end; // 0 means "end of buffer"
     src.connect(t.gain);
-    src.start(when, offset);
+    src.start(when, start + phase);
     t.source = src;
+  }
+
+  // Length of a buffer's loop region (the musical length, or the whole buffer).
+  private regionLength(buffer: AudioBuffer): number {
+    const { start, end } = this.loopRegion(buffer);
+    return (end || buffer.duration) - start;
   }
 
   // Start every stem in lockstep, looped.
   start(): void {
     if (this.started) return;
-    this.loopStart = this.ctx.currentTime + 0.1;
-    for (const t of this.tracks) this.startSource(t, this.loopStart, 0);
+    this.loopStartTime = this.ctx.currentTime + 0.1;
+    for (const t of this.tracks) this.startSource(t, this.loopStartTime, 0);
     this.started = true;
   }
 
@@ -101,9 +143,9 @@ export class AudioEngine {
     this.tracks.push(t);
     if (this.started) {
       const when = this.ctx.currentTime + 0.06;
-      const elapsed = when - this.loopStart;
-      const offset = ((elapsed % buffer.duration) + buffer.duration) % buffer.duration;
-      this.startSource(t, when, offset);
+      const len = this.regionLength(buffer);
+      const phase = ((((when - this.loopStartTime) % len) + len) % len);
+      this.startSource(t, when, phase);
     }
   }
 

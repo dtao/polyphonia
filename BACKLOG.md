@@ -16,7 +16,7 @@ depends only on earlier ones.
 
 - [x] **7. Add stems (upload)** — file picker + drag-and-drop; decoded and inserted in sync with the running loop.
 - [ ] **8. New / empty composition** — create a composition from scratch with title, artist, and BPM; add tracks to it; empty-state UX.
-- [ ] **9. Loop-point cleanup** — set `loopStart` / `loopEnd` on sources to trim MP3 encoder padding so imported stems loop seamlessly.
+- [x] **9. Loop-point cleanup** — trim MP3 encoder padding by looping `[offset, offset + musical-length]` per source (offset = shared leading silence), so imported stems loop seamlessly.
 
 ## Milestone 3 — Persistence (local-first)
 
