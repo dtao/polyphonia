@@ -9,6 +9,9 @@ export function PropertiesPanel() {
 
   if (mode !== "edit" || !track) return null;
 
+  const near = track.refDistance ?? 4;
+  const far = Math.max(track.maxDistance ?? 40, near + 1);
+
   return (
     <div style={panel}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
@@ -37,17 +40,17 @@ export function PropertiesPanel() {
       <Slider
         label="Near (full)"
         help="Within this distance, the stem stays at full spatial volume."
-        value={track.refDistance ?? 4}
+        value={near}
         min={1}
-        max={20}
+        max={Math.max(1, far - 1)}
         step={0.5}
-        onChange={(v) => setTrackFalloff(track.id, { refDistance: v })}
+        onChange={(v) => setTrackFalloff(track.id, { refDistance: v, maxDistance: far <= v ? v + 1 : far })}
       />
       <Slider
         label="Far (silent)"
         help="Beyond this distance, moving farther away stops changing the level."
-        value={track.maxDistance ?? 40}
-        min={10}
+        value={far}
+        min={near + 1}
         max={80}
         step={1}
         onChange={(v) => setTrackFalloff(track.id, { maxDistance: v })}

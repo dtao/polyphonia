@@ -10,11 +10,16 @@ import { markerObjects, useStore } from "../store";
 // In edit mode it can be clicked to select; the selected track wears a ring.
 export function TrackMarker({ track }: { track: TrackDef }) {
   const engine = useStore((s) => s.engine);
+  const mode = useStore((s) => s.mode);
   const selected = useStore((s) => s.selectedId === track.id);
   const core = useRef<THREE.Mesh>(null);
   const glow = useRef<THREE.PointLight>(null);
   const ring = useRef<THREE.Mesh>(null);
-  const [x, y, z] = track.position;
+  const [x, , z] = track.position;
+  const volume = track.volume ?? 1;
+  const pillarHeight = 1.1 + volume * 2.2;
+  const pillarRadius = 0.18 + volume * 0.16;
+  const markerTop = pillarHeight + 0.6;
 
   useFrame((_, dt) => {
     const level = engine?.level(track.id) ?? 0;
@@ -52,13 +57,14 @@ export function TrackMarker({ track }: { track: TrackDef }) {
       onPointerOver={() => setCursor("pointer")}
       onPointerOut={() => setCursor("auto")}
     >
+      {mode === "edit" && selected && <FalloffMap track={track} />}
       {/* base column */}
-      <mesh position={[0, 1.5, 0]}>
-        <cylinderGeometry args={[0.25, 0.4, 3, 24]} />
+      <mesh position={[0, pillarHeight / 2, 0]}>
+        <cylinderGeometry args={[pillarRadius * 0.7, pillarRadius, pillarHeight, 24]} />
         <meshStandardMaterial color={track.color} emissive={track.color} emissiveIntensity={0.6} />
       </mesh>
       {/* pulsing orb */}
-      <mesh ref={core} position={[0, y + 1.6, 0]}>
+      <mesh ref={core} position={[0, markerTop, 0]}>
         <icosahedronGeometry args={[0.5, 2]} />
         <meshStandardMaterial
           color={track.color}
@@ -69,15 +75,15 @@ export function TrackMarker({ track }: { track: TrackDef }) {
       </mesh>
       {/* selection ring */}
       {selected && (
-        <mesh ref={ring} position={[0, y + 1.6, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <mesh ref={ring} position={[0, markerTop, 0]} rotation={[Math.PI / 2, 0, 0]}>
           <torusGeometry args={[1, 0.045, 10, 56]} />
           <meshBasicMaterial color="white" toneMapped={false} />
         </mesh>
       )}
-      <pointLight ref={glow} position={[0, y + 1.6, 0]} color={track.color} intensity={6} distance={18} />
+      <pointLight ref={glow} position={[0, markerTop, 0]} color={track.color} intensity={6} distance={18} />
       {/* Billboard keeps the label facing the camera so it's always readable,
           even when you walk behind the pillar. */}
-      <Billboard position={[0, y + 2.8, 0]}>
+      <Billboard position={[0, markerTop + 1.2, 0]}>
         <Text fontSize={0.5} color="white" anchorX="center">
           {track.name}
         </Text>
@@ -85,3 +91,67 @@ export function TrackMarker({ track }: { track: TrackDef }) {
     </group>
   );
 }
+
+function FalloffMap({ track }: { track: TrackDef }) {
+  const near = track.refDistance ?? 4;
+  const far = Math.max(track.maxDistance ?? 40, near + 1);
+  const rolloff = track.rolloff ?? 1;
+
+  return (
+    <group position={[0, 0.035, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh>
+        <ringGeometry args={[near, far, 96, 12]} />
+        <shaderMaterial
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          uniforms={{
+            nearRadius: { value: near },
+            farRadius: { value: far },
+            rolloff: { value: rolloff },
+            nearColor: { value: new THREE.Color("#62f0c8") },
+            farColor: { value: new THREE.Color("#ff7a6b") },
+          }}
+          vertexShader={falloffVertexShader}
+          fragmentShader={falloffFragmentShader}
+        />
+      </mesh>
+      <mesh>
+        <torusGeometry args={[near, 0.04, 8, 128]} />
+        <meshBasicMaterial color="#62f0c8" transparent opacity={0.9} toneMapped={false} />
+      </mesh>
+      <mesh>
+        <torusGeometry args={[far, 0.04, 8, 160]} />
+        <meshBasicMaterial color="#ff7a6b" transparent opacity={0.75} toneMapped={false} />
+      </mesh>
+    </group>
+  );
+}
+
+const falloffVertexShader = `
+  varying vec2 vPos;
+
+  void main() {
+    vPos = position.xy;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const falloffFragmentShader = `
+  uniform float nearRadius;
+  uniform float farRadius;
+  uniform float rolloff;
+  uniform vec3 nearColor;
+  uniform vec3 farColor;
+  varying vec2 vPos;
+
+  void main() {
+    float distanceFromStem = length(vPos);
+    float t = clamp((distanceFromStem - nearRadius) / max(farRadius - nearRadius, 0.001), 0.0, 1.0);
+    float shaped = pow(t, 1.0 / max(rolloff, 0.001));
+    vec3 color = mix(nearColor, farColor, shaped);
+    float edgeFade = smoothstep(0.0, 0.08, t) * (1.0 - smoothstep(0.92, 1.0, t));
+    float opacity = mix(0.18, 0.42, shaped) * edgeFade;
+    gl_FragColor = vec4(color, opacity);
+  }
+`;
