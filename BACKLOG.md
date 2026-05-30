@@ -33,6 +33,7 @@ depends only on earlier ones.
 - [x] **17. Artist pages** — `/artist/:slug` lists the published compositions for that unique artist slug; artist names link there from both the gallery and shared composition viewer, and publishing prevents duplicate titles per artist.
 - [x] **18. Supabase migrations** — schema setup lives in `supabase/migrations`: initial sharing plus artist identity/title-uniqueness migration.
 - [x] **19. Account artist identity** — signed-in accounts load/create a primary artist profile; new compositions and publishing use it automatically instead of treating artist as per-composition metadata.
+- [x] **20. Loop seam controls** — Edit mode includes a Loop panel to audition the seam, trim start/end, tune crossfade, and disable looping for long-form compositions.
 
 ## Later — Immersive environments (north star)
 

@@ -52,7 +52,8 @@ add a test framework unless asked.
   modes).
 - **UI (DOM overlays):** `src/ui/` — `EntryScreen` (start screen: library
   chooser, new/export/import, sign-in, gallery link), `PropertiesPanel`,
-  `AddStem`, `PublishControl`, `Account` (auth + account artist), `Viewer`
+  `AddStem`, `LoopPanel` (composition loop on/off, seam audition, trim,
+  crossfade), `PublishControl`, `Account` (auth + account artist), `Viewer`
   (read-only `/c/:id`), `Gallery` (`/gallery`), `ArtistPage` (`/artist/:slug`).
 - **Persistence (local-first):** `src/persistence.ts` — composition manifests in
   `localStorage` (a *library*, schema v2, with migration from the old single
@@ -87,8 +88,12 @@ add a test framework unless asked.
 - **Audio sync:** never start stems independently. Use the engine's
   start/`addLiveTrack` paths, which schedule off the shared clock. `addLiveTrack`
   phase-aligns a new stem to the running loop. Loop points are trimmed to the
-  musical length (`bars`) to hide **MP3 encoder padding** — see
-  `loopRegion`/`leadingSilence`.
+  musical length (`bars`) and copied into prepared loop buffers with a tiny
+  end→start crossfade to hide **MP3 encoder padding** — see
+  `prepareLoopBuffer`/`leadingSilence`. Composition-level loop controls
+  (`loopEnabled`, `loopStart`, `loopEndTrim`, `loopCrossfade`) live on the
+  manifest; keep them applied through `AudioEngine.updateLoopSettings` so live
+  playback and saved data stay aligned.
 - **Pointer lock:** drei `PointerLockControls` locks on click of its `selector`
   element. We scope it to `"canvas"` after entry (so clicking UI buttons doesn't
   grab the pointer) and to `"#enter-btn"` before entry (so the entry click both

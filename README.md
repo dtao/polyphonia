@@ -46,7 +46,8 @@ publishing/sharing needs the optional Supabase setup.
 - **Edit** (toggle with the button or `Tab`): `WASD` pan · drag to
   orbit/turn · scroll to zoom · click a pillar to select, then drag the gizmo to
   move it. Selected stems show Near/Far rings and a rolloff gradient on the
-  ground; the pillar size reflects volume.
+  ground; the pillar size reflects volume. The Loop panel can audition the seam,
+  trim loop start/end, adjust crossfade, or disable looping.
 
 ## Sharing setup (optional)
 
@@ -153,7 +154,7 @@ SPA fallback so routes like `/c/:id`, `/gallery`, and `/artist/:slug` serve
 src/
   audio/        AudioEngine (Web Audio) + procedural placeholder synth
   scene/        React Three Fiber scene: Player, EditControls, gizmo, markers
-  ui/           EntryScreen, PropertiesPanel, AddStem, PublishControl, Account, Viewer, Gallery, ArtistPage
+  ui/           EntryScreen, PropertiesPanel, AddStem, LoopPanel, PublishControl, Account, Viewer, Gallery, ArtistPage
   artist.ts       artist identity helpers (slugs, artist routes)
   composition.ts  types + the built-in "Journey" demo
   store.ts        Zustand store

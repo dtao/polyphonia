@@ -4,6 +4,7 @@ import { createPlaceholderStems } from "./synth";
 
 interface LiveTrack {
   def: TrackDef;
+  originalBuffer: AudioBuffer;
   buffer: AudioBuffer;
   panner: PannerNode;
   gain: GainNode;
@@ -23,6 +24,13 @@ export class AudioEngine {
   private loopStartTime = 0; // absolute ctx time the composition loop began
   private loopLength = 0; // musical loop length in seconds (0 = loop whole buffer)
   private loopOffset = 0; // shared leading-silence (encoder delay) to skip
+  private loopEnabled = true;
+  private loopStartOverride: number | undefined;
+  private loopEndTrim = 0;
+  private loopCrossfade = 0.035;
+  private auditionTimer: ReturnType<typeof setTimeout> | undefined;
+  private auditionStartTime: number | null = null;
+  private auditionDuration = 0;
 
   constructor() {
     this.ctx = new AudioContext();
@@ -36,6 +44,7 @@ export class AudioEngine {
     const needsSynth = comp.tracks.some((t) => t.source.kind === "synth");
     const stems = needsSynth ? createPlaceholderStems(this.ctx, comp.bpm, comp.bars ?? 4) : null;
 
+    const loaded: Array<{ def: TrackDef; buffer: AudioBuffer }> = [];
     for (const def of comp.tracks) {
       let buffer: AudioBuffer;
       if (def.source.kind === "file") {
@@ -45,42 +54,87 @@ export class AudioEngine {
         buffer = stems![def.source.preset];
       }
 
-      this.tracks.push(this.buildTrack(def, buffer));
+      loaded.push({ def, buffer });
     }
 
-    // Loop bookkeeping (see startSource / loopRegion). The musical loop length
-    // comes from the composition's tempo; the offset is the smallest leading
-    // silence across file stems — the shared MP3 encoder delay to skip.
+    // Loop bookkeeping. The musical loop length comes from the composition's
+    // tempo; the offset skips shared MP3 encoder delay. Buffers with a known
+    // musical length are copied into clean loop buffers with a tiny end->start
+    // crossfade, which masks residual padding/clicks at the wrap point.
+    this.setLoopFields(comp);
+    const fileBuffers = loaded.filter((t) => t.def.source.kind === "file").map((t) => t.buffer);
+    const detectedOffsets = fileBuffers.map((b) => this.leadingSilence(b)).filter((s) => s > 0.001);
+    this.loopOffset = detectedOffsets.length ? Math.min(0.1, Math.min(...detectedOffsets)) : 0;
+
+    for (const { def, buffer } of loaded) {
+      this.tracks.push(this.buildTrack(def, buffer, this.prepareLoopBuffer(buffer)));
+    }
+  }
+
+  private setLoopFields(comp: Pick<Composition, "bpm" | "bars" | "loopEnabled" | "loopStart" | "loopEndTrim" | "loopCrossfade">): void {
+    this.loopEnabled = comp.loopEnabled ?? true;
     this.loopLength = comp.bars ? comp.bars * 4 * (60 / comp.bpm) : 0;
-    const fileBuffers = this.tracks.filter((t) => t.def.source.kind === "file").map((t) => t.buffer);
-    this.loopOffset = fileBuffers.length
-      ? Math.min(0.1, Math.min(...fileBuffers.map((b) => this.leadingSilence(b))))
-      : 0;
+    this.loopStartOverride = comp.loopStart;
+    this.loopEndTrim = comp.loopEndTrim ?? 0;
+    this.loopCrossfade = comp.loopCrossfade ?? 0.035;
   }
 
   // Seconds of (near-)silence before the first audible sample — i.e. the MP3
   // encoder-delay padding the decoder prepends.
   private leadingSilence(buffer: AudioBuffer): number {
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < data.length; i++) {
-      if (Math.abs(data[i]) > 0.005) return i / buffer.sampleRate;
+    for (let i = 0; i < buffer.length; i++) {
+      for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+        if (Math.abs(buffer.getChannelData(ch)[i]) > 0.005) return i / buffer.sampleRate;
+      }
     }
     return 0;
   }
 
-  // The slice of a buffer to loop. If it's longer than the musical length (it
-  // has padding), trim to [offset, offset + length]; otherwise loop the whole
-  // buffer (loopEnd 0 = end of buffer).
-  private loopRegion(buffer: AudioBuffer): { start: number; end: number } {
-    const extra = buffer.duration - this.loopLength;
-    if (!this.loopLength || extra <= 0.002) return { start: 0, end: 0 };
-    const start = Math.min(this.loopOffset, extra);
-    return { start, end: Math.min(start + this.loopLength, buffer.duration) };
+  // Copy a decoded file into an exact musical loop and blend the very end into
+  // the start. MP3 decoders can leave tiny leading/trailing padding even after
+  // loop points are set; looping a prepared buffer avoids a split-second gap.
+  private prepareLoopBuffer(buffer: AudioBuffer): AudioBuffer {
+    if (!this.loopEnabled) return buffer;
+
+    const sr = buffer.sampleRate;
+    const trimStart = Math.max(0, this.loopStartOverride ?? this.loopOffset);
+    const trimEnd = Math.max(0, this.loopEndTrim);
+    const maxStartFrame = Math.max(0, buffer.length - 1);
+    const startFrame = Math.min(Math.round(trimStart * sr), maxStartFrame);
+    const availableFrames = Math.max(1, buffer.length - startFrame - Math.round(trimEnd * sr));
+    const targetFrames = this.loopLength ? Math.round(Math.max(0.1, this.loopLength - trimEnd) * sr) : availableFrames;
+    const loopFrames = Math.max(1, Math.min(targetFrames, availableFrames));
+    const out = this.ctx.createBuffer(buffer.numberOfChannels, loopFrames, sr);
+
+    for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+      const input = buffer.getChannelData(ch);
+      const output = out.getChannelData(ch);
+      for (let i = 0; i < loopFrames; i++) {
+        output[i] = input[startFrame + i] ?? 0;
+      }
+      this.crossfadeLoop(output, sr);
+    }
+
+    return out;
+  }
+
+  private crossfadeLoop(data: Float32Array, sampleRate: number): void {
+    const fadeFrames = Math.min(Math.floor(this.loopCrossfade * sampleRate), Math.floor(data.length / 4));
+    if (fadeFrames <= 1) return;
+
+    for (let i = 0; i < fadeFrames; i++) {
+      const t = i / (fadeFrames - 1);
+      const endIndex = data.length - fadeFrames + i;
+      // Equal-power-ish blend from original tail to loop start.
+      const tailGain = Math.cos((t * Math.PI) / 2);
+      const headGain = Math.sin((t * Math.PI) / 2);
+      data[endIndex] = data[endIndex] * tailGain + data[i] * headGain;
+    }
   }
 
   // Build the node graph for one track (no source yet). source -> gain ->
   // panner -> master; the analyser taps the gain for visual reactivity.
-  private buildTrack(def: TrackDef, buffer: AudioBuffer): LiveTrack {
+  private buildTrack(def: TrackDef, originalBuffer: AudioBuffer, buffer = originalBuffer): LiveTrack {
     const panner = this.ctx.createPanner();
     panner.panningModel = "HRTF";
     panner.distanceModel = "inverse";
@@ -98,28 +152,26 @@ export class AudioEngine {
     gain.connect(analyser);
     panner.connect(this.master);
 
-    return { def, buffer, panner, gain, analyser, levelData: new Uint8Array(new ArrayBuffer(analyser.fftSize)) };
+    return { def, originalBuffer, buffer, panner, gain, analyser, levelData: new Uint8Array(new ArrayBuffer(analyser.fftSize)) };
   }
 
   // (Re)create and start a track's looping source. `phase` is how far into the
   // loop region to begin (0 = the region's start), used to drop a new track in
   // aligned with the already-playing loop.
   private startSource(t: LiveTrack, when: number, phase: number): void {
-    const { start, end } = this.loopRegion(t.buffer);
     const src = this.ctx.createBufferSource();
     src.buffer = t.buffer;
-    src.loop = true;
-    src.loopStart = start;
-    src.loopEnd = end; // 0 means "end of buffer"
+    src.loop = this.loopEnabled;
+    src.loopStart = 0;
+    src.loopEnd = t.buffer.duration;
     src.connect(t.gain);
-    src.start(when, start + phase);
+    src.start(when, phase);
     t.source = src;
   }
 
   // Length of a buffer's loop region (the musical length, or the whole buffer).
   private regionLength(buffer: AudioBuffer): number {
-    const { start, end } = this.loopRegion(buffer);
-    return (end || buffer.duration) - start;
+    return buffer.duration;
   }
 
   // Start every stem in lockstep, looped.
@@ -139,7 +191,7 @@ export class AudioEngine {
   // drops in musically. We start its source partway into the buffer by the same
   // amount the existing loop has already advanced.
   addLiveTrack(def: TrackDef, buffer: AudioBuffer): void {
-    const t = this.buildTrack(def, buffer);
+    const t = this.buildTrack(def, buffer, this.prepareLoopBuffer(buffer));
     this.tracks.push(t);
     if (this.started) {
       const when = this.ctx.currentTime + 0.06;
@@ -147,6 +199,98 @@ export class AudioEngine {
       const phase = ((((when - this.loopStartTime) % len) + len) % len);
       this.startSource(t, when, phase);
     }
+  }
+
+  updateLoopSettings(comp: Pick<Composition, "bpm" | "bars" | "loopEnabled" | "loopStart" | "loopEndTrim" | "loopCrossfade">): void {
+    clearTimeout(this.auditionTimer);
+    this.auditionStartTime = null;
+    const wasStarted = this.started;
+    const now = this.ctx.currentTime;
+    const oldStart = this.loopStartTime;
+    this.setLoopFields(comp);
+
+    for (const t of this.tracks) {
+      try {
+        t.source?.stop();
+      } catch {
+        /* already stopped */
+      }
+      t.source?.disconnect();
+      t.source = undefined;
+      t.buffer = this.prepareLoopBuffer(t.originalBuffer);
+    }
+
+    if (!wasStarted) return;
+    const when = now + 0.04;
+    this.loopStartTime = oldStart;
+    for (const t of this.tracks) {
+      const len = this.regionLength(t.buffer);
+      const phase = this.loopEnabled ? ((((when - this.loopStartTime) % len) + len) % len) : Math.min(Math.max(0, when - this.loopStartTime), len - 0.001);
+      this.startSource(t, when, phase);
+    }
+  }
+
+  auditionSeam(): void {
+    if (!this.started || !this.loopEnabled || !this.tracks.length) return;
+    clearTimeout(this.auditionTimer);
+    for (const t of this.tracks) {
+      try {
+        t.source?.stop();
+      } catch {
+        /* already stopped */
+      }
+      t.source?.disconnect();
+      t.source = undefined;
+    }
+
+    const tail = 1.25;
+    const head = 1.25;
+    const now = this.ctx.currentTime + 0.03;
+    let duration = 0;
+    for (const t of this.tracks) {
+      const len = t.buffer.duration;
+      const tailStart = Math.max(0, len - tail);
+      const tailDuration = len - tailStart;
+      const headDuration = Math.min(head, len);
+      this.playSegment(t, now, tailStart, tailDuration);
+      this.playSegment(t, now + tailDuration, 0, headDuration);
+      duration = Math.max(duration, tailDuration + headDuration);
+    }
+
+    this.auditionStartTime = now;
+    this.auditionDuration = duration;
+    this.auditionTimer = setTimeout(() => {
+      this.auditionStartTime = null;
+      const when = this.ctx.currentTime + 0.03;
+      for (const t of this.tracks) {
+        const len = this.regionLength(t.buffer);
+        const phase = ((((when - this.loopStartTime) % len) + len) % len);
+        this.startSource(t, when, phase);
+      }
+    }, (duration + 0.08) * 1000);
+  }
+
+  loopProgress(): { mode: "playing" | "audition"; position: number; duration: number } | null {
+    const track = this.tracks[0];
+    if (!track) return null;
+    const duration = track.buffer.duration;
+    if (this.auditionStartTime !== null) {
+      const elapsed = Math.max(0, this.ctx.currentTime - this.auditionStartTime);
+      const tail = Math.min(1.25, duration);
+      const tailStart = Math.max(0, duration - tail);
+      const position = elapsed <= tail ? tailStart + elapsed : Math.min(duration, elapsed - tail);
+      return { mode: "audition", position: Math.min(position, duration), duration };
+    }
+    if (!this.started || !this.loopEnabled) return null;
+    const position = ((((this.ctx.currentTime - this.loopStartTime) % duration) + duration) % duration);
+    return { mode: "playing", position, duration };
+  }
+
+  private playSegment(t: LiveTrack, when: number, offset: number, duration: number): void {
+    const src = this.ctx.createBufferSource();
+    src.buffer = t.buffer;
+    src.connect(t.gain);
+    src.start(when, offset, duration);
   }
 
   // Called every frame from the camera. Drives the 3D spatialization.
@@ -193,6 +337,8 @@ export class AudioEngine {
 
   // Stop everything and release the audio context. The engine is dead after.
   dispose(): void {
+    clearTimeout(this.auditionTimer);
+    this.auditionStartTime = null;
     for (const t of this.tracks) {
       try {
         t.source?.stop();

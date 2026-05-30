@@ -46,6 +46,14 @@ export interface Composition {
    * where each stem simply loops its whole buffer.
    */
   bars?: number;
+  /** Whether playback loops. Defaults to true for existing compositions. */
+  loopEnabled?: boolean;
+  /** Seconds to trim from the start of each stem's loop region. */
+  loopStart?: number;
+  /** Seconds to trim from the end of each stem's loop region. */
+  loopEndTrim?: number;
+  /** Seconds of end-to-start crossfade inside prepared loop buffers. */
+  loopCrossfade?: number;
   tracks: TrackDef[];
   /** Share id if this composition is currently published (cleared on unpublish). */
   publishedId?: string;

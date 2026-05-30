@@ -82,6 +82,9 @@ interface StoreState {
   setTrackColor: (id: string, color: string) => void;
   deleteTrack: (id: string) => void;
   addStem: (file: File) => Promise<void>;
+  setLoopSettings: (settings: Partial<Pick<Composition, "loopEnabled" | "loopStart" | "loopEndTrim" | "loopCrossfade">>) => void;
+  auditionLoopSeam: () => void;
+  loopProgress: () => { mode: "playing" | "audition"; position: number; duration: number } | null;
 
   // Composition library.
   initLibrary: () => Promise<void>;
@@ -251,6 +254,16 @@ export const useStore = create<StoreState>((set, get) => ({
       mode: "edit",
     }));
   },
+
+  setLoopSettings: (settings) => {
+    set((s) => {
+      const composition = { ...s.composition, ...settings };
+      s.engine?.updateLoopSettings(composition);
+      return { composition };
+    });
+  },
+  auditionLoopSeam: () => get().engine?.auditionSeam(),
+  loopProgress: () => get().engine?.loopProgress() ?? null,
 
   // Load the saved library (or seed/migrate) and resolve the current composition.
   initLibrary: async () => {
