@@ -43,7 +43,10 @@ publishing/sharing needs the optional Supabase setup.
 ### Controls
 
 - **Explore:** `WASD` move · mouse look · click the scene to look · `Esc` frees the cursor.
-- **Edit** (toggle with the button or `Tab`): `WASD` pan · drag to orbit/turn · scroll to zoom · click a pillar to select, then drag the gizmo to move it.
+- **Edit** (toggle with the button or `Tab`): `WASD` pan · drag to
+  orbit/turn · scroll to zoom · click a pillar to select, then drag the gizmo to
+  move it. Selected stems show Near/Far rings and a rolloff gradient on the
+  ground; the pillar size reflects volume.
 
 ## Sharing setup (optional)
 
@@ -150,13 +153,15 @@ SPA fallback so routes like `/c/:id`, `/gallery`, and `/artist/:slug` serve
 src/
   audio/        AudioEngine (Web Audio) + procedural placeholder synth
   scene/        React Three Fiber scene: Player, EditControls, gizmo, markers
-  ui/           EntryScreen, PropertiesPanel, AddStem, PublishControl, Viewer, Gallery
+  ui/           EntryScreen, PropertiesPanel, AddStem, PublishControl, Account, Viewer, Gallery, ArtistPage
+  artist.ts       artist identity helpers (slugs, artist routes)
   composition.ts  types + the built-in "Journey" demo
   store.ts        Zustand store
   persistence.ts  local-first save/load + export/import
   cloud.ts        Supabase publish/fetch
   App.tsx         editor;  main.tsx  routes ( / editor, /c/:id viewer, /gallery, /artist/:slug )
 public/stems/   audio for the built-in demo
+supabase/migrations/  sharing schema + artist identity migrations
 ```
 
 ## Tech stack
@@ -165,5 +170,5 @@ Vite · React · TypeScript · [React Three Fiber](https://docs.pmnd.rs/react-th
 
 ## Roadmap
 
-See [BACKLOG.md](BACKLOG.md) for what's done and what's next (accounts, a public
-gallery, and richer environments down the line).
+See [BACKLOG.md](BACKLOG.md) for what's done and what's next (polish fixes and
+richer environments down the line).

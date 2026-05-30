@@ -34,10 +34,11 @@ add a test framework unless asked.
   "one demo" scales to "a platform."
 - **State hub:** `src/store.ts` — a Zustand store is the single source of truth
   (current `composition`, `library`, `mode`, `selectedId`, `engine`, `user`,
-  `entered`, `viewer`). The scene renders from it; edits flow back into it and
-  out to the engine. Also holds two **non-reactive module singletons** to avoid
-  per-frame re-renders: `markerObjects` (id → 3D object, for the move gizmo) and
-  `viewState` (`{x,z,fx,fz}` shared camera position+heading across modes).
+  `accountArtist`, `entered`, `viewer`). The scene renders from it; edits flow
+  back into it and out to the engine. Also holds two **non-reactive module
+  singletons** to avoid per-frame re-renders: `markerObjects` (id → 3D object,
+  for the move gizmo) and `viewState` (`{x,z,fx,fz}` shared camera
+  position+heading across modes).
 - **Audio:** `src/audio/AudioEngine.ts` — owns ONE `AudioContext`. All stems are
   scheduled off the same clock and started together so they never drift; each
   feeds an HRTF `PannerNode` while the camera drives the `AudioListener`. See
@@ -46,20 +47,23 @@ add a test framework unless asked.
 - **Scene (R3F):** `src/scene/` — `Scene` (composes it), `Player` (explore:
   WASD + pointer-lock look), `EditControls` (orbit/pan/turn camera),
   `TrackGizmo` (drag-to-move selected track), `TrackMarker` (pillar + billboard
-  label), `ListenerSync` (drives the AudioListener in both modes).
+  label; selected edit-mode marker also shows Near/Far rings, rolloff gradient,
+  and volume-scaled pillar), `ListenerSync` (drives the AudioListener in both
+  modes).
 - **UI (DOM overlays):** `src/ui/` — `EntryScreen` (start screen: library
   chooser, new/export/import, sign-in, gallery link), `PropertiesPanel`,
-  `AddStem`, `PublishControl`, `Account`, `Viewer` (read-only `/c/:id`),
-  `Gallery` (`/gallery`).
+  `AddStem`, `PublishControl`, `Account` (auth + account artist), `Viewer`
+  (read-only `/c/:id`), `Gallery` (`/gallery`), `ArtistPage` (`/artist/:slug`).
 - **Persistence (local-first):** `src/persistence.ts` — composition manifests in
   `localStorage` (a *library*, schema v2, with migration from the old single
   slot); uploaded stem audio in **IndexedDB** (localStorage can't hold audio).
   Also export/import of a self-contained `.polyphonia.json`.
-- **Cloud:** `src/cloud.ts` — Supabase auth (email magic link), publish
-  (uploads stems to Storage, manifest to Postgres), fetch, unpublish, gallery
-  list. No custom server — RLS does the gating.
-- **Routing:** `src/main.tsx` — `/` editor (`App`), `/c/:id` viewer, `/gallery`.
-  StrictMode is intentionally OFF (see gotchas).
+- **Cloud:** `src/cloud.ts` — Supabase auth (email magic link), account artist
+  load/create, publish (uploads stems to Storage, manifest to Postgres), fetch,
+  unpublish, gallery list, artist page list. No custom server — RLS does the
+  gating. DB schema lives in `supabase/migrations`.
+- **Routing:** `src/main.tsx` — `/` editor (`App`), `/c/:id` viewer, `/gallery`,
+  `/artist/:slug`. StrictMode is intentionally OFF (see gotchas).
 
 ## Conventions
 
@@ -68,6 +72,11 @@ add a test framework unless asked.
 - Keep the runtime composition model clean: persistence/cloud do their own
   (de)serialization (e.g. `{kind:"stored"}` markers, `publishedId`, `hash`) —
   don't leak storage concerns into the engine/scene.
+- Artist display names are not identity. Cloud identity is `artistId` +
+  `artistSlug`; URLs use `/artist/:slug`, while compositions keep denormalized
+  artist fields for gallery/viewer rendering. Signed-in accounts use the first
+  owned artist as `accountArtist`; new compositions and publishing should prefer
+  that identity over a per-composition artist string.
 - New track ids / composition ids come from `src/id.ts` (`newId`).
 - Edits that affect audio go through store actions that also call the engine's
   live setters (`setVolume`/`setPosition`/`setFalloff`) — never restart playback
@@ -101,18 +110,27 @@ Sharing needs `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` in `.env.local`
 host dashboard for deployed builds. Magic-link sign-in requires the app origin
 to be in Supabase Auth → URL Configuration → Redirect URLs.
 
-Backend = a public Storage bucket `stems` + a `compositions` table
-(`id text pk`, `manifest jsonb`, `owner uuid`, `title text`, `artist text`,
-`created_at`). Title lives in both the manifest (canonical) and a denormalized
-column (for the gallery). The publish id is an opaque UUID, not the title.
+Backend = a public Storage bucket `stems` + `artists` and `compositions` tables.
+The source of truth for setup is `supabase/migrations`:
+- `202605300001_initial_sharing.sql` creates `stems`, `compositions`, and the
+  initial sharing/storage policies.
+- `202605300002_add_artist_identities.sql` creates `artists`, backfills
+  `artist_id`/`artist_slug`, adds `title_key`, and enforces unique composition
+  titles per artist.
+
+Title/artist metadata lives in both the manifest (canonical for the viewer) and
+denormalized columns (for gallery/artist pages). The publish id is an opaque
+UUID, not the title.
 
 **"new row violates row-level security policy"** almost always means a missing
 RLS policy, not a code bug. Required policies:
+- `artists`: public `select`; `insert`/`update` for the authenticated owner
+  (`owner = auth.uid()`).
 - `compositions`: public `select`; `insert`/`update`/`delete` for the
   `authenticated` owner (`owner = auth.uid()`).
 - `storage.objects` (bucket `stems`): public `select`; `insert`/`update`/`delete`
   for `authenticated` (update is needed because re-publish overwrites stems via
-  `upsert`). Full SQL is in README.
+  `upsert`). Full SQL is in `supabase/migrations`.
 - Creating `storage.objects` policies via the SQL editor can fail with "must be
   owner of table objects" — use the Storage → Policies dashboard UI instead.
 
@@ -122,8 +140,8 @@ Publish reuses a stable `publishedId` (so re-publishing keeps the same link) and
 ## Deployment
 
 Netlify (config in `netlify.toml`; SPA fallback in `public/_redirects` so
-`/c/:id` and `/gallery` deep-links resolve). Set the two `VITE_*` env vars in the
-Netlify dashboard for Git-based builds.
+`/c/:id`, `/gallery`, and `/artist/:slug` deep-links resolve). Set the two
+`VITE_*` env vars in the Netlify dashboard for Git-based builds.
 
 ## Where to look next
 
