@@ -16,15 +16,17 @@ export function EnvironmentScene({ environment, editMode }: { environment: Envir
       <hemisphereLight args={[tone.sky, tone.ground, tone.hemi]} />
       <directionalLight position={[12, 18, 8]} intensity={tone.sun} color={tone.sunColor} />
 
-      <Grid
-        args={[80, 80]}
-        cellSize={1}
-        cellColor={tone.gridCell}
-        sectionSize={5}
-        sectionColor={tone.gridSection}
-        fadeDistance={editMode ? 55 : 42}
-        infiniteGrid
-      />
+      {editMode && (
+        <Grid
+          args={[80, 80]}
+          cellSize={1}
+          cellColor={tone.gridCell}
+          sectionSize={5}
+          sectionColor={tone.gridSection}
+          fadeDistance={55}
+          infiniteGrid
+        />
+      )}
 
       {environment.type === "cavern" && <Cavern ambience={environment.ambience} />}
       {environment.type === "forest" && <Forest ambience={environment.ambience} />}
@@ -37,9 +39,9 @@ export function EnvironmentScene({ environment, editMode }: { environment: Envir
 function Studio({ accents }: { accents: number }) {
   return (
     <>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, 0]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.04, 0]}>
         <circleGeometry args={[46, 96]} />
-        <meshStandardMaterial color="#070914" roughness={0.7} metalness={0.15} />
+        <FloorMaterial base="#080a13" accent="#151f35" density={0.4} />
       </mesh>
       <Sparkles count={Math.round(30 + accents * 40)} scale={[42, 5, 42]} size={1.2} speed={0.08} color="#5b8cff" opacity={0.22} />
     </>
@@ -52,25 +54,25 @@ function Cavern({ ambience }: { ambience: number }) {
 
   return (
     <>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.06, 0]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.08, 0]}>
         <circleGeometry args={[55, 96]} />
-        <meshStandardMaterial color="#121015" roughness={0.96} />
+        <FloorMaterial base="#2a252b" accent="#5a4a40" density={1.35} />
       </mesh>
       {rocks.map((p, i) => (
         <mesh key={`rock-${i}`} position={p.position} scale={p.scale} rotation={p.rotation}>
           <dodecahedronGeometry args={[1, 1]} />
-          <meshStandardMaterial color={i % 2 ? "#27232a" : "#1b1a22"} roughness={1} />
+          <meshStandardMaterial color={i % 2 ? "#5a5258" : "#463f47"} roughness={0.95} />
         </mesh>
       ))}
       {stalactites.map((p, i) => (
         <mesh key={`stalactite-${i}`} position={[p.position[0], 7.5 + (i % 3), p.position[2]]} scale={[p.scale[0] * 0.5, p.scale[1] * 1.8, p.scale[2] * 0.5]} rotation={[Math.PI, 0, 0]}>
           <coneGeometry args={[1, 4, 7]} />
-          <meshStandardMaterial color="#201d24" roughness={1} />
+          <meshStandardMaterial color="#504750" roughness={0.95} />
         </mesh>
       ))}
-      <pointLight position={[-12, 4, -8]} color="#7b8cff" intensity={6.0 + ambience * 2} distance={35} />
-      <pointLight position={[10, 2, 12]} color="#ffd08a" intensity={2.4 + ambience} distance={24} />
-      <pointLight position={[0, 5, 0]} color="#d8d0ff" intensity={3.2 + ambience} distance={28} />
+      <pointLight position={[-12, 5, -8]} color="#aeb8ff" intensity={7.2 + ambience * 2.6} distance={48} />
+      <pointLight position={[10, 3, 12]} color="#ffdca8" intensity={3.6 + ambience * 1.4} distance={34} />
+      <pointLight position={[0, 6, 0]} color="#f0e8ff" intensity={5.2 + ambience * 1.8} distance={42} />
     </>
   );
 }
@@ -80,9 +82,9 @@ function Forest({ ambience }: { ambience: number }) {
 
   return (
     <>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.07, 0]}>
         <circleGeometry args={[60, 96]} />
-        <meshStandardMaterial color="#0d1d16" roughness={0.9} />
+        <FloorMaterial base="#0d1d16" accent="#2c4a24" density={1.1} />
       </mesh>
       {trees.map((p, i) => (
         <group key={`tree-${i}`} position={p.position} rotation={p.rotation}>
@@ -107,9 +109,9 @@ function CrystalHall({ ambience }: { ambience: number }) {
 
   return (
     <>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.04, 0]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.06, 0]}>
         <circleGeometry args={[58, 96]} />
-        <meshStandardMaterial color="#07101a" roughness={0.45} metalness={0.2} />
+        <FloorMaterial base="#07101a" accent="#14536b" density={0.85} />
       </mesh>
       {crystals.map((p, i) => (
         <mesh key={`crystal-${i}`} position={[p.position[0], 1.6 + p.scale[1] * 0.5, p.position[2]]} scale={p.scale} rotation={p.rotation}>
@@ -128,6 +130,61 @@ function CrystalHall({ ambience }: { ambience: number }) {
     </>
   );
 }
+
+function FloorMaterial({ base, accent, density }: { base: string; accent: string; density: number }) {
+  return (
+    <shaderMaterial
+      uniforms={{
+        baseColor: { value: new THREE.Color(base) },
+        accentColor: { value: new THREE.Color(accent) },
+        density: { value: density },
+      }}
+      vertexShader={floorVertexShader}
+      fragmentShader={floorFragmentShader}
+    />
+  );
+}
+
+const floorVertexShader = `
+  varying vec2 vWorld;
+
+  void main() {
+    vec4 world = modelMatrix * vec4(position, 1.0);
+    vWorld = world.xz;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const floorFragmentShader = `
+  uniform vec3 baseColor;
+  uniform vec3 accentColor;
+  uniform float density;
+  varying vec2 vWorld;
+
+  float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+  }
+
+  float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    float a = hash(i);
+    float b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0));
+    float d = hash(i + vec2(1.0, 1.0));
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+  }
+
+  void main() {
+    float n = noise(vWorld * 0.18 * density);
+    float fine = noise(vWorld * 0.85 * density) * 0.35;
+    float bands = sin((vWorld.x + vWorld.y) * 0.16 * density) * 0.08;
+    float mixAmount = clamp(n * 0.55 + fine + bands, 0.0, 1.0);
+    vec3 color = mix(baseColor, accentColor, mixAmount);
+    gl_FragColor = vec4(color, 1.0);
+  }
+`;
 
 function ringProps(count: number, minRadius: number, seed: number): PropSet {
   return Array.from({ length: count }, (_, i) => {
@@ -169,17 +226,17 @@ const TONES = {
     gridSection: "#2a3658",
   },
   cavern: {
-    background: "#09080d",
-    fogNear: 16,
-    fogFar: 56,
-    ambient: 0.28,
-    sky: "#3a344d",
-    ground: "#141016",
-    hemi: 0.52,
-    sun: 0.7,
-    sunColor: "#c6c9ff",
-    gridCell: "#262039",
-    gridSection: "#4a3f69",
+    background: "#16131a",
+    fogNear: 28,
+    fogFar: 78,
+    ambient: 0.55,
+    sky: "#6c6480",
+    ground: "#302832",
+    hemi: 0.82,
+    sun: 0.95,
+    sunColor: "#f1e7d8",
+    gridCell: "#4c4560",
+    gridSection: "#746894",
   },
   forest: {
     background: "#06100b",
