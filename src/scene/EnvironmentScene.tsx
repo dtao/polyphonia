@@ -1,5 +1,6 @@
 import { Grid, Sparkles } from "@react-three/drei";
-import { useMemo } from "react";
+import { useFrame } from "@react-three/fiber";
+import { useMemo, useRef } from "react";
 import * as THREE from "three";
 import { EnvironmentSettings } from "../environment";
 
@@ -108,8 +109,13 @@ function Cavern({ ambience }: { ambience: number }) {
         <planeGeometry args={[7, 28, 1, 1]} />
         <meshStandardMaterial color="#151924" emissive="#0b1b28" emissiveIntensity={0.35} roughness={0.2} metalness={0.25} transparent opacity={0.74} />
       </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, -0.45]} position={[-6, 0.01, -8]}>
+        <circleGeometry args={[3.2, 32]} />
+        <meshStandardMaterial color="#111722" emissive="#0e2230" emissiveIntensity={0.4} roughness={0.15} metalness={0.2} transparent opacity={0.68} />
+      </mesh>
+      <CavernMist />
       {torches.map((torch, i) => (
-        <Torch key={`torch-${i}`} {...torch} ambience={ambience} />
+        <Torch key={`torch-${i}`} index={i} {...torch} ambience={ambience} />
       ))}
       <pointLight position={[-12, 5, -8]} color="#aeb8ff" intensity={7.2 + ambience * 2.6} distance={48} />
       <pointLight position={[10, 3, 12]} color="#ffdca8" intensity={3.6 + ambience * 1.4} distance={34} />
@@ -119,18 +125,53 @@ function Cavern({ ambience }: { ambience: number }) {
   );
 }
 
-function Torch({ position, rotation, color, ambience }: { position: [number, number, number]; rotation: [number, number, number]; color: string; ambience: number }) {
+function Torch({ position, rotation, color, ambience, index }: { position: [number, number, number]; rotation: [number, number, number]; color: string; ambience: number; index: number }) {
+  const light = useRef<THREE.PointLight>(null);
+  const flame = useRef<THREE.Group>(null);
+
+  useFrame(({ clock }) => {
+    const t = clock.elapsedTime * 6 + index * 1.7;
+    const flicker = 0.82 + Math.sin(t) * 0.11 + Math.sin(t * 1.83) * 0.07;
+    if (light.current) light.current.intensity = (4.5 + ambience * 2.5) * flicker;
+    if (flame.current) flame.current.scale.setScalar(0.9 + flicker * 0.12);
+  });
+
   return (
     <group position={position} rotation={rotation}>
       <mesh position={[0, 0.65, 0]} rotation={[0.35, 0, 0]}>
         <cylinderGeometry args={[0.07, 0.11, 1.3, 8]} />
         <meshStandardMaterial color="#2b1710" roughness={0.7} />
       </mesh>
-      <mesh position={[0, 1.35, 0]}>
-        <sphereGeometry args={[0.22, 10, 8]} />
-        <meshBasicMaterial color={color} toneMapped={false} />
-      </mesh>
-      <pointLight position={[0, 1.35, 0]} color={color} intensity={4.5 + ambience * 2.5} distance={18} />
+      <group ref={flame} position={[0, 1.34, 0]}>
+        <mesh position={[0, 0.08, 0]} scale={[0.6, 1.25, 0.6]}>
+          <coneGeometry args={[0.28, 0.74, 10]} />
+          <meshBasicMaterial color={color} toneMapped={false} transparent opacity={0.95} />
+        </mesh>
+        <mesh position={[0, 0.02, 0]} scale={[0.75, 0.7, 0.75]}>
+          <sphereGeometry args={[0.2, 10, 8]} />
+          <meshBasicMaterial color="#fff0b8" toneMapped={false} transparent opacity={0.8} />
+        </mesh>
+      </group>
+      <pointLight ref={light} position={[0, 1.35, 0]} color={color} intensity={4.5 + ambience * 2.5} distance={18} />
+    </group>
+  );
+}
+
+function CavernMist() {
+  const mist = useRef<THREE.Group>(null);
+
+  useFrame(({ clock }) => {
+    if (mist.current) mist.current.position.x = Math.sin(clock.elapsedTime * 0.12) * 0.8;
+  });
+
+  return (
+    <group ref={mist}>
+      {[-12, -5, 4, 12].map((z, i) => (
+        <mesh key={`mist-${i}`} rotation={[-Math.PI / 2, 0, 0.2 + i * 0.35]} position={[i % 2 ? 4 : -4, 0.18, z]}>
+          <planeGeometry args={[18, 5, 1, 1]} />
+          <meshBasicMaterial color="#c8c0d8" transparent opacity={0.045} depthWrite={false} />
+        </mesh>
+      ))}
     </group>
   );
 }
