@@ -2,12 +2,14 @@ import { useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { PointerLockControls } from "@react-three/drei";
 import * as THREE from "three";
+import { useStore } from "../store";
 
 // Explore mode: WASD movement on the ground plane + pointer-lock mouse look.
 // (The AudioListener is driven separately by <ListenerSync>, which works in
 // both explore and edit mode.)
 export function Player() {
   const { camera } = useThree();
+  const entered = useStore((s) => s.entered);
   const keys = useRef<Record<string, boolean>>({});
   const forward = useRef(new THREE.Vector3());
   const right = useRef(new THREE.Vector3());
@@ -47,5 +49,8 @@ export function Player() {
     camera.position.y = 1.7; // keep eye height fixed
   });
 
-  return <PointerLockControls />;
+  // Before entering, the lock is armed on the entry button so its single click
+  // both starts the experience and locks the pointer (no second click). After
+  // entering, fall back to the default (click anywhere) to re-lock after Esc.
+  return <PointerLockControls selector={entered ? undefined : "#enter-btn"} />;
 }

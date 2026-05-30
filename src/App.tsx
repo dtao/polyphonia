@@ -7,12 +7,21 @@ import { AddStem } from "./ui/AddStem";
 import { useStore } from "./store";
 
 export default function App() {
-  const [entering, setEntering] = useState(false);
   const engine = useStore((s) => s.engine);
   const setEngine = useStore((s) => s.setEngine);
+  const entered = useStore((s) => s.entered);
   const comp = useStore((s) => s.composition);
   const mode = useStore((s) => s.mode);
   const select = useStore((s) => s.select);
+
+  // Track pointer-lock so we can hide the UI chrome during camera control and
+  // reveal it again when the cursor is free (after Esc, or in edit mode).
+  const [locked, setLocked] = useState(false);
+  useEffect(() => {
+    const onChange = () => setLocked(!!document.pointerLockElement);
+    document.addEventListener("pointerlockchange", onChange);
+    return () => document.removeEventListener("pointerlockchange", onChange);
+  }, []);
 
   // Toggle mode, releasing the pointer lock synchronously when entering edit
   // (drei's PointerLockControls doesn't reliably exit the lock on unmount).
@@ -21,16 +30,18 @@ export default function App() {
     useStore.getState().toggleMode();
   }, []);
 
-  // Browsers block audio until a user gesture — so we boot the engine on click.
+  // The entry click does two gesture-gated things at once: drei's
+  // PointerLockControls (armed on this button) locks the pointer, and here we
+  // boot the audio engine. We leave the entry screen immediately and load audio
+  // in the background so mouse-look is live right away.
   async function enter() {
-    if (useStore.getState().engine) return;
-    setEntering(true);
+    if (useStore.getState().engine || useStore.getState().entered) return;
+    useStore.getState().setEntered(true);
     const e = new AudioEngine();
     await e.ctx.resume();
     await e.load(useStore.getState().composition);
     e.start();
     setEngine(e);
-    setEntering(false);
   }
 
   // Stop the experience and return to the entry screen. Edits to the
@@ -41,6 +52,7 @@ export default function App() {
     document.body.style.cursor = "auto";
     useStore.getState().setMode("explore");
     useStore.getState().select(null);
+    useStore.getState().setEntered(false);
     setEngine(null);
   }
 
@@ -97,14 +109,14 @@ export default function App() {
         <Scene />
       </Canvas>
 
-      {!engine && (
+      {!entered && (
         <div style={overlay}>
           <h1 style={{ fontSize: 44, margin: 0, letterSpacing: 2 }}>POLYPHONIA</h1>
           <p style={{ opacity: 0.7, maxWidth: 440, textAlign: "center", lineHeight: 1.5 }}>
             {comp.title} — move between the instruments and hear the mix shift around you.
           </p>
-          <button style={button} onClick={enter} disabled={entering}>
-            {entering ? "Loading…" : "Click to enter"}
+          <button id="enter-btn" style={button} onClick={enter}>
+            Click to enter
           </button>
           <p style={{ opacity: 0.45, fontSize: 13, marginTop: 24 }}>
             WASD to move · mouse to look · Esc to release cursor
@@ -122,17 +134,22 @@ export default function App() {
             </span>
           </div>
 
-          <div style={toolbar}>
-            <button style={exitBtn} onClick={exit} title="Stop and return to the start screen">
-              ⏏ Exit
-            </button>
-            <button style={modeBtn} onClick={handleToggleMode} title="Toggle with Tab">
-              {mode === "explore" ? "✎ Edit" : "✦ Explore"}
-            </button>
-          </div>
+          {/* UI chrome only when the cursor is free (Esc'd out, or in edit mode). */}
+          {!locked && (
+            <>
+              <div style={toolbar}>
+                <button style={exitBtn} onClick={exit} title="Stop and return to the start screen">
+                  ⏏ Exit
+                </button>
+                <button style={modeBtn} onClick={handleToggleMode} title="Toggle with Tab">
+                  {mode === "explore" ? "✎ Edit" : "✦ Explore"}
+                </button>
+              </div>
+              {mode === "edit" && <AddStem />}
+            </>
+          )}
 
           <PropertiesPanel />
-          <AddStem />
         </>
       )}
     </>

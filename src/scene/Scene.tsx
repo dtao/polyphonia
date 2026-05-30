@@ -9,7 +9,6 @@ import { ListenerSync } from "./ListenerSync";
 export function Scene() {
   const tracks = useStore((s) => s.composition.tracks);
   const mode = useStore((s) => s.mode);
-  const started = useStore((s) => s.engine !== null);
 
   return (
     <>
@@ -33,17 +32,18 @@ export function Scene() {
       ))}
 
       <ListenerSync />
-      {/* No camera controls until the experience has started — otherwise a
-          stray click on the entry screen would grab pointer control. */}
-      {started &&
-        (mode === "explore" ? (
-          <Player />
-        ) : (
-          <>
-            <EditControls />
-            <TrackGizmo />
-          </>
-        ))}
+      {/* Player is mounted even on the entry screen so the enter button's click
+          can lock the pointer immediately; its lock selector keeps stray clicks
+          from grabbing control before then. Edit mode is unreachable until the
+          user has entered, so its controls only appear afterward. */}
+      {mode === "explore" ? (
+        <Player />
+      ) : (
+        <>
+          <EditControls />
+          <TrackGizmo />
+        </>
+      )}
     </>
   );
 }

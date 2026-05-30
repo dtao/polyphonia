@@ -17,8 +17,10 @@ interface StoreState {
 
   mode: Mode;
   selectedId: string | null;
+  entered: boolean; // has the user started the experience (left the entry screen)
 
   setEngine: (e: AudioEngine | null) => void;
+  setEntered: (entered: boolean) => void;
   setMode: (mode: Mode) => void;
   toggleMode: () => void;
   select: (id: string | null) => void;
@@ -48,8 +50,10 @@ export const useStore = create<StoreState>((set, get) => ({
   engine: null,
   mode: "explore",
   selectedId: null,
+  entered: false,
 
   setEngine: (engine) => set({ engine }),
+  setEntered: (entered) => set({ entered }),
 
   // Leaving edit mode clears the selection (the properties panel is edit-only).
   setMode: (mode) => set((s) => ({ mode, selectedId: mode === "edit" ? s.selectedId : null })),
