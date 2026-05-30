@@ -1,0 +1,47 @@
+import { useEffect, useRef } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import { PointerLockControls } from "@react-three/drei";
+import * as THREE from "three";
+import { AudioEngine } from "../audio/AudioEngine";
+
+// WASD movement on the ground plane + mouse look, and — critically — it feeds
+// the camera's position/orientation to the AudioEngine every frame so the
+// spatial mix tracks where you are and which way you face.
+export function Player({ engine }: { engine: AudioEngine | null }) {
+  const { camera } = useThree();
+  const keys = useRef<Record<string, boolean>>({});
+  const forward = useRef(new THREE.Vector3());
+  const right = useRef(new THREE.Vector3());
+  const up = new THREE.Vector3(0, 1, 0);
+
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => (keys.current[e.code] = true);
+    const upFn = (e: KeyboardEvent) => (keys.current[e.code] = false);
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", upFn);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", upFn);
+    };
+  }, []);
+
+  useFrame((_, dt) => {
+    const speed = 7 * dt;
+    camera.getWorldDirection(forward.current);
+    forward.current.y = 0;
+    forward.current.normalize();
+    right.current.crossVectors(forward.current, up).normalize();
+
+    if (keys.current["KeyW"]) camera.position.addScaledVector(forward.current, speed);
+    if (keys.current["KeyS"]) camera.position.addScaledVector(forward.current, -speed);
+    if (keys.current["KeyD"]) camera.position.addScaledVector(right.current, speed);
+    if (keys.current["KeyA"]) camera.position.addScaledVector(right.current, -speed);
+    camera.position.y = 1.7; // keep eye height fixed
+
+    const dir = new THREE.Vector3();
+    camera.getWorldDirection(dir);
+    engine?.updateListener(camera.position, dir, camera.up);
+  });
+
+  return <PointerLockControls />;
+}
