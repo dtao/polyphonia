@@ -114,6 +114,7 @@ const panel: React.CSSProperties = {
   bottom: 16,
   left: 16,
   width: 240,
+  boxSizing: "border-box",
   padding: 16,
   borderRadius: 12,
   background: "rgba(12,15,28,0.86)",
@@ -125,6 +126,8 @@ const panel: React.CSSProperties = {
 
 const nameInput: React.CSSProperties = {
   flex: 1,
+  minWidth: 0,
+  boxSizing: "border-box",
   background: "rgba(255,255,255,0.06)",
   border: "1px solid rgba(255,255,255,0.15)",
   borderRadius: 6,

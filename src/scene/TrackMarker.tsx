@@ -97,8 +97,21 @@ function FalloffMap({ track }: { track: TrackDef }) {
   const far = Math.max(track.maxDistance ?? 40, near + 1);
   const rolloff = track.rolloff ?? 1;
 
+  function clearSelection(e: ThreeEvent<MouseEvent>) {
+    e.stopPropagation();
+    useStore.getState().select(null);
+  }
+
   return (
-    <group position={[0, 0.035, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+    <group
+      position={[0, 0.035, 0]}
+      rotation={[-Math.PI / 2, 0, 0]}
+      onClick={clearSelection}
+      onPointerOver={(e) => {
+        e.stopPropagation();
+        document.body.style.cursor = "auto";
+      }}
+    >
       <mesh>
         <ringGeometry args={[near, far, 96, 12]} />
         <shaderMaterial
