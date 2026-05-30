@@ -1,10 +1,29 @@
 # Polyphonia
 
 Navigate *through* a musical composition in 3D. Each instrument (stem) lives at
-a point in space; as you move, the spatial mix shifts around you.
+a point in space; as you move, the spatial mix shifts around you — walk toward
+the bass and it swells, drift to the center and you hear the full blend.
 
-This is the **Phase 0 spike** — it proves the core experience: multiple stems,
-kept in perfect sync, spatialized with the Web Audio API as you walk around.
+Polyphonia is a browser-based tool to **explore**, **build**, and **share**
+these spatial compositions.
+
+## Features
+
+- **Explore** — first-person movement (WASD + mouse) through a composition;
+  realistic 3D audio via the Web Audio API (HRTF panning + distance falloff),
+  with every stem kept sample-locked in sync.
+- **Edit** — an overhead edit mode to place tracks in space (drag gizmo), and a
+  properties panel to rename, recolor, set volume, and tune distance falloff.
+- **Build from scratch** — create a new composition (title / artist / BPM) and
+  add stems by file picker or drag-and-drop; uploads drop into the running loop
+  in time.
+- **Local-first** — your work autosaves to the browser (manifests in
+  `localStorage`, stem audio in IndexedDB) and survives reloads. Keep a library
+  of compositions and switch between them.
+- **Portable** — export a composition as a single self-contained
+  `.polyphonia.json` (audio embedded) and re-import it anywhere.
+- **Share** — publish a composition to the cloud and get a stable read-only link
+  (`/c/:id`) anyone can open. *(Requires Supabase config — see below.)*
 
 ## Run
 
@@ -13,33 +32,90 @@ npm install
 npm run dev
 ```
 
-Open the printed URL, click **Enter** (browsers require a gesture before audio),
-then **WASD** to move and the **mouse** to look. Walk into a corner and that
-instrument dominates; stand in the center and you hear the full blend.
+Open the printed URL, pick a composition (the built-in **Journey** demo is
+seeded on first run), and click **Enter**. The app is fully usable offline; only
+publishing/sharing needs the optional Supabase setup.
+
+### Controls
+
+- **Explore:** `WASD` move · mouse look · click the scene to look · `Esc` frees the cursor.
+- **Edit** (toggle with the button or `Tab`): `WASD` pan · drag to orbit/turn · scroll to zoom · click a pillar to select, then drag the gizmo to move it.
+
+## Sharing setup (optional)
+
+Sharing uses [Supabase](https://supabase.com) directly from the frontend — no
+custom server. In a Supabase project:
+
+1. Create a **public** Storage bucket named `stems`.
+2. Create the table and policies (SQL editor):
+
+   ```sql
+   create table compositions (
+     id text primary key,
+     manifest jsonb not null,
+     owner_token text not null,
+     created_at timestamptz default now()
+   );
+   alter table compositions enable row level security;
+
+   create policy "public read compositions" on compositions
+     for select to anon, authenticated using (true);
+   create policy "anon insert compositions" on compositions
+     for insert to anon, authenticated with check (true);
+
+   create policy "anon upload stems" on storage.objects
+     for insert to anon, authenticated with check (bucket_id = 'stems');
+   create policy "public read stems" on storage.objects
+     for select to anon, authenticated using (bucket_id = 'stems');
+   ```
+
+3. Copy `.env.example` to `.env.local` and fill in your project URL + anon key
+   (the anon key is safe to expose in frontend code), then restart the dev
+   server.
+
+When deploying, set the same two env vars in your host's dashboard, and add an
+SPA fallback so `/c/:id` routes serve `index.html`.
 
 ## How it works
 
-- **Sync** — every stem is scheduled off one `AudioContext` clock and started at
-  the same instant (`src/audio/AudioEngine.ts`). They never drift.
-- **Space** — each stem feeds an HRTF `PannerNode` at its 3D position; the
-  camera drives the `AudioListener` every frame (`src/scene/Player.tsx`).
-- **Content** — a composition is just data (`src/composition.ts`). The engine
-  renders whatever manifest it's handed. This is the seam that lets "one
-  composition" grow into "a platform of many."
+- **Engine** ([src/audio/AudioEngine.ts](src/audio/AudioEngine.ts)) — owns one
+  `AudioContext`. Every stem is scheduled off the same clock and started
+  together (so they never drift); each feeds an HRTF `PannerNode` at its 3D
+  position while the camera drives the `AudioListener`. Live setters let edits
+  apply without restarting playback; loop points are trimmed to the musical
+  length to hide MP3 encoder padding.
+- **State** ([src/store.ts](src/store.ts)) — a Zustand store is the single source
+  of truth: the current composition, the library, mode/selection, and the audio
+  engine. The scene renders from it; edits flow back into it and out to the
+  engine.
+- **Composition** ([src/composition.ts](src/composition.ts)) — a composition is
+  just data (tracks = stems + positions + properties). The engine renders any
+  manifest, which is what lets one demo grow into a platform.
+- **Persistence** ([src/persistence.ts](src/persistence.ts)) — local-first
+  library (localStorage manifests + IndexedDB stem blobs), plus export/import.
+- **Cloud** ([src/cloud.ts](src/cloud.ts)) — publish uploads stems to Supabase
+  Storage and the manifest to Postgres; the `/c/:id` viewer fetches it back.
 
-## Using your own stems
+## Project layout
 
-The demo synthesizes four placeholder loops so it runs with zero files. To use
-real audio, drop files in `public/stems/` and edit `src/composition.ts`:
-
-```ts
-{
-  name: "vocals",
-  color: "#ffd166",
-  position: [0, 1.5, -10],
-  source: { kind: "file", url: "/stems/vocals.ogg" },
-}
+```
+src/
+  audio/        AudioEngine (Web Audio) + procedural placeholder synth
+  scene/        React Three Fiber scene: Player, EditControls, gizmo, markers
+  ui/           EntryScreen, PropertiesPanel, AddStem, PublishControl, Viewer
+  composition.ts  types + the built-in "Journey" demo
+  store.ts        Zustand store
+  persistence.ts  local-first save/load + export/import
+  cloud.ts        Supabase publish/fetch
+  App.tsx         editor;  main.tsx  routes ( / editor, /c/:id viewer )
+public/stems/   audio for the built-in demo
 ```
 
-For tight looping, all stems should be the same length (an exact number of
-bars). Use a compressed format (`.ogg` / `.opus`) to keep loads small.
+## Tech stack
+
+Vite · React · TypeScript · [React Three Fiber](https://docs.pmnd.rs/react-three-fiber) + drei + three · Zustand · Web Audio API · Supabase · React Router.
+
+## Roadmap
+
+See [BACKLOG.md](BACKLOG.md) for what's done and what's next (accounts, a public
+gallery, and richer environments down the line).
