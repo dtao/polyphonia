@@ -14,7 +14,7 @@ import {
   importComposition as importBundle,
 } from "./persistence";
 import { newId } from "./id";
-import { defaultEnvironment } from "./environment";
+import { EnvironmentSettings, defaultEnvironment, normalizeEnvironment } from "./environment";
 import { ArtistIdentity } from "./artist";
 import {
   AuthUser,
@@ -86,6 +86,7 @@ interface StoreState {
   setLoopSettings: (settings: Partial<Pick<Composition, "loopEnabled" | "loopStart" | "loopEndTrim" | "loopCrossfade">>) => void;
   auditionLoopSeam: () => void;
   loopProgress: () => { mode: "playing" | "audition"; position: number; duration: number } | null;
+  setEnvironment: (environment: Partial<EnvironmentSettings>) => void;
 
   // Composition library.
   initLibrary: () => Promise<void>;
@@ -265,6 +266,13 @@ export const useStore = create<StoreState>((set, get) => ({
   },
   auditionLoopSeam: () => get().engine?.auditionSeam(),
   loopProgress: () => get().engine?.loopProgress() ?? null,
+  setEnvironment: (environment) =>
+    set((s) => ({
+      composition: {
+        ...s.composition,
+        environment: normalizeEnvironment({ ...s.composition.environment, ...environment }),
+      },
+    })),
 
   // Load the saved library (or seed/migrate) and resolve the current composition.
   initLibrary: async () => {

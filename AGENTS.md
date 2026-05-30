@@ -53,9 +53,10 @@ add a test framework unless asked.
   modes).
 - **UI (DOM overlays):** `src/ui/` — `EntryScreen` (start screen: library
   chooser, new/export/import, sign-in, gallery link), `PropertiesPanel`,
-  `AddStem`, `LoopPanel` (composition loop on/off, seam audition, trim,
-  crossfade), `PublishControl`, `Account` (auth + account artist), `Viewer`
-  (read-only `/c/:id`), `Gallery` (`/gallery`), `ArtistPage` (`/artist/:slug`).
+  `AddStem`, `EnvironmentPanel` (preset + ambience picker), `LoopPanel`
+  (composition loop on/off, seam audition, trim, crossfade), `PublishControl`,
+  `Account` (auth + account artist), `Viewer` (read-only `/c/:id`), `Gallery`
+  (`/gallery`), `ArtistPage` (`/artist/:slug`).
 - **Persistence (local-first):** `src/persistence.ts` — composition manifests in
   `localStorage` (a *library*, schema v2, with migration from the old single
   slot); uploaded stem audio in **IndexedDB** (localStorage can't hold audio).
