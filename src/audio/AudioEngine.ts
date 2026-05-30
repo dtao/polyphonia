@@ -20,6 +20,7 @@ export class AudioEngine {
   private master: GainNode;
   private tracks: LiveTrack[] = [];
   started = false;
+  private loopStart = 0; // absolute ctx time the composition loop began
 
   constructor() {
     this.ctx = new AudioContext();
@@ -42,48 +43,68 @@ export class AudioEngine {
         buffer = stems![def.source.preset];
       }
 
-      const panner = this.ctx.createPanner();
-      panner.panningModel = "HRTF";
-      panner.distanceModel = "inverse";
-      panner.refDistance = def.refDistance ?? 4;
-      panner.maxDistance = def.maxDistance ?? 40;
-      panner.rolloffFactor = def.rolloff ?? 1;
-      this.setPannerPosition(panner, def.position);
-
-      const gain = this.ctx.createGain();
-      gain.gain.value = def.volume ?? 1;
-      const analyser = this.ctx.createAnalyser();
-      analyser.fftSize = 256;
-
-      // source -> gain -> panner -> master.  analyser taps the gain for visuals.
-      gain.connect(panner);
-      gain.connect(analyser);
-      panner.connect(this.master);
-
-      this.tracks.push({
-        def,
-        buffer,
-        panner,
-        gain,
-        analyser,
-        levelData: new Uint8Array(new ArrayBuffer(analyser.fftSize)),
-      });
+      this.tracks.push(this.buildTrack(def, buffer));
     }
+  }
+
+  // Build the node graph for one track (no source yet). source -> gain ->
+  // panner -> master; the analyser taps the gain for visual reactivity.
+  private buildTrack(def: TrackDef, buffer: AudioBuffer): LiveTrack {
+    const panner = this.ctx.createPanner();
+    panner.panningModel = "HRTF";
+    panner.distanceModel = "inverse";
+    panner.refDistance = def.refDistance ?? 4;
+    panner.maxDistance = def.maxDistance ?? 40;
+    panner.rolloffFactor = def.rolloff ?? 1;
+    this.setPannerPosition(panner, def.position);
+
+    const gain = this.ctx.createGain();
+    gain.gain.value = def.volume ?? 1;
+    const analyser = this.ctx.createAnalyser();
+    analyser.fftSize = 256;
+
+    gain.connect(panner);
+    gain.connect(analyser);
+    panner.connect(this.master);
+
+    return { def, buffer, panner, gain, analyser, levelData: new Uint8Array(new ArrayBuffer(analyser.fftSize)) };
+  }
+
+  // (Re)create and start a track's looping source at a given time/offset.
+  private startSource(t: LiveTrack, when: number, offset: number): void {
+    const src = this.ctx.createBufferSource();
+    src.buffer = t.buffer;
+    src.loop = true;
+    src.connect(t.gain);
+    src.start(when, offset);
+    t.source = src;
   }
 
   // Start every stem in lockstep, looped.
   start(): void {
     if (this.started) return;
-    const startAt = this.ctx.currentTime + 0.1;
-    for (const t of this.tracks) {
-      const src = this.ctx.createBufferSource();
-      src.buffer = t.buffer;
-      src.loop = true;
-      src.connect(t.gain);
-      src.start(startAt);
-      t.source = src;
-    }
+    this.loopStart = this.ctx.currentTime + 0.1;
+    for (const t of this.tracks) this.startSource(t, this.loopStart, 0);
     this.started = true;
+  }
+
+  // Decode an uploaded audio file into a buffer.
+  decode(data: ArrayBuffer): Promise<AudioBuffer> {
+    return this.ctx.decodeAudioData(data);
+  }
+
+  // Add a new track to a *playing* composition, phase-aligned to the loop so it
+  // drops in musically. We start its source partway into the buffer by the same
+  // amount the existing loop has already advanced.
+  addLiveTrack(def: TrackDef, buffer: AudioBuffer): void {
+    const t = this.buildTrack(def, buffer);
+    this.tracks.push(t);
+    if (this.started) {
+      const when = this.ctx.currentTime + 0.06;
+      const elapsed = when - this.loopStart;
+      const offset = ((elapsed % buffer.duration) + buffer.duration) % buffer.duration;
+      this.startSource(t, when, offset);
+    }
   }
 
   // Called every frame from the camera. Drives the 3D spatialization.

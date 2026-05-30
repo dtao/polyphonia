@@ -31,7 +31,12 @@ interface StoreState {
   renameTrack: (id: string, name: string) => void;
   setTrackColor: (id: string, color: string) => void;
   deleteTrack: (id: string) => void;
+  addStem: (file: File) => Promise<void>;
 }
+
+const PALETTE = ["#5b8cff", "#ff7a6b", "#ffd166", "#b96bff", "#56e0c0", "#f78fb3", "#7ee081", "#ffa057"];
+const randomColor = () => PALETTE[Math.floor(Math.random() * PALETTE.length)];
+const stripExt = (name: string) => name.replace(/\.[^.]+$/, "");
 
 // Immutably patch one track in the current composition.
 function patchTrack(comp: Composition, id: string, patch: Partial<TrackDef>): Composition {
@@ -71,11 +76,40 @@ export const useStore = create<StoreState>((set, get) => ({
   setTrackColor: (id, color) => set((s) => ({ composition: patchTrack(s.composition, id, { color }) })),
 
   deleteTrack: (id) => {
+    const track = get().composition.tracks.find((t) => t.id === id);
+    // Free the object URL for an uploaded stem.
+    if (track?.source.kind === "file" && track.source.url.startsWith("blob:")) {
+      URL.revokeObjectURL(track.source.url);
+    }
     get().engine?.removeTrack(id);
     markerObjects.delete(id);
     set((s) => ({
       composition: { ...s.composition, tracks: s.composition.tracks.filter((t) => t.id !== id) },
       selectedId: s.selectedId === id ? null : s.selectedId,
+    }));
+  },
+
+  // Decode an uploaded audio file, add it as a track to the playing
+  // composition (phase-aligned), drop it near center, and select it so the
+  // user can immediately position and tune it.
+  addStem: async (file) => {
+    const engine = get().engine;
+    if (!engine) throw new Error("Audio engine not ready");
+    const buffer = await engine.decode(await file.arrayBuffer());
+    const id = (crypto as any).randomUUID?.() ?? `stem-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const def: TrackDef = {
+      id,
+      name: stripExt(file.name),
+      color: randomColor(),
+      position: [(Math.random() * 2 - 1) * 4, 1.5, (Math.random() * 2 - 1) * 4],
+      volume: 1,
+      source: { kind: "file", url: URL.createObjectURL(file) },
+    };
+    engine.addLiveTrack(def, buffer);
+    set((s) => ({
+      composition: { ...s.composition, tracks: [...s.composition.tracks, def] },
+      selectedId: id,
+      mode: "edit",
     }));
   },
 }));

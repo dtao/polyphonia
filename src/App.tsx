@@ -3,6 +3,7 @@ import { Canvas } from "@react-three/fiber";
 import { Scene } from "./scene/Scene";
 import { AudioEngine } from "./audio/AudioEngine";
 import { PropertiesPanel } from "./ui/PropertiesPanel";
+import { AddStem } from "./ui/AddStem";
 import { useStore } from "./store";
 
 export default function App() {
@@ -117,6 +118,7 @@ export default function App() {
           </div>
 
           <PropertiesPanel />
+          <AddStem />
         </>
       )}
     </>
