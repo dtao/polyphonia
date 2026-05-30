@@ -4,6 +4,7 @@ import * as THREE from "three";
 import { EnvironmentSettings } from "../environment";
 
 type PropSet = Array<{ position: [number, number, number]; scale: [number, number, number]; rotation?: [number, number, number] }>;
+type TorchSet = Array<{ position: [number, number, number]; rotation: [number, number, number]; color: string }>;
 
 export function EnvironmentScene({ environment, editMode }: { environment: EnvironmentSettings; editMode: boolean }) {
   const tone = TONES[environment.type];
@@ -49,31 +50,88 @@ function Studio({ accents }: { accents: number }) {
 }
 
 function Cavern({ ambience }: { ambience: number }) {
-  const rocks = useMemo(() => ringProps(18, 22, 7), []);
-  const stalactites = useMemo(() => ringProps(14, 17, 11), []);
+  const wallRocks = useMemo(() => cavernWallProps(30), []);
+  const ceilingRibs = useMemo(() => cavernCeilingProps(18), []);
+  const stalactites = useMemo(() => cavernSpikeProps(26, 10), []);
+  const stalagmites = useMemo(() => cavernSpikeProps(22, 14), []);
+  const rubble = useMemo(() => scatterProps(48, 9, 34), []);
+  const torches = useMemo<TorchSet>(
+    () => [
+      { position: [-14, 1.2, -11], rotation: [0, 0.55, 0], color: "#ffbf75" },
+      { position: [16, 1.2, -6], rotation: [0, -0.75, 0], color: "#ff9f52" },
+      { position: [-10, 1.2, 16], rotation: [0, -0.15, 0], color: "#ffd38d" },
+    ],
+    [],
+  );
 
   return (
     <>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.08, 0]}>
         <circleGeometry args={[55, 96]} />
-        <FloorMaterial base="#2a252b" accent="#5a4a40" density={1.35} />
+        <CavernFloorMaterial />
       </mesh>
-      {rocks.map((p, i) => (
-        <mesh key={`rock-${i}`} position={p.position} scale={p.scale} rotation={p.rotation}>
+      <mesh position={[0, 5.7, 0]} scale={[1, 0.55, 1]} rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[27, 7, 12, 96, Math.PI * 2]} />
+        <meshStandardMaterial color="#2d2830" roughness={1} side={THREE.BackSide} />
+      </mesh>
+      {wallRocks.map((p, i) => (
+        <mesh key={`wall-${i}`} position={p.position} scale={p.scale} rotation={p.rotation}>
           <dodecahedronGeometry args={[1, 1]} />
-          <meshStandardMaterial color={i % 2 ? "#5a5258" : "#463f47"} roughness={0.95} />
+          <meshStandardMaterial color={i % 3 === 0 ? "#665b5f" : i % 3 === 1 ? "#4d454d" : "#3b343c"} roughness={0.98} />
+        </mesh>
+      ))}
+      {ceilingRibs.map((p, i) => (
+        <mesh key={`rib-${i}`} position={p.position} scale={p.scale} rotation={p.rotation}>
+          <boxGeometry args={[1, 1, 1]} />
+          <meshStandardMaterial color={i % 2 ? "#2f2932" : "#3b3339"} roughness={1} />
         </mesh>
       ))}
       {stalactites.map((p, i) => (
-        <mesh key={`stalactite-${i}`} position={[p.position[0], 7.5 + (i % 3), p.position[2]]} scale={[p.scale[0] * 0.5, p.scale[1] * 1.8, p.scale[2] * 0.5]} rotation={[Math.PI, 0, 0]}>
+        <mesh key={`stalactite-${i}`} position={[p.position[0], 7.2 + (i % 5) * 0.35, p.position[2]]} scale={[p.scale[0] * 0.42, p.scale[1] * 2.1, p.scale[2] * 0.42]} rotation={[Math.PI, p.rotation?.[1] ?? 0, 0]}>
           <coneGeometry args={[1, 4, 7]} />
-          <meshStandardMaterial color="#504750" roughness={0.95} />
+          <meshStandardMaterial color={i % 2 ? "#6c6267" : "#524a52"} roughness={0.98} />
         </mesh>
+      ))}
+      {stalagmites.map((p, i) => (
+        <mesh key={`stalagmite-${i}`} position={[p.position[0], 1.1 + (i % 4) * 0.18, p.position[2]]} scale={[p.scale[0] * 0.45, p.scale[1] * 1.2, p.scale[2] * 0.45]} rotation={[0, p.rotation?.[1] ?? 0, 0]}>
+          <coneGeometry args={[1, 3.2, 7]} />
+          <meshStandardMaterial color={i % 2 ? "#5e555c" : "#473f47"} roughness={0.98} />
+        </mesh>
+      ))}
+      {rubble.map((p, i) => (
+        <mesh key={`rubble-${i}`} position={[p.position[0], 0.12, p.position[2]]} scale={[p.scale[0] * 0.55, p.scale[1] * 0.22, p.scale[2] * 0.55]} rotation={p.rotation}>
+          <dodecahedronGeometry args={[1, 0]} />
+          <meshStandardMaterial color={i % 3 === 0 ? "#6d625b" : "#4c4548"} roughness={1} />
+        </mesh>
+      ))}
+      <mesh rotation={[-Math.PI / 2, 0, -0.2]} position={[1, 0.005, 3]}>
+        <planeGeometry args={[7, 28, 1, 1]} />
+        <meshStandardMaterial color="#151924" emissive="#0b1b28" emissiveIntensity={0.35} roughness={0.2} metalness={0.25} transparent opacity={0.74} />
+      </mesh>
+      {torches.map((torch, i) => (
+        <Torch key={`torch-${i}`} {...torch} ambience={ambience} />
       ))}
       <pointLight position={[-12, 5, -8]} color="#aeb8ff" intensity={7.2 + ambience * 2.6} distance={48} />
       <pointLight position={[10, 3, 12]} color="#ffdca8" intensity={3.6 + ambience * 1.4} distance={34} />
       <pointLight position={[0, 6, 0]} color="#f0e8ff" intensity={5.2 + ambience * 1.8} distance={42} />
+      <Sparkles count={34} scale={[38, 8, 38]} size={0.9} speed={0.08} color="#ffddaa" opacity={0.16} />
     </>
+  );
+}
+
+function Torch({ position, rotation, color, ambience }: { position: [number, number, number]; rotation: [number, number, number]; color: string; ambience: number }) {
+  return (
+    <group position={position} rotation={rotation}>
+      <mesh position={[0, 0.65, 0]} rotation={[0.35, 0, 0]}>
+        <cylinderGeometry args={[0.07, 0.11, 1.3, 8]} />
+        <meshStandardMaterial color="#2b1710" roughness={0.7} />
+      </mesh>
+      <mesh position={[0, 1.35, 0]}>
+        <sphereGeometry args={[0.22, 10, 8]} />
+        <meshBasicMaterial color={color} toneMapped={false} />
+      </mesh>
+      <pointLight position={[0, 1.35, 0]} color={color} intensity={4.5 + ambience * 2.5} distance={18} />
+    </group>
   );
 }
 
@@ -145,6 +203,20 @@ function FloorMaterial({ base, accent, density }: { base: string; accent: string
   );
 }
 
+function CavernFloorMaterial() {
+  return (
+    <shaderMaterial
+      uniforms={{
+        baseColor: { value: new THREE.Color("#2a2527") },
+        accentColor: { value: new THREE.Color("#75604d") },
+        wetColor: { value: new THREE.Color("#141923") },
+      }}
+      vertexShader={floorVertexShader}
+      fragmentShader={cavernFloorFragmentShader}
+    />
+  );
+}
+
 const floorVertexShader = `
   varying vec2 vWorld;
 
@@ -186,6 +258,38 @@ const floorFragmentShader = `
   }
 `;
 
+const cavernFloorFragmentShader = `
+  uniform vec3 baseColor;
+  uniform vec3 accentColor;
+  uniform vec3 wetColor;
+  varying vec2 vWorld;
+
+  float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+  }
+
+  float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    float a = hash(i);
+    float b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0));
+    float d = hash(i + vec2(1.0, 1.0));
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+  }
+
+  void main() {
+    float broad = noise(vWorld * 0.16);
+    float grain = noise(vWorld * 1.1) * 0.28;
+    float path = smoothstep(4.8, 0.4, abs(vWorld.x * 0.65 + sin(vWorld.y * 0.18) * 1.6));
+    float puddle = smoothstep(0.72, 1.0, noise(vWorld * 0.32 + vec2(4.0, 1.0))) * path;
+    vec3 rock = mix(baseColor, accentColor, clamp(broad * 0.55 + grain, 0.0, 1.0));
+    vec3 color = mix(rock, wetColor, puddle * 0.55);
+    gl_FragColor = vec4(color, 1.0);
+  }
+`;
+
 function ringProps(count: number, minRadius: number, seed: number): PropSet {
   return Array.from({ length: count }, (_, i) => {
     const a = (i / count) * Math.PI * 2;
@@ -195,6 +299,42 @@ function ringProps(count: number, minRadius: number, seed: number): PropSet {
       position: [Math.cos(a) * r, 1.2 + (i % 4) * 0.35, Math.sin(a) * r],
       scale: [2.2 + (i % 3), 2.4 + (i % 5), 1.6 + ((i + 1) % 3)],
       rotation: [0.2 * i, a, 0.12 * i],
+    };
+  });
+}
+
+function cavernWallProps(count: number): PropSet {
+  return Array.from({ length: count }, (_, i) => {
+    const a = (i / count) * Math.PI * 2;
+    const r = 25 + Math.sin(i * 1.9) * 2.4;
+    return {
+      position: [Math.cos(a) * r, 2.3 + (i % 4) * 0.45, Math.sin(a) * r],
+      scale: [3.6 + (i % 5) * 0.6, 4.6 + (i % 6) * 0.8, 2.4 + (i % 4) * 0.5],
+      rotation: [0.12 * i, a + Math.PI / 2, 0.08 * i],
+    };
+  });
+}
+
+function cavernCeilingProps(count: number): PropSet {
+  return Array.from({ length: count }, (_, i) => {
+    const a = (i / count) * Math.PI * 2;
+    const r = 14 + (i % 4) * 2.2;
+    return {
+      position: [Math.cos(a) * r, 8.4 + Math.sin(i * 2.1) * 0.8, Math.sin(a) * r],
+      scale: [1.1, 0.75, 8 + (i % 5)],
+      rotation: [0.4, a, 0.15],
+    };
+  });
+}
+
+function cavernSpikeProps(count: number, minRadius: number): PropSet {
+  return Array.from({ length: count }, (_, i) => {
+    const a = i * 2.399963;
+    const r = minRadius + ((i * 5) % 24);
+    return {
+      position: [Math.cos(a) * r, 0, Math.sin(a) * r],
+      scale: [0.7 + (i % 4) * 0.22, 0.8 + (i % 5) * 0.35, 0.7 + ((i + 2) % 4) * 0.2],
+      rotation: [0, a, 0],
     };
   });
 }
