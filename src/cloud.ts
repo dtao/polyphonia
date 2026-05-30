@@ -126,6 +126,15 @@ export interface GallerySummary {
   createdAt: string;
 }
 
+function toGallerySummary(r: any): GallerySummary {
+  return {
+    id: r.id,
+    title: r.title ?? "Untitled",
+    artist: r.artist ?? "Unknown",
+    createdAt: r.created_at,
+  };
+}
+
 // The most recently published compositions, for the public gallery.
 export async function listRecent(limit = 50): Promise<GallerySummary[]> {
   const { data, error } = await supabase()
@@ -134,12 +143,19 @@ export async function listRecent(limit = 50): Promise<GallerySummary[]> {
     .order("created_at", { ascending: false })
     .limit(limit);
   if (error) throw error;
-  return (data ?? []).map((r: any) => ({
-    id: r.id,
-    title: r.title ?? "Untitled",
-    artist: r.artist ?? "Unknown",
-    createdAt: r.created_at,
-  }));
+  return (data ?? []).map(toGallerySummary);
+}
+
+// Published compositions for one artist, newest first.
+export async function listByArtist(artist: string, limit = 50): Promise<GallerySummary[]> {
+  const { data, error } = await supabase()
+    .from(TABLE)
+    .select("id, title, artist, created_at")
+    .eq("artist", artist)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []).map(toGallerySummary);
 }
 
 // Unpublish: remove the row and its stored stems (owner-gated by RLS).

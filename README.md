@@ -24,6 +24,8 @@ these spatial compositions.
   `.polyphonia.json` (audio embedded) and re-import it anywhere.
 - **Share** — publish a composition to the cloud and get a stable read-only link
   (`/c/:id`) anyone can open. *(Requires Supabase config — see below.)*
+- **Discover artists** — browse the public gallery or an artist page
+  (`/artist/:artist`) to find everything published under a given artist name.
 
 ## Run
 
@@ -94,7 +96,8 @@ SPA fallback so `/c/:id` routes serve `index.html`.
 - **Persistence** ([src/persistence.ts](src/persistence.ts)) — local-first
   library (localStorage manifests + IndexedDB stem blobs), plus export/import.
 - **Cloud** ([src/cloud.ts](src/cloud.ts)) — publish uploads stems to Supabase
-  Storage and the manifest to Postgres; the `/c/:id` viewer fetches it back.
+  Storage and the manifest to Postgres; the `/c/:id` viewer and artist pages
+  fetch public rows back.
 
 ## Project layout
 
@@ -102,12 +105,12 @@ SPA fallback so `/c/:id` routes serve `index.html`.
 src/
   audio/        AudioEngine (Web Audio) + procedural placeholder synth
   scene/        React Three Fiber scene: Player, EditControls, gizmo, markers
-  ui/           EntryScreen, PropertiesPanel, AddStem, PublishControl, Viewer
+  ui/           EntryScreen, PropertiesPanel, AddStem, PublishControl, Viewer, Gallery
   composition.ts  types + the built-in "Journey" demo
   store.ts        Zustand store
   persistence.ts  local-first save/load + export/import
   cloud.ts        Supabase publish/fetch
-  App.tsx         editor;  main.tsx  routes ( / editor, /c/:id viewer )
+  App.tsx         editor;  main.tsx  routes ( / editor, /c/:id viewer, /gallery, /artist/:artist )
 public/stems/   audio for the built-in demo
 ```
 

@@ -4,6 +4,7 @@ import { Canvas } from "@react-three/fiber";
 import { Scene } from "../scene/Scene";
 import { useStore } from "../store";
 import { fetchPublishedComposition, isSharingConfigured } from "../cloud";
+import { artistPath } from "./galleryStyles";
 
 type Status = "loading" | "ready" | "notfound" | "error";
 
@@ -64,7 +65,9 @@ export function Viewer() {
       {status === "ready" && !entered && (
         <div style={overlay}>
           <h1 style={{ fontSize: 36, margin: 0, letterSpacing: 1 }}>{comp.title}</h1>
-          <p style={{ opacity: 0.7, margin: 0 }}>{comp.artist}</p>
+          <Link to={artistPath(comp.artist)} style={artistLink}>
+            {comp.artist}
+          </Link>
           <button id="enter-btn" style={button} onClick={enter}>
             ▶ Enter
           </button>
@@ -74,7 +77,11 @@ export function Viewer() {
 
       {status === "ready" && entered && engine && (
         <div style={hud}>
-          <strong>{comp.title}</strong> — {comp.artist} · shared
+          <strong>{comp.title}</strong> —{" "}
+          <Link to={artistPath(comp.artist)} style={hudArtistLink}>
+            {comp.artist}
+          </Link>{" "}
+          · shared
           <Link style={makeLink} to="/">
             Make your own ↗
           </Link>
@@ -134,5 +141,16 @@ const hud: React.CSSProperties = {
 const makeLink: React.CSSProperties = {
   marginLeft: 10,
   color: "rgba(150,180,255,0.95)",
+  pointerEvents: "auto",
+};
+
+const artistLink: React.CSSProperties = {
+  color: "rgba(190,205,255,0.95)",
+  margin: 0,
+  textDecoration: "none",
+};
+
+const hudArtistLink: React.CSSProperties = {
+  color: "rgba(190,205,255,0.95)",
   pointerEvents: "auto",
 };

@@ -30,6 +30,7 @@ depends only on earlier ones.
 - [x] **14. Stable share URLs** — `/c/:id` loads a published composition read-only (React Router + read-only viewer).
 - [x] **15. Accounts & ownership** — email magic-link sign-in (Supabase Auth); publishing requires sign-in and ties the composition to the user (`owner` + RLS); "Your published links" manager to copy/unpublish. Editing/playing stays accountless.
 - [x] **16. Public gallery** — `/gallery` grid of the 50 most recently published compositions (denormalized `title`/`artist` columns, populated at publish); cards open the read-only `/c/:id` viewer. _Future: an `unlisted` opt-out flag and popularity ranking (visits/shares/votes); search/sort; moderation/report flow._
+- [x] **17. Artist pages** — `/artist/:artist` lists the published compositions for that artist; artist names link there from both the gallery and shared composition viewer.
 
 ## Later — Immersive environments (north star)
 

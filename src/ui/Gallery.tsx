@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { isSharingConfigured, listRecent, GallerySummary } from "../cloud";
+import { artistPath, card, cardArtist, cardTitle, grid, head, homeLink, muted, page } from "./galleryStyles";
 
 // Public gallery: a grid of the most recently published compositions. Each card
 // opens the read-only viewer at /c/:id.
@@ -39,64 +40,17 @@ export function Gallery() {
       ) : (
         <div style={grid}>
           {items.map((it) => (
-            <Link key={it.id} to={`/c/${it.id}`} style={card}>
-              <div style={cardTitle}>{it.title}</div>
-              <div style={cardArtist}>{it.artist}</div>
-            </Link>
+            <article key={it.id} style={card}>
+              <Link to={`/c/${it.id}`} style={cardTitle}>
+                {it.title}
+              </Link>
+              <Link to={artistPath(it.artist)} style={cardArtist}>
+                {it.artist}
+              </Link>
+            </article>
           ))}
         </div>
       )}
     </div>
   );
 }
-
-const page: React.CSSProperties = {
-  position: "absolute",
-  inset: 0,
-  overflowY: "auto",
-  background: "radial-gradient(circle at center, rgba(20,24,48,0.95), rgba(5,6,10,1))",
-  color: "white",
-  fontFamily: "system-ui, sans-serif",
-  padding: "32px 40px",
-};
-
-const head: React.CSSProperties = {
-  display: "flex",
-  alignItems: "baseline",
-  justifyContent: "space-between",
-  maxWidth: 1100,
-  margin: "0 auto 24px",
-};
-
-const homeLink: React.CSSProperties = { color: "rgba(255,255,255,0.6)", fontSize: 14, textDecoration: "none" };
-
-const muted: React.CSSProperties = { textAlign: "center", opacity: 0.6, marginTop: 80 };
-
-const grid: React.CSSProperties = {
-  maxWidth: 1100,
-  margin: "0 auto",
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-  gap: 16,
-};
-
-const card: React.CSSProperties = {
-  display: "block",
-  padding: 18,
-  height: 120,
-  borderRadius: 12,
-  border: "1px solid rgba(255,255,255,0.12)",
-  background: "rgba(255,255,255,0.05)",
-  color: "white",
-  textDecoration: "none",
-};
-
-const cardTitle: React.CSSProperties = {
-  fontSize: 18,
-  fontWeight: 600,
-  whiteSpace: "nowrap",
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-};
-
-const cardArtist: React.CSSProperties = { fontSize: 13, opacity: 0.6, marginTop: 4 };
