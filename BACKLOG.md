@@ -48,6 +48,15 @@ depends only on earlier ones.
 - [ ] **29. Publish/viewer compatibility for environments** — ensure `/c/:id`, `/gallery`, artist pages, export/import, and older manifests all handle environment and tiling metadata gracefully.
 - [ ] **30. Open-world stitching prototype** — explore streaming/culling multiple artists' spaces into neighborhoods once single-composition tiling works.
 
+## Milestone 6 — Authored high-fidelity environments
+
+- [ ] **31. Environment asset pipeline** — support GLB/GLTF scene kits with compressed geometry/textures, preloading, attribution metadata, and safe fallbacks when assets fail.
+- [ ] **32. PBR material pipeline** — load authored albedo/normal/roughness/metalness/AO/emissive maps so rock, foliage, crystal, water, and architectural surfaces read as real materials.
+- [ ] **33. Hero environment prototype** — build one hand-composed AAA-style cavern scene with modular assets, authored lighting, landmarks, and an edit-friendly visibility mode.
+- [ ] **34. Postprocessing pass** — add a restrained configurable stack for bloom, ambient occlusion, tone mapping, color grading, vignette, and depth fog.
+- [ ] **35. Runtime optimization pass** — introduce instancing/LOD/culling/texture budgets so high-detail environments stay responsive in the browser.
+- [ ] **36. Environment authoring workflow** — document how new environment packs are produced, reviewed, optimized, licensed, and wired into composition metadata.
+
 ## Polish & fixes (done along the way)
 
 - [x] Smooth movement (capped pixel ratio); spawn facing forward.
