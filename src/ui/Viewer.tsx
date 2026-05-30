@@ -4,7 +4,7 @@ import { Canvas } from "@react-three/fiber";
 import { Scene } from "../scene/Scene";
 import { useStore } from "../store";
 import { fetchPublishedComposition, isSharingConfigured } from "../cloud";
-import { artistPath } from "./galleryStyles";
+import { ArtistAvatar, artistPath } from "./galleryStyles";
 
 type Status = "loading" | "ready" | "notfound" | "error";
 
@@ -65,7 +65,8 @@ export function Viewer() {
       {status === "ready" && !entered && (
         <div style={overlay}>
           <h1 style={{ fontSize: 36, margin: 0, letterSpacing: 1 }}>{comp.title}</h1>
-          <Link to={artistPath(comp.artist)} style={artistLink}>
+          <Link to={artistPath(comp.artist, comp.artistSlug)} style={artistLink}>
+            <ArtistAvatar artist={comp} size={24} />
             {comp.artist}
           </Link>
           <button id="enter-btn" style={button} onClick={enter}>
@@ -78,7 +79,7 @@ export function Viewer() {
       {status === "ready" && entered && engine && (
         <div style={hud}>
           <strong>{comp.title}</strong> —{" "}
-          <Link to={artistPath(comp.artist)} style={hudArtistLink}>
+          <Link to={artistPath(comp.artist, comp.artistSlug)} style={hudArtistLink}>
             {comp.artist}
           </Link>{" "}
           · shared
@@ -145,6 +146,9 @@ const makeLink: React.CSSProperties = {
 };
 
 const artistLink: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 8,
   color: "rgba(190,205,255,0.95)",
   margin: 0,
   textDecoration: "none",

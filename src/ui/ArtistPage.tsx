@@ -1,34 +1,37 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { GallerySummary, isSharingConfigured, listByArtist } from "../cloud";
-import { card, cardArtist, cardTitle, grid, head, homeLink, muted, page } from "./galleryStyles";
+import { GallerySummary, isSharingConfigured, listByArtistSlug } from "../cloud";
+import { ArtistAvatar, card, cardArtist, cardTitle, grid, head, homeLink, muted, page } from "./galleryStyles";
 
 // Public artist page: all published compositions for a denormalized artist name.
 export function ArtistPage() {
-  const { artist = "" } = useParams();
-  const artistName = artist;
+  const { slug = "" } = useParams();
   const [items, setItems] = useState<GallerySummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const artist = items?.[0];
 
   useEffect(() => {
     if (!isSharingConfigured) {
       setError("Sharing isn't configured.");
       return;
     }
-    listByArtist(artistName, 100)
+    listByArtistSlug(slug, 100)
       .then(setItems)
       .catch((e) => {
         console.error(e);
         setError("Couldn't load this artist.");
       });
-  }, [artistName]);
+  }, [slug]);
 
   return (
     <div style={page}>
       <header style={head}>
         <div>
           <p style={{ margin: "0 0 4px", opacity: 0.55, fontSize: 13 }}>Artist</p>
-          <h1 style={{ margin: 0, fontSize: 28, letterSpacing: 1 }}>{artistName || "Unknown"}</h1>
+          <h1 style={{ margin: 0, fontSize: 28, letterSpacing: 1, display: "flex", alignItems: "center", gap: 10 }}>
+            {artist && <ArtistAvatar artist={artist} size={34} />}
+            {artist?.artist || slug || "Unknown"}
+          </h1>
         </div>
         <div style={{ display: "flex", gap: 16 }}>
           <Link to="/gallery" style={homeLink}>
@@ -53,7 +56,10 @@ export function ArtistPage() {
               <Link to={`/c/${it.id}`} style={cardTitle}>
                 {it.title}
               </Link>
-              <span style={{ ...cardArtist, color: "rgba(255,255,255,0.55)" }}>{it.artist}</span>
+              <span style={{ ...cardArtist, color: "rgba(255,255,255,0.55)" }}>
+                <ArtistAvatar artist={it} size={20} />
+                {it.artist}
+              </span>
             </article>
           ))}
         </div>

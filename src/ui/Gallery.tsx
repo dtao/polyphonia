@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { isSharingConfigured, listRecent, GallerySummary } from "../cloud";
-import { artistPath, card, cardArtist, cardTitle, grid, head, homeLink, muted, page } from "./galleryStyles";
+import { ArtistAvatar, artistPath, card, cardArtist, cardTitle, grid, head, homeLink, muted, page } from "./galleryStyles";
 
 // Public gallery: a grid of the most recently published compositions. Each card
 // opens the read-only viewer at /c/:id.
@@ -44,7 +44,8 @@ export function Gallery() {
               <Link to={`/c/${it.id}`} style={cardTitle}>
                 {it.title}
               </Link>
-              <Link to={artistPath(it.artist)} style={cardArtist}>
+              <Link to={artistPath(it.artist, it.artistSlug)} style={cardArtist}>
+                <ArtistAvatar artist={it} size={20} />
                 {it.artist}
               </Link>
             </article>

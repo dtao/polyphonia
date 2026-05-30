@@ -135,8 +135,16 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   publishCurrent: async () => {
-    const id = await publishComposition(get().composition);
-    const composition = { ...get().composition, publishedId: id };
+    const published = await publishComposition(get().composition);
+    const composition = {
+      ...get().composition,
+      artist: published.artist,
+      artistId: published.artistId,
+      artistSlug: published.artistSlug,
+      artistAvatarUrl: published.artistAvatarUrl,
+      artistAvatarEmailHash: published.artistAvatarEmailHash,
+      publishedId: published.id,
+    };
     const library = upsert(get().library, serializeComposition(composition));
     set({ composition, library });
     persistLibrary(library, composition.id);

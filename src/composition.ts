@@ -34,6 +34,11 @@ export interface Composition {
   id: string;
   title: string;
   artist: string;
+  /** Cloud artist identity. Display names may collide; slugs/ids should not. */
+  artistId?: string;
+  artistSlug?: string;
+  artistAvatarUrl?: string;
+  artistAvatarEmailHash?: string;
   bpm: number;
   /**
    * Loop length in bars (4 beats each). When set, stems are trimmed to this

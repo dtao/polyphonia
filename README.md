@@ -25,7 +25,7 @@ these spatial compositions.
 - **Share** — publish a composition to the cloud and get a stable read-only link
   (`/c/:id`) anyone can open. *(Requires Supabase config — see below.)*
 - **Discover artists** — browse the public gallery or an artist page
-  (`/artist/:artist`) to find everything published under a given artist name.
+  (`/artist/:slug`) to find everything published under a unique artist slug.
 
 ## Run
 
@@ -52,23 +52,58 @@ custom server. In a Supabase project:
 2. Create the table and policies (SQL editor):
 
    ```sql
+   create table artists (
+     id uuid primary key default gen_random_uuid(),
+     owner uuid not null references auth.users(id),
+     name text not null,
+     slug text not null unique,
+     avatar_url text,
+     avatar_email_hash text,
+     created_at timestamptz default now(),
+     unique (owner, name)
+   );
+
    create table compositions (
      id text primary key,
      manifest jsonb not null,
-     owner_token text not null,
-     created_at timestamptz default now()
+     owner uuid not null references auth.users(id),
+     artist_id uuid not null references artists(id),
+     title text not null,
+     title_key text not null,
+     artist text not null,
+     artist_slug text not null,
+     artist_avatar_url text,
+     artist_avatar_email_hash text,
+     created_at timestamptz default now(),
+     unique (artist_id, title_key)
    );
+   alter table artists enable row level security;
    alter table compositions enable row level security;
+
+   create policy "public read artists" on artists
+     for select to anon, authenticated using (true);
+   create policy "owners insert artists" on artists
+     for insert to authenticated with check (owner = auth.uid());
+   create policy "owners update artists" on artists
+     for update to authenticated using (owner = auth.uid()) with check (owner = auth.uid());
 
    create policy "public read compositions" on compositions
      for select to anon, authenticated using (true);
-   create policy "anon insert compositions" on compositions
-     for insert to anon, authenticated with check (true);
+   create policy "owners insert compositions" on compositions
+     for insert to authenticated with check (owner = auth.uid());
+   create policy "owners update compositions" on compositions
+     for update to authenticated using (owner = auth.uid()) with check (owner = auth.uid());
+   create policy "owners delete compositions" on compositions
+     for delete to authenticated using (owner = auth.uid());
 
-   create policy "anon upload stems" on storage.objects
-     for insert to anon, authenticated with check (bucket_id = 'stems');
    create policy "public read stems" on storage.objects
      for select to anon, authenticated using (bucket_id = 'stems');
+   create policy "owners upload stems" on storage.objects
+     for insert to authenticated with check (bucket_id = 'stems');
+   create policy "owners update stems" on storage.objects
+     for update to authenticated using (bucket_id = 'stems') with check (bucket_id = 'stems');
+   create policy "owners delete stems" on storage.objects
+     for delete to authenticated using (bucket_id = 'stems');
    ```
 
 3. Copy `.env.example` to `.env.local` and fill in your project URL + anon key
@@ -76,7 +111,8 @@ custom server. In a Supabase project:
    server.
 
 When deploying, set the same two env vars in your host's dashboard, and add an
-SPA fallback so `/c/:id` routes serve `index.html`.
+SPA fallback so routes like `/c/:id`, `/gallery`, and `/artist/:slug` serve
+`index.html`.
 
 ## How it works
 
@@ -110,7 +146,7 @@ src/
   store.ts        Zustand store
   persistence.ts  local-first save/load + export/import
   cloud.ts        Supabase publish/fetch
-  App.tsx         editor;  main.tsx  routes ( / editor, /c/:id viewer, /gallery, /artist/:artist )
+  App.tsx         editor;  main.tsx  routes ( / editor, /c/:id viewer, /gallery, /artist/:slug )
 public/stems/   audio for the built-in demo
 ```
 
