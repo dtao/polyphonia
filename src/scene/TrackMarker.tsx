@@ -1,6 +1,6 @@
 import { useCallback, useRef } from "react";
 import { useFrame, ThreeEvent } from "@react-three/fiber";
-import { Text } from "@react-three/drei";
+import { Billboard, Text } from "@react-three/drei";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
 import { markerObjects, useStore } from "../store";
@@ -75,9 +75,13 @@ export function TrackMarker({ track }: { track: TrackDef }) {
         </mesh>
       )}
       <pointLight ref={glow} position={[0, y + 1.6, 0]} color={track.color} intensity={6} distance={18} />
-      <Text position={[0, y + 2.8, 0]} fontSize={0.5} color="white" anchorX="center">
-        {track.name}
-      </Text>
+      {/* Billboard keeps the label facing the camera so it's always readable,
+          even when you walk behind the pillar. */}
+      <Billboard position={[0, y + 2.8, 0]}>
+        <Text fontSize={0.5} color="white" anchorX="center">
+          {track.name}
+        </Text>
+      </Billboard>
     </group>
   );
 }
