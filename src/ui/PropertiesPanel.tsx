@@ -27,6 +27,7 @@ export function PropertiesPanel() {
 
       <Slider
         label="Volume"
+        help="Overall loudness for this stem, before distance is applied."
         value={track.volume ?? 1}
         min={0}
         max={1.5}
@@ -35,6 +36,7 @@ export function PropertiesPanel() {
       />
       <Slider
         label="Near (full)"
+        help="Within this distance, the stem stays at full spatial volume."
         value={track.refDistance ?? 4}
         min={1}
         max={20}
@@ -43,6 +45,7 @@ export function PropertiesPanel() {
       />
       <Slider
         label="Far (silent)"
+        help="Beyond this distance, moving farther away stops changing the level."
         value={track.maxDistance ?? 40}
         min={10}
         max={80}
@@ -51,6 +54,7 @@ export function PropertiesPanel() {
       />
       <Slider
         label="Rolloff"
+        help="How quickly the stem fades as you move away; higher is steeper."
         value={track.rolloff ?? 1}
         min={0.1}
         max={3}
@@ -67,6 +71,7 @@ export function PropertiesPanel() {
 
 function Slider({
   label,
+  help,
   value,
   min,
   max,
@@ -74,6 +79,7 @@ function Slider({
   onChange,
 }: {
   label: string;
+  help: string;
   value: number;
   min: number;
   max: number;
@@ -95,6 +101,7 @@ function Slider({
         onChange={(e) => onChange(parseFloat(e.target.value))}
         style={{ width: "100%", accentColor: "#5b8cff", cursor: "pointer" }}
       />
+      <div style={helpText}>{help}</div>
     </label>
   );
 }
@@ -133,4 +140,11 @@ const deleteBtn: React.CSSProperties = {
   color: "#ff9b8f",
   cursor: "pointer",
   fontSize: 13,
+};
+
+const helpText: React.CSSProperties = {
+  marginTop: 2,
+  color: "rgba(255,255,255,0.52)",
+  fontSize: 11,
+  lineHeight: 1.35,
 };
