@@ -107,21 +107,60 @@ function Cavern({ ambience }: { ambience: number }) {
       ))}
       <mesh rotation={[-Math.PI / 2, 0, -0.2]} position={[1, 0.005, 3]}>
         <planeGeometry args={[7, 28, 1, 1]} />
-        <meshStandardMaterial color="#151924" emissive="#0b1b28" emissiveIntensity={0.35} roughness={0.2} metalness={0.25} transparent opacity={0.74} />
+        <meshStandardMaterial color="#1a2430" emissive="#173044" emissiveIntensity={0.72} roughness={0.2} metalness={0.25} transparent opacity={0.86} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, -0.45]} position={[-6, 0.01, -8]}>
         <circleGeometry args={[3.2, 32]} />
-        <meshStandardMaterial color="#111722" emissive="#0e2230" emissiveIntensity={0.4} roughness={0.15} metalness={0.2} transparent opacity={0.68} />
+        <meshStandardMaterial color="#152231" emissive="#18384c" emissiveIntensity={0.78} roughness={0.15} metalness={0.2} transparent opacity={0.78} />
       </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0.08]} position={[0, 0.018, -7.2]}>
+        <planeGeometry args={[5.5, 15, 1, 1]} />
+        <meshBasicMaterial color="#6f5946" transparent opacity={0.2} depthWrite={false} />
+      </mesh>
+      <group position={[0, 0, -13]}>
+        <mesh position={[0, 3.05, -0.2]} scale={[7.8, 3.4, 1.35]} rotation={[0.04, 0, 0]}>
+          <dodecahedronGeometry args={[1, 1]} />
+          <meshStandardMaterial color="#5e5354" roughness={1} />
+        </mesh>
+        <mesh position={[0, 3.2, 0.72]} scale={[4.2, 2.5, 0.44]}>
+          <boxGeometry args={[1, 1, 1]} />
+          <meshBasicMaterial color="#21171a" />
+        </mesh>
+        <mesh position={[0, 2.7, 0.52]} scale={[2.9, 1.85, 0.28]}>
+          <boxGeometry args={[1, 1, 1]} />
+          <meshBasicMaterial color="#ffb367" transparent opacity={0.1} />
+        </mesh>
+        <pointLight position={[0, 2.9, 1.4]} color="#ffc17d" intensity={7.5 + ambience * 2.8} distance={28} />
+      </group>
+      <group position={[-4.4, 0.1, -5.4]} rotation={[0, 0.22, 0]}>
+        <mesh position={[0, 1.15, 0]} scale={[0.62, 1.25, 0.62]}>
+          <coneGeometry args={[1, 3.1, 7]} />
+          <meshStandardMaterial color="#726761" roughness={0.96} />
+        </mesh>
+        <mesh position={[-0.8, 0.55, 1.4]} scale={[0.7, 0.4, 0.9]} rotation={[0.2, 0.3, -0.1]}>
+          <dodecahedronGeometry args={[1, 0]} />
+          <meshStandardMaterial color="#5f554e" roughness={1} />
+        </mesh>
+      </group>
+      <group position={[4.9, 0.08, -7.8]} rotation={[0, -0.35, 0]}>
+        <mesh position={[0, 1, 0]} scale={[0.48, 1.1, 0.48]}>
+          <coneGeometry args={[1, 2.8, 7]} />
+          <meshStandardMaterial color="#645b5e" roughness={0.96} />
+        </mesh>
+        <mesh position={[0.85, 0.48, 1]} scale={[0.75, 0.36, 0.55]} rotation={[0.1, -0.2, 0.15]}>
+          <dodecahedronGeometry args={[1, 0]} />
+          <meshStandardMaterial color="#50494c" roughness={1} />
+        </mesh>
+      </group>
       <CavernMist />
       {torches.map((torch, i) => (
         <Torch key={`torch-${i}`} index={i} {...torch} ambience={ambience} />
       ))}
       <Brazier position={[0, 0, -8]} ambience={ambience} />
       <Brazier position={[6, 0, 8]} ambience={ambience} small />
-      <pointLight position={[-12, 5, -8]} color="#aeb8ff" intensity={7.2 + ambience * 2.6} distance={48} />
-      <pointLight position={[10, 3, 12]} color="#ffdca8" intensity={3.6 + ambience * 1.4} distance={34} />
-      <pointLight position={[0, 6, 0]} color="#f0e8ff" intensity={5.2 + ambience * 1.8} distance={42} />
+      <pointLight position={[-12, 5, -8]} color="#aeb8ff" intensity={8.5 + ambience * 2.8} distance={52} />
+      <pointLight position={[10, 3, 12]} color="#ffdca8" intensity={4.6 + ambience * 1.7} distance={36} />
+      <pointLight position={[0, 6, 0]} color="#f0e8ff" intensity={7.6 + ambience * 2.2} distance={48} />
       <Sparkles count={34} scale={[38, 8, 38]} size={0.9} speed={0.08} color="#ffddaa" opacity={0.16} />
     </>
   );
