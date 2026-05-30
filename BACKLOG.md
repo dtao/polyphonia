@@ -21,7 +21,7 @@ depends only on earlier ones.
 ## Milestone 3 — Persistence (local-first)
 
 - [x] **10. Save / load locally** — versioned JSON manifest in `localStorage` + uploaded stem audio in IndexedDB; autosaves on change, restores on launch.
-- [ ] **11. Export / import** — download a composition (+ its stems) as a bundle and re-import it.
+- [x] **11. Export / import** — download a composition with all stem audio embedded as a single portable `.polyphonia.json`; re-import to load it (stems restored to IndexedDB).
 - [ ] **12. Composition library** — create, duplicate, rename, delete, and switch between compositions.
 
 ## Milestone 4 — Backend & shareable URLs

@@ -2,7 +2,8 @@ import { create } from "zustand";
 import * as THREE from "three";
 import { Composition, TrackDef, defaultComposition } from "./composition";
 import { AudioEngine } from "./audio/AudioEngine";
-import { saveComposition, stemPut, stemDelete } from "./persistence";
+import { saveComposition, stemPut, stemDelete, importComposition as importBundle } from "./persistence";
+import { newId } from "./id";
 
 // Non-reactive registry of each track marker's 3D object, so the move-gizmo
 // can attach to the selected track's object without prop-drilling refs.
@@ -43,9 +44,8 @@ interface StoreState {
   deleteTrack: (id: string) => void;
   addStem: (file: File) => Promise<void>;
   newComposition: (meta: { title: string; artist: string; bpm: number }) => void;
+  importComposition: (file: File) => Promise<void>;
 }
-
-const newId = () => (crypto as any).randomUUID?.() ?? `id-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 const PALETTE = ["#5b8cff", "#ff7a6b", "#ffd166", "#b96bff", "#56e0c0", "#f78fb3", "#7ee081", "#ffa057"];
 const randomColor = () => PALETTE[Math.floor(Math.random() * PALETTE.length)];
@@ -153,6 +153,19 @@ export const useStore = create<StoreState>((set, get) => ({
       },
       selectedId: null,
     });
+  },
+
+  // Load an exported bundle as the current composition (its stems are stored in
+  // IndexedDB by the importer). Discards the outgoing composition's uploads.
+  importComposition: async (file) => {
+    const comp = await importBundle(file);
+    for (const t of get().composition.tracks) {
+      if (t.source.kind === "file" && t.source.url.startsWith("blob:")) {
+        URL.revokeObjectURL(t.source.url);
+        stemDelete(t.id);
+      }
+    }
+    set({ composition: comp, selectedId: null });
   },
 }));
 

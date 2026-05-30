@@ -1,20 +1,53 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useStore } from "../store";
 
-// The start screen: enter the current composition, or fill out a short form to
-// begin a fresh, empty one.
+// The start screen: enter the current composition, begin a fresh one, or
+// export/import a portable bundle.
 export function EntryScreen({
   onEnter,
   onCreate,
+  onExport,
+  onImport,
 }: {
   onEnter: () => void;
   onCreate: (meta: { title: string; artist: string; bpm: number }) => void;
+  onExport: () => Promise<void>;
+  onImport: (file: File) => Promise<void>;
 }) {
   const comp = useStore((s) => s.composition);
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
   const [artist, setArtist] = useState("");
   const [bpm, setBpm] = useState("120");
+  const [busy, setBusy] = useState<null | string>(null);
+  const [error, setError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function handleExport() {
+    setError(null);
+    setBusy("Exporting…");
+    try {
+      await onExport();
+    } catch (e) {
+      console.error(e);
+      setError("Export failed.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleImport(file: File) {
+    setError(null);
+    setBusy("Importing…");
+    try {
+      await onImport(file);
+    } catch (e) {
+      console.error(e);
+      setError(e instanceof Error ? e.message : "Import failed.");
+    } finally {
+      setBusy(null);
+    }
+  }
 
   return (
     <div style={overlay}>
@@ -53,6 +86,30 @@ export function EntryScreen({
           <button style={linkBtn} onClick={() => setCreating(true)}>
             ＋ Start a new composition
           </button>
+
+          <div style={{ display: "flex", gap: 18, marginTop: 4 }}>
+            <button style={linkBtn} onClick={handleExport} disabled={!!busy}>
+              ⤓ Export
+            </button>
+            <button style={linkBtn} onClick={() => fileRef.current?.click()} disabled={!!busy}>
+              ⤒ Import
+            </button>
+          </div>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".json,application/json"
+            style={{ display: "none" }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) handleImport(f);
+              e.target.value = "";
+            }}
+          />
+
+          {busy && <p style={{ opacity: 0.6, fontSize: 13, margin: 0 }}>{busy}</p>}
+          {error && <p style={{ color: "#ff9b8f", fontSize: 13, margin: 0 }}>{error}</p>}
+
           <p style={{ opacity: 0.45, fontSize: 13, marginTop: 16 }}>
             WASD to move · mouse to look · Esc to release cursor
           </p>

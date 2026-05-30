@@ -6,7 +6,7 @@ import { PropertiesPanel } from "./ui/PropertiesPanel";
 import { AddStem } from "./ui/AddStem";
 import { EntryScreen } from "./ui/EntryScreen";
 import { useStore } from "./store";
-import { loadComposition } from "./persistence";
+import { loadComposition, exportComposition } from "./persistence";
 
 export default function App() {
   const engine = useStore((s) => s.engine);
@@ -131,7 +131,14 @@ export default function App() {
         <Scene />
       </Canvas>
 
-      {!entered && <EntryScreen onEnter={enter} onCreate={createAndEnter} />}
+      {!entered && (
+        <EntryScreen
+          onEnter={enter}
+          onCreate={createAndEnter}
+          onExport={() => exportComposition(useStore.getState().composition)}
+          onImport={(file) => useStore.getState().importComposition(file)}
+        />
+      )}
 
       {engine && (
         <>
