@@ -23,6 +23,14 @@ const BUCKET = "stems";
 const TABLE = "compositions";
 const isUploaded = (url: string) => url.startsWith("blob:");
 
+// SHA-256 of a blob's bytes, as hex — used to detect when a stem's audio changed.
+async function sha256(blob: Blob): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 // ===== Auth (email magic link) =====
 
 export interface AuthUser {
@@ -71,17 +79,27 @@ export async function publishComposition(comp: Composition): Promise<string> {
   if (!user) throw new Error("Please sign in to publish.");
   const id = comp.publishedId ?? newId();
 
+  // Prior published manifest, to skip re-uploading stems whose audio is unchanged.
+  const prev = comp.publishedId ? await fetchPublishedComposition(id) : null;
+  const prevHash: Record<string, string | undefined> = {};
+  for (const t of prev?.tracks ?? []) prevHash[t.id] = t.hash;
+
   const tracks = [];
   for (const t of comp.tracks) {
     if (t.source.kind === "file" && isUploaded(t.source.url)) {
       const blob = await (await fetch(t.source.url)).blob();
+      const hash = await sha256(blob);
       const path = `${id}/${t.id}`;
-      const { error } = await sb.storage
-        .from(BUCKET)
-        .upload(path, blob, { contentType: blob.type || "audio/mpeg", upsert: true });
-      if (error) throw error;
-      const url = sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
-      tracks.push({ ...t, source: { kind: "file" as const, url } });
+      const url = sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl; // deterministic from the path
+
+      // Only upload if new or the audio changed since last publish.
+      if (prevHash[t.id] !== hash) {
+        const { error } = await sb.storage
+          .from(BUCKET)
+          .upload(path, blob, { contentType: blob.type || "audio/mpeg", upsert: true });
+        if (error) throw error;
+      }
+      tracks.push({ ...t, source: { kind: "file" as const, url }, hash });
     } else {
       tracks.push(t); // built-in /stems URL or synth — leave as-is
     }

@@ -26,6 +26,8 @@ export interface TrackDef {
   maxDistance?: number;
   /** How sharply volume drops with distance. */
   rolloff?: number;
+  /** Content hash of the stem audio, set in published manifests for change detection. */
+  hash?: string;
 }
 
 export interface Composition {
