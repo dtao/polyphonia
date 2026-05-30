@@ -56,6 +56,7 @@ depends only on earlier ones.
 - [x] Hide UI chrome during camera control; "Add stem" only in edit mode.
 - [x] Billboard track labels so they stay readable from any angle.
 - [x] Preserve position across Explore/Edit (altitude shifts, location doesn't); new stems spawn at the view center.
+- [x] First high-fidelity environment pass: cavern uses richer procedural geometry, torch/fog/water atmosphere, and a readable first-person opening view.
 - [ ] **Choppy mouse-look** — camera *rotation* (mouse-look) in explore mode often feels choppy, while *walking* (WASD translation) stays smooth. Investigate why rotation specifically stutters.
 - [x] **Mode cleanup on Exit** — after exiting to the start screen, the mouse still controls the camera. More generally, be consistent about which "mode" we're in and when clicks / mouse movement should take effect.
 - [ ] **Turn in Edit mode** — you can move (pan) in edit mode but not turn/rotate the view. Add the ability to turn while keeping the elevated perspective.
