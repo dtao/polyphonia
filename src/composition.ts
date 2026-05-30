@@ -5,6 +5,8 @@
 //
 // A track is one stem (one instrument) placed at a point in 3D space.
 
+import { EnvironmentSettings, defaultEnvironment, normalizeEnvironment } from "./environment";
+
 export type StemSource =
   // Procedurally synthesized placeholder — runs with zero audio files.
   | { kind: "synth"; preset: "bass" | "pad" | "arp" | "drums" }
@@ -54,6 +56,8 @@ export interface Composition {
   loopEndTrim?: number;
   /** Seconds of end-to-start crossfade inside prepared loop buffers. */
   loopCrossfade?: number;
+  /** Visual/acoustic environment metadata. */
+  environment: EnvironmentSettings;
   tracks: TrackDef[];
   /** Share id if this composition is currently published (cleared on unpublish). */
   publishedId?: string;
@@ -70,6 +74,7 @@ export const defaultComposition: Composition = {
   artist: "Polyphonia",
   bpm: 120,
   bars: 16,
+  environment: defaultEnvironment,
   tracks: [
     {
       id: "bass",
@@ -117,3 +122,7 @@ export const defaultComposition: Composition = {
   // Shared falloff: gentle enough to always hear the whole piece, but each
   // voice clearly strengthens as you approach it.
 };
+
+export function normalizeComposition(comp: Composition): Composition {
+  return { ...comp, environment: normalizeEnvironment(comp.environment) };
+}

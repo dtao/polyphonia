@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
-import { Composition } from "./composition";
+import { Composition, normalizeComposition } from "./composition";
 import { newId } from "./id";
 import { ArtistIdentity, slugifyArtist } from "./artist";
 
@@ -187,7 +187,7 @@ export async function publishComposition(comp: Composition): Promise<PublishResu
     }
   }
 
-  const manifest: Composition = { ...comp, ...artist, title, tracks, publishedId: id };
+  const manifest: Composition = normalizeComposition({ ...comp, ...artist, title, tracks, publishedId: id });
   // title/artist are denormalized columns (for the gallery); manifest stays canonical.
   const { error } = await sb.from(TABLE).upsert({
     id,
@@ -214,14 +214,14 @@ export async function fetchPublishedComposition(id: string): Promise<Composition
     .maybeSingle();
   if (error) throw error;
   if (!data?.manifest) return null;
-  return {
+  return normalizeComposition({
     ...(data.manifest as Composition),
     artist: data.artist ?? (data.manifest as Composition).artist,
     artistId: data.artist_id ?? (data.manifest as Composition).artistId,
     artistSlug: data.artist_slug ?? (data.manifest as Composition).artistSlug,
     artistAvatarUrl: data.artist_avatar_url ?? (data.manifest as Composition).artistAvatarUrl,
     artistAvatarEmailHash: data.artist_avatar_email_hash ?? (data.manifest as Composition).artistAvatarEmailHash,
-  };
+  });
 }
 
 export interface GallerySummary {

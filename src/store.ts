@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import * as THREE from "three";
-import { Composition, TrackDef, defaultComposition } from "./composition";
+import { Composition, TrackDef, defaultComposition, normalizeComposition } from "./composition";
 import { AudioEngine } from "./audio/AudioEngine";
 import {
   SerializedComposition,
@@ -14,6 +14,7 @@ import {
   importComposition as importBundle,
 } from "./persistence";
 import { newId } from "./id";
+import { defaultEnvironment } from "./environment";
 import { ArtistIdentity } from "./artist";
 import {
   AuthUser,
@@ -300,6 +301,7 @@ export const useStore = create<StoreState>((set, get) => ({
       artistAvatarUrl: get().accountArtist?.artistAvatarUrl,
       artistAvatarEmailHash: get().accountArtist?.artistAvatarEmailHash,
       bpm: meta.bpm || 120,
+      environment: get().composition.environment,
       tracks: [],
     };
     const next = upsert(upsert(library, serializeComposition(composition)), serializeComposition(comp));
@@ -309,7 +311,7 @@ export const useStore = create<StoreState>((set, get) => ({
 
   // Load an exported bundle as a new composition in the library and switch to it.
   importComposition: async (file) => {
-    const comp = await importBundle(file);
+    const comp = normalizeComposition(await importBundle(file));
     const { composition, library } = get();
     revokeBlobUrls(composition);
     const next = upsert(upsert(library, serializeComposition(composition)), serializeComposition(comp));
@@ -352,7 +354,7 @@ export const useStore = create<StoreState>((set, get) => ({
     if (id === composition.id) {
       revokeBlobUrls(composition);
       if (nextLibrary.length === 0) {
-        nextComposition = { id: newId(), title: "Untitled", artist: "Unknown", bpm: 120, tracks: [] };
+        nextComposition = { id: newId(), title: "Untitled", artist: "Unknown", bpm: 120, environment: defaultEnvironment, tracks: [] };
         nextLibrary = [serializeComposition(nextComposition)];
       } else {
         nextComposition = await resolveComposition(nextLibrary[0]);

@@ -30,8 +30,8 @@ add a test framework unless asked.
 ## Architecture & key files
 
 - **The seam:** a *composition* is plain data (`src/composition.ts`) — tracks =
-  stems + 3D position + properties. The engine renders any manifest. This is why
-  "one demo" scales to "a platform."
+  stems + 3D position + properties, plus environment metadata. The engine
+  renders any manifest. This is why "one demo" scales to "a platform."
 - **State hub:** `src/store.ts` — a Zustand store is the single source of truth
   (current `composition`, `library`, `mode`, `selectedId`, `engine`, `user`,
   `accountArtist`, `entered`, `viewer`). The scene renders from it; edits flow
@@ -63,6 +63,10 @@ add a test framework unless asked.
   load/create, publish (uploads stems to Storage, manifest to Postgres), fetch,
   unpublish, gallery list, artist page list. No custom server — RLS does the
   gating. DB schema lives in `supabase/migrations`.
+- **Environments:** `src/environment.ts` defines the first Milestone 5
+  environment model: preset type, material, ambience, and optional square/hex
+  tiling metadata. Older manifests are normalized through `normalizeComposition`
+  so missing environment data defaults to the studio preset.
 - **Routing:** `src/main.tsx` — `/` editor (`App`), `/c/:id` viewer, `/gallery`,
   `/artist/:slug`. StrictMode is intentionally OFF (see gotchas).
 

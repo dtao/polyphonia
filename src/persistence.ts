@@ -1,4 +1,4 @@
-import { Composition, TrackDef, defaultComposition } from "./composition";
+import { Composition, TrackDef, defaultComposition, normalizeComposition } from "./composition";
 import { newId } from "./id";
 
 // Local-first persistence. A *library* of composition manifests (small JSON)
@@ -50,9 +50,10 @@ const isUploaded = (t: TrackDef) => t.source.kind === "file" && t.source.url.sta
 
 // Resolved (runtime) composition -> serializable manifest.
 export function serializeComposition(comp: Composition): SerializedComposition {
+  const normalized = normalizeComposition(comp);
   return {
-    ...comp,
-    tracks: comp.tracks.map((t) => (isUploaded(t) ? { ...t, source: { kind: "stored", key: t.id } } : t)),
+    ...normalized,
+    tracks: normalized.tracks.map((t) => (isUploaded(t) ? { ...t, source: { kind: "stored", key: t.id } } : t)),
   };
 }
 
@@ -68,7 +69,7 @@ export async function resolveComposition(saved: SerializedComposition): Promise<
       tracks.push({ ...t, source: t.source });
     }
   }
-  return { ...saved, tracks };
+  return normalizeComposition({ ...saved, tracks });
 }
 
 // ===== Library (localStorage) =====

@@ -140,8 +140,9 @@ SPA fallback so routes like `/c/:id`, `/gallery`, and `/artist/:slug` serve
   engine. The scene renders from it; edits flow back into it and out to the
   engine.
 - **Composition** ([src/composition.ts](src/composition.ts)) — a composition is
-  just data (tracks = stems + positions + properties). The engine renders any
-  manifest, which is what lets one demo grow into a platform.
+  just data (tracks = stems + positions + properties, plus environment
+  metadata). The engine renders any manifest, which is what lets one demo grow
+  into a platform.
 - **Persistence** ([src/persistence.ts](src/persistence.ts)) — local-first
   library (localStorage manifests + IndexedDB stem blobs), plus export/import.
 - **Cloud** ([src/cloud.ts](src/cloud.ts)) — publish uploads stems to Supabase
@@ -156,6 +157,7 @@ src/
   scene/        React Three Fiber scene: Player, EditControls, gizmo, markers
   ui/           EntryScreen, PropertiesPanel, AddStem, LoopPanel, PublishControl, Account, Viewer, Gallery, ArtistPage
   artist.ts       artist identity helpers (slugs, artist routes)
+  environment.ts  environment presets, materials, and tiling metadata
   composition.ts  types + the built-in "Journey" demo
   store.ts        Zustand store
   persistence.ts  local-first save/load + export/import
