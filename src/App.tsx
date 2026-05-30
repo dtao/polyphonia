@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Scene } from "./scene/Scene";
 import { AudioEngine } from "./audio/AudioEngine";
@@ -11,8 +11,14 @@ export default function App() {
   const setEngine = useStore((s) => s.setEngine);
   const comp = useStore((s) => s.composition);
   const mode = useStore((s) => s.mode);
-  const toggleMode = useStore((s) => s.toggleMode);
   const select = useStore((s) => s.select);
+
+  // Toggle mode, releasing the pointer lock synchronously when entering edit
+  // (drei's PointerLockControls doesn't reliably exit the lock on unmount).
+  const handleToggleMode = useCallback(() => {
+    if (useStore.getState().mode === "explore") document.exitPointerLock?.();
+    useStore.getState().toggleMode();
+  }, []);
 
   // Browsers block audio until a user gesture — so we boot the engine on click.
   async function enter() {
@@ -29,14 +35,16 @@ export default function App() {
   // Tab toggles Explore/Edit.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const el = document.activeElement;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return;
       if (e.code === "Tab" && useStore.getState().engine) {
         e.preventDefault();
-        useStore.getState().toggleMode();
+        handleToggleMode();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [handleToggleMode]);
 
   // Release the pointer lock when entering edit mode; reset cursor.
   useEffect(() => {
@@ -84,12 +92,12 @@ export default function App() {
             <strong>{comp.title}</strong> — {comp.artist}
             <span style={{ opacity: 0.6 }}>
               {" "}
-              · {mode === "explore" ? "WASD + mouse to move" : "drag to orbit · click a track to select"}
+              · {mode === "explore" ? "WASD + mouse to move" : "WASD to move · drag to orbit · click a track"}
             </span>
           </div>
 
           <div style={toolbar}>
-            <button style={modeBtn} onClick={toggleMode} title="Toggle with Tab">
+            <button style={modeBtn} onClick={handleToggleMode} title="Toggle with Tab">
               {mode === "explore" ? "✎ Edit" : "✦ Explore"}
             </button>
           </div>
