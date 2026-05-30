@@ -39,13 +39,63 @@ export function EnvironmentScene({ environment, editMode }: { environment: Envir
 }
 
 function Studio({ accents }: { accents: number }) {
+  const sculptures = useMemo(() => ringProps(10, 13, 1.7), []);
+  const light = useRef<THREE.PointLight>(null);
+
+  useFrame(({ clock }) => {
+    if (light.current) light.current.intensity = 2.7 + accents * 2 + Math.sin(clock.elapsedTime * 0.8) * 0.35;
+  });
+
   return (
     <>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.04, 0]}>
         <circleGeometry args={[46, 96]} />
-        <FloorMaterial base="#080a13" accent="#151f35" density={0.4} />
+        <FloorMaterial base="#070914" accent="#20345a" density={0.62} />
       </mesh>
-      <Sparkles count={Math.round(30 + accents * 40)} scale={[42, 5, 42]} size={1.2} speed={0.08} color="#5b8cff" opacity={0.22} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, -7]}>
+        <ringGeometry args={[4.5, 16, 96]} />
+        <meshBasicMaterial color="#5c86ff" transparent opacity={0.11} side={THREE.DoubleSide} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.018, -7]}>
+        <ringGeometry args={[9.4, 9.8, 96]} />
+        <meshBasicMaterial color="#d9e5ff" transparent opacity={0.22} side={THREE.DoubleSide} />
+      </mesh>
+      <mesh position={[0, 4.2, -18]} scale={[28, 7, 0.4]}>
+        <boxGeometry args={[1, 1, 1]} />
+        <meshStandardMaterial color="#10192d" emissive="#162c62" emissiveIntensity={0.45 + accents * 0.35} roughness={0.72} />
+      </mesh>
+      <mesh position={[-12, 3.3, -13]} rotation={[0, 0.24, 0]} scale={[0.45, 6, 5]}>
+        <boxGeometry args={[1, 1, 1]} />
+        <meshStandardMaterial color="#243c76" emissive="#284fa0" emissiveIntensity={0.28 + accents * 0.3} roughness={0.55} />
+      </mesh>
+      <mesh position={[12, 3.3, -13]} rotation={[0, -0.24, 0]} scale={[0.45, 6, 5]}>
+        <boxGeometry args={[1, 1, 1]} />
+        <meshStandardMaterial color="#273456" emissive="#3b66b8" emissiveIntensity={0.22 + accents * 0.28} roughness={0.55} />
+      </mesh>
+      <group position={[0, 0, -7]}>
+        <mesh position={[-4.8, 1.25, 0]} scale={[1.4, 2.5, 1.4]}>
+          <boxGeometry args={[1, 1, 1]} />
+          <meshStandardMaterial color="#2f5f9e" roughness={0.45} metalness={0.12} />
+        </mesh>
+        <mesh position={[0, 1.15, -0.8]} rotation={[0, Math.PI / 4, 0]} scale={[1.7, 1.7, 1.7]}>
+          <octahedronGeometry args={[1, 0]} />
+          <meshStandardMaterial color="#f0dc68" emissive="#6b5815" emissiveIntensity={0.2 + accents * 0.25} roughness={0.34} />
+        </mesh>
+        <mesh position={[5.2, 1.9, 0.4]} scale={[1.35, 3.8, 1.35]}>
+          <cylinderGeometry args={[0.55, 0.55, 1, 24]} />
+          <meshStandardMaterial color="#79ad67" roughness={0.5} metalness={0.08} />
+        </mesh>
+      </group>
+      {sculptures.map((p, i) => (
+        <mesh key={`studio-sculpture-${i}`} position={[p.position[0], 1 + (i % 3) * 0.6, p.position[2]]} scale={[p.scale[0] * 0.22, p.scale[1] * 0.5, p.scale[2] * 0.22]} rotation={p.rotation}>
+          <boxGeometry args={[1, 1, 1]} />
+          <meshStandardMaterial color={i % 2 ? "#20375f" : "#273a6e"} emissive="#14244c" emissiveIntensity={0.16 + accents * 0.12} roughness={0.62} />
+        </mesh>
+      ))}
+      <pointLight ref={light} position={[0, 5, -7]} color="#8fb0ff" intensity={2.7 + accents * 2} distance={34} />
+      <pointLight position={[-10, 4, -10]} color="#6fa0ff" intensity={1.3 + accents * 1.1} distance={24} />
+      <pointLight position={[9, 3, 3]} color="#ffd975" intensity={0.9 + accents * 0.9} distance={18} />
+      <Sparkles count={Math.round(44 + accents * 58)} scale={[42, 6, 42]} size={1.1} speed={0.08} color="#8fb0ff" opacity={0.24} />
     </>
   );
 }
@@ -255,40 +305,94 @@ function CavernMist() {
 }
 
 function Forest({ ambience }: { ambience: number }) {
-  const trees = useMemo(() => scatterProps(34, 13, 36), []);
+  const trees = useMemo(() => scatterProps(54, 13, 36), []);
+  const rocks = useMemo(() => scatterProps(26, 5, 30), []);
 
   return (
     <>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.07, 0]}>
         <circleGeometry args={[60, 96]} />
-        <FloorMaterial base="#0d1d16" accent="#2c4a24" density={1.1} />
+        <FloorMaterial base="#0b1912" accent="#35532b" density={1.35} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, -0.1]} position={[0, 0.012, -7]}>
+        <planeGeometry args={[4.8, 32, 1, 1]} />
+        <meshStandardMaterial color="#102b35" emissive="#143b48" emissiveIntensity={0.52 + ambience * 0.32} roughness={0.25} metalness={0.12} transparent opacity={0.86} />
+      </mesh>
+      <mesh position={[0, 9.8, -29]}>
+        <circleGeometry args={[3.5, 48]} />
+        <meshBasicMaterial color="#dceaff" transparent opacity={0.92} />
+      </mesh>
+      <mesh position={[0, 9.8, -29.1]} scale={[1.45, 1.45, 1.45]}>
+        <circleGeometry args={[3.5, 48]} />
+        <meshBasicMaterial color="#8ab8ff" transparent opacity={0.13} />
       </mesh>
       {trees.map((p, i) => (
         <group key={`tree-${i}`} position={p.position} rotation={p.rotation}>
-          <mesh position={[0, 1.5, 0]} scale={[0.35, 1.8 + (i % 4) * 0.25, 0.35]}>
+          <mesh position={[0, 2.1, 0]} scale={[0.44 + (i % 3) * 0.05, 2.5 + (i % 5) * 0.36, 0.44 + (i % 4) * 0.04]}>
             <cylinderGeometry args={[0.45, 0.65, 2.4, 8]} />
             <meshStandardMaterial color="#2b1c13" roughness={0.85} />
           </mesh>
-          <mesh position={[0, 4.1, 0]} scale={p.scale}>
-            <icosahedronGeometry args={[1.8, 1]} />
-            <meshStandardMaterial color={i % 2 ? "#244b32" : "#173b2a"} roughness={0.95} />
+          <mesh position={[0, 5.6 + (i % 4) * 0.3, 0]} scale={[p.scale[0] * 1.2, p.scale[1] * 1.25, p.scale[2] * 1.2]}>
+            <icosahedronGeometry args={[1.9, 1]} />
+            <meshStandardMaterial color={i % 2 ? "#255137" : "#173d2b"} emissive={i % 5 === 0 ? "#0e271a" : "#08160f"} emissiveIntensity={0.12 + ambience * 0.1} roughness={0.95} />
           </mesh>
         </group>
       ))}
-      <hemisphereLight args={["#b8f0c8", "#102016", 0.45 + ambience * 0.25]} />
-      <Sparkles count={26} scale={[45, 5, 45]} size={0.7} speed={0.15} color="#c8ffd8" opacity={0.16} />
+      {rocks.map((p, i) => (
+        <mesh key={`forest-rock-${i}`} position={[p.position[0], 0.18, p.position[2]]} scale={[p.scale[0] * 0.7, p.scale[1] * 0.28, p.scale[2] * 0.55]} rotation={p.rotation}>
+          <dodecahedronGeometry args={[1, 0]} />
+          <meshStandardMaterial color={i % 2 ? "#334336" : "#25342d"} roughness={1} />
+        </mesh>
+      ))}
+      <group position={[-5.5, 0.1, -6.5]} rotation={[0, -0.4, -0.08]}>
+        <mesh position={[0, 0.35, 0]} scale={[0.55, 0.55, 3.6]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[0.45, 0.55, 1, 10]} />
+          <meshStandardMaterial color="#3a2418" roughness={0.92} />
+        </mesh>
+        <mesh position={[-1.2, 0.22, -1.2]} scale={[1.1, 0.35, 0.75]}>
+          <dodecahedronGeometry args={[1, 0]} />
+          <meshStandardMaterial color="#26392d" roughness={1} />
+        </mesh>
+      </group>
+      <group position={[5.5, 0, -8]}>
+        <mesh position={[0, 1.4, 0]} scale={[0.48, 2.4, 0.48]}>
+          <cylinderGeometry args={[0.55, 0.75, 2.4, 8]} />
+          <meshStandardMaterial color="#26170f" roughness={0.9} />
+        </mesh>
+        <mesh position={[0.2, 4.2, -0.1]} scale={[2.2, 2.5, 2]}>
+          <icosahedronGeometry args={[1.7, 1]} />
+          <meshStandardMaterial color="#1e4f32" emissive="#0b2416" emissiveIntensity={0.18 + ambience * 0.1} roughness={0.95} />
+        </mesh>
+      </group>
+      <pointLight position={[0, 8.8, -24]} color="#b9d8ff" intensity={2.7 + ambience * 1.9} distance={55} />
+      <pointLight position={[0, 1.1, -5.5]} color="#5fb7df" intensity={1.5 + ambience * 1.2} distance={18} />
+      <hemisphereLight args={["#b8f0c8", "#102016", 0.55 + ambience * 0.35]} />
+      <Sparkles count={42} scale={[45, 6, 45]} size={0.74} speed={0.15} color="#bdfeda" opacity={0.2} />
     </>
   );
 }
 
 function CrystalHall({ ambience }: { ambience: number }) {
-  const crystals = useMemo(() => scatterProps(30, 10, 34), []);
+  const crystals = useMemo(() => scatterProps(48, 7, 38), []);
+  const shards = useMemo(() => scatterProps(28, 5, 32), []);
 
   return (
     <>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.06, 0]}>
         <circleGeometry args={[58, 96]} />
-        <FloorMaterial base="#07101a" accent="#14536b" density={0.85} />
+        <FloorMaterial base="#070a18" accent="#1a5870" density={1.05} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0.18]} position={[0, 0.012, -6]}>
+        <planeGeometry args={[7, 28, 1, 1]} />
+        <meshBasicMaterial color="#4fd6ff" transparent opacity={0.16} depthWrite={false} />
+      </mesh>
+      <mesh position={[0, 8.6, -30]} scale={[1.6, 1.6, 1.6]}>
+        <sphereGeometry args={[3.2, 32, 16]} />
+        <meshBasicMaterial color="#44308f" transparent opacity={0.86} />
+      </mesh>
+      <mesh position={[0.3, 8.7, -29.7]} scale={[2.2, 2.2, 2.2]}>
+        <sphereGeometry args={[3.2, 32, 16]} />
+        <meshBasicMaterial color="#7e4dff" transparent opacity={0.08} />
       </mesh>
       {crystals.map((p, i) => (
         <mesh key={`crystal-${i}`} position={[p.position[0], 1.6 + p.scale[1] * 0.5, p.position[2]]} scale={p.scale} rotation={p.rotation}>
@@ -302,8 +406,30 @@ function CrystalHall({ ambience }: { ambience: number }) {
           />
         </mesh>
       ))}
-      <pointLight position={[0, 6, 0]} color="#8eefff" intensity={1.6 + ambience * 2.8} distance={42} />
-      <Sparkles count={45} scale={[42, 10, 42]} size={1.4} speed={0.12} color="#bff8ff" opacity={0.3} />
+      {shards.map((p, i) => (
+        <mesh key={`crystal-shard-${i}`} position={[p.position[0], 0.45, p.position[2]]} scale={[p.scale[0] * 0.42, p.scale[1] * 0.7, p.scale[2] * 0.42]} rotation={p.rotation}>
+          <tetrahedronGeometry args={[1, 0]} />
+          <meshStandardMaterial color={i % 2 ? "#5de7ff" : "#ca55ff"} emissive={i % 2 ? "#1a7a88" : "#5a1988"} emissiveIntensity={0.38 + ambience * 0.35} roughness={0.32} metalness={0.08} />
+        </mesh>
+      ))}
+      <group position={[0, 0, -8]}>
+        <mesh position={[-3.2, 2.8, 0]} scale={[1.3, 4.8, 1.3]} rotation={[0.08, 0.3, -0.18]}>
+          <octahedronGeometry args={[1, 0]} />
+          <meshStandardMaterial color="#d045ff" emissive="#8b18c4" emissiveIntensity={0.85 + ambience * 0.7} roughness={0.18} metalness={0.12} />
+        </mesh>
+        <mesh position={[3.5, 2.35, -0.8]} scale={[1, 4, 1]} rotation={[-0.12, -0.25, 0.16]}>
+          <octahedronGeometry args={[1, 0]} />
+          <meshStandardMaterial color="#60edff" emissive="#178aa0" emissiveIntensity={0.8 + ambience * 0.65} roughness={0.16} metalness={0.1} />
+        </mesh>
+        <mesh position={[0.5, 1.45, 1.6]} scale={[0.8, 2.6, 0.8]} rotation={[0.1, 0.75, 0.12]}>
+          <octahedronGeometry args={[1, 0]} />
+          <meshStandardMaterial color="#ff4b8f" emissive="#a91c52" emissiveIntensity={0.65 + ambience * 0.5} roughness={0.2} metalness={0.1} />
+        </mesh>
+      </group>
+      <pointLight position={[0, 6, 0]} color="#8eefff" intensity={2.6 + ambience * 3.4} distance={48} />
+      <pointLight position={[-4, 3, -8]} color="#e553ff" intensity={3.2 + ambience * 2.5} distance={28} />
+      <pointLight position={[4, 3, -8]} color="#50eaff" intensity={2.8 + ambience * 2.4} distance={28} />
+      <Sparkles count={70} scale={[42, 11, 42]} size={1.35} speed={0.12} color="#bff8ff" opacity={0.32} />
     </>
   );
 }
