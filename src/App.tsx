@@ -6,6 +6,7 @@ import { PropertiesPanel } from "./ui/PropertiesPanel";
 import { AddStem } from "./ui/AddStem";
 import { EntryScreen } from "./ui/EntryScreen";
 import { useStore } from "./store";
+import { loadComposition } from "./persistence";
 
 export default function App() {
   const engine = useStore((s) => s.engine);
@@ -14,6 +15,13 @@ export default function App() {
   const comp = useStore((s) => s.composition);
   const mode = useStore((s) => s.mode);
   const select = useStore((s) => s.select);
+
+  // Restore a previously saved composition on launch (before entering).
+  useEffect(() => {
+    loadComposition().then((restored) => {
+      if (restored) useStore.setState({ composition: restored, selectedId: null });
+    });
+  }, []);
 
   // Track pointer-lock so we can hide the UI chrome during camera control and
   // reveal it again when the cursor is free (after Esc, or in edit mode).

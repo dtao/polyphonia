@@ -2,6 +2,7 @@ import { create } from "zustand";
 import * as THREE from "three";
 import { Composition, TrackDef, defaultComposition } from "./composition";
 import { AudioEngine } from "./audio/AudioEngine";
+import { saveComposition, stemPut, stemDelete } from "./persistence";
 
 // Non-reactive registry of each track marker's 3D object, so the move-gizmo
 // can attach to the selected track's object without prop-drilling refs.
@@ -91,9 +92,10 @@ export const useStore = create<StoreState>((set, get) => ({
 
   deleteTrack: (id) => {
     const track = get().composition.tracks.find((t) => t.id === id);
-    // Free the object URL for an uploaded stem.
+    // Free the object URL and stored audio for an uploaded stem.
     if (track?.source.kind === "file" && track.source.url.startsWith("blob:")) {
       URL.revokeObjectURL(track.source.url);
+      stemDelete(id);
     }
     get().engine?.removeTrack(id);
     markerObjects.delete(id);
@@ -111,6 +113,8 @@ export const useStore = create<StoreState>((set, get) => ({
     if (!engine) throw new Error("Audio engine not ready");
     const buffer = await engine.decode(await file.arrayBuffer());
     const id = newId();
+    // Persist the raw audio so the composition survives a reload.
+    stemPut(id, file).catch((err) => console.error("Failed to store stem", err));
     const def: TrackDef = {
       id,
       name: stripExt(file.name),
@@ -132,9 +136,12 @@ export const useStore = create<StoreState>((set, get) => ({
   // Replace the current composition with a fresh empty one. (Multiple saved
   // compositions come later with the library; for now this is in-memory.)
   newComposition: (meta) => {
-    // Free any uploaded object URLs from the outgoing composition.
+    // Free any uploaded object URLs + stored audio from the outgoing composition.
     for (const t of get().composition.tracks) {
-      if (t.source.kind === "file" && t.source.url.startsWith("blob:")) URL.revokeObjectURL(t.source.url);
+      if (t.source.kind === "file" && t.source.url.startsWith("blob:")) {
+        URL.revokeObjectURL(t.source.url);
+        stemDelete(t.id);
+      }
     }
     set({
       composition: {
@@ -148,6 +155,14 @@ export const useStore = create<StoreState>((set, get) => ({
     });
   },
 }));
+
+// Autosave: persist the composition (debounced) whenever it changes.
+let saveTimer: ReturnType<typeof setTimeout> | undefined;
+useStore.subscribe((state, prev) => {
+  if (state.composition === prev.composition) return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => saveComposition(useStore.getState().composition), 400);
+});
 
 // Dev-only handle for debugging/inspection from the console.
 if ((import.meta as any).env?.DEV) (window as any).polyStore = useStore;
