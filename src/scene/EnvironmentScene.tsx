@@ -373,18 +373,23 @@ function Forest({ ambience }: { ambience: number }) {
 }
 
 function CrystalHall({ ambience }: { ambience: number }) {
-  const crystals = useMemo(() => scatterProps(48, 7, 38), []);
-  const shards = useMemo(() => scatterProps(28, 5, 32), []);
+  const crystalClusters = useMemo(() => scatterProps(24, 8, 36), []);
+  const groundShards = useMemo(() => scatterProps(42, 4, 40), []);
+  const mesas = useMemo(() => scatterProps(18, 12, 34), []);
 
   return (
     <>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.06, 0]}>
         <circleGeometry args={[58, 96]} />
-        <FloorMaterial base="#070a18" accent="#1a5870" density={1.05} />
+        <FloorMaterial base="#080814" accent="#23344f" density={1.25} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0.18]} position={[0, 0.012, -6]}>
-        <planeGeometry args={[7, 28, 1, 1]} />
-        <meshBasicMaterial color="#4fd6ff" transparent opacity={0.16} depthWrite={false} />
+        <planeGeometry args={[6.5, 30, 1, 1]} />
+        <meshBasicMaterial color="#46c9ff" transparent opacity={0.12} depthWrite={false} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, -0.15]} position={[-3.5, 0.016, -9]}>
+        <circleGeometry args={[6.5, 48]} />
+        <meshBasicMaterial color="#8d38ff" transparent opacity={0.07} depthWrite={false} />
       </mesh>
       <mesh position={[0, 8.6, -30]} scale={[1.6, 1.6, 1.6]}>
         <sphereGeometry args={[3.2, 32, 16]} />
@@ -394,43 +399,80 @@ function CrystalHall({ ambience }: { ambience: number }) {
         <sphereGeometry args={[3.2, 32, 16]} />
         <meshBasicMaterial color="#7e4dff" transparent opacity={0.08} />
       </mesh>
-      {crystals.map((p, i) => (
-        <mesh key={`crystal-${i}`} position={[p.position[0], 1.6 + p.scale[1] * 0.5, p.position[2]]} scale={p.scale} rotation={p.rotation}>
-          <octahedronGeometry args={[1, 0]} />
-          <meshStandardMaterial
-            color={i % 3 === 0 ? "#79f0ff" : i % 3 === 1 ? "#b96bff" : "#56e0c0"}
-            emissive={i % 3 === 0 ? "#1f7a88" : i % 3 === 1 ? "#4d1f88" : "#167a62"}
-            emissiveIntensity={0.45 + ambience * 0.45}
-            roughness={0.25}
-            metalness={0.15}
-          />
+      {mesas.map((p, i) => (
+        <mesh key={`crystal-mesa-${i}`} position={[p.position[0], 0.22, p.position[2]]} scale={[p.scale[0] * 1.2, p.scale[1] * 0.26, p.scale[2] * 1]} rotation={p.rotation}>
+          <dodecahedronGeometry args={[1, 0]} />
+          <meshStandardMaterial color={i % 2 ? "#111728" : "#171329"} emissive={i % 3 === 0 ? "#25105a" : "#0b2330"} emissiveIntensity={0.1 + ambience * 0.08} roughness={0.92} />
         </mesh>
       ))}
-      {shards.map((p, i) => (
-        <mesh key={`crystal-shard-${i}`} position={[p.position[0], 0.45, p.position[2]]} scale={[p.scale[0] * 0.42, p.scale[1] * 0.7, p.scale[2] * 0.42]} rotation={p.rotation}>
+      {crystalClusters.map((p, i) => (
+        <CrystalFormation
+          key={`crystal-formation-${i}`}
+          position={[p.position[0], 0, p.position[2]]}
+          rotation={p.rotation ?? [0, 0, 0]}
+          scale={0.72 + (i % 5) * 0.14}
+          color={i % 3 === 0 ? "#72ecff" : i % 3 === 1 ? "#bd54ff" : "#49f0b9"}
+          emissive={i % 3 === 0 ? "#187f98" : i % 3 === 1 ? "#641c9e" : "#15845f"}
+          ambience={ambience}
+        />
+      ))}
+      {groundShards.map((p, i) => (
+        <mesh key={`crystal-shard-${i}`} position={[p.position[0], 0.12, p.position[2]]} scale={[p.scale[0] * 0.3, p.scale[1] * 0.22, p.scale[2] * 0.3]} rotation={[0.35 + (i % 3) * 0.18, p.rotation?.[1] ?? 0, -0.28 + (i % 5) * 0.12]}>
           <tetrahedronGeometry args={[1, 0]} />
-          <meshStandardMaterial color={i % 2 ? "#5de7ff" : "#ca55ff"} emissive={i % 2 ? "#1a7a88" : "#5a1988"} emissiveIntensity={0.38 + ambience * 0.35} roughness={0.32} metalness={0.08} />
+          <meshStandardMaterial color={i % 2 ? "#5de7ff" : "#ca55ff"} emissive={i % 2 ? "#1a7a88" : "#5a1988"} emissiveIntensity={0.32 + ambience * 0.28} roughness={0.32} metalness={0.08} />
         </mesh>
       ))}
       <group position={[0, 0, -8]}>
-        <mesh position={[-3.2, 2.8, 0]} scale={[1.3, 4.8, 1.3]} rotation={[0.08, 0.3, -0.18]}>
-          <octahedronGeometry args={[1, 0]} />
-          <meshStandardMaterial color="#d045ff" emissive="#8b18c4" emissiveIntensity={0.85 + ambience * 0.7} roughness={0.18} metalness={0.12} />
-        </mesh>
-        <mesh position={[3.5, 2.35, -0.8]} scale={[1, 4, 1]} rotation={[-0.12, -0.25, 0.16]}>
-          <octahedronGeometry args={[1, 0]} />
-          <meshStandardMaterial color="#60edff" emissive="#178aa0" emissiveIntensity={0.8 + ambience * 0.65} roughness={0.16} metalness={0.1} />
-        </mesh>
-        <mesh position={[0.5, 1.45, 1.6]} scale={[0.8, 2.6, 0.8]} rotation={[0.1, 0.75, 0.12]}>
-          <octahedronGeometry args={[1, 0]} />
-          <meshStandardMaterial color="#ff4b8f" emissive="#a91c52" emissiveIntensity={0.65 + ambience * 0.5} roughness={0.2} metalness={0.1} />
-        </mesh>
+        <CrystalFormation position={[-3.2, 0, 0]} rotation={[0, 0.3, 0]} scale={1.8} color="#d045ff" emissive="#8b18c4" ambience={ambience} hero />
+        <CrystalFormation position={[3.5, 0, -0.8]} rotation={[0, -0.25, 0]} scale={1.55} color="#60edff" emissive="#178aa0" ambience={ambience} hero />
+        <CrystalFormation position={[0.5, 0, 1.6]} rotation={[0, 0.75, 0]} scale={1.15} color="#ff4b8f" emissive="#a91c52" ambience={ambience} />
       </group>
-      <pointLight position={[0, 6, 0]} color="#8eefff" intensity={2.6 + ambience * 3.4} distance={48} />
-      <pointLight position={[-4, 3, -8]} color="#e553ff" intensity={3.2 + ambience * 2.5} distance={28} />
-      <pointLight position={[4, 3, -8]} color="#50eaff" intensity={2.8 + ambience * 2.4} distance={28} />
-      <Sparkles count={70} scale={[42, 11, 42]} size={1.35} speed={0.12} color="#bff8ff" opacity={0.32} />
+      <pointLight position={[0, 5.5, 0]} color="#8eefff" intensity={2.4 + ambience * 3.1} distance={48} />
+      <pointLight position={[-4, 2.6, -8]} color="#e553ff" intensity={3.5 + ambience * 2.7} distance={28} />
+      <pointLight position={[4, 2.6, -8]} color="#50eaff" intensity={3.1 + ambience * 2.5} distance={28} />
+      <pointLight position={[0, 8, -27]} color="#8a5cff" intensity={2.2 + ambience * 1.7} distance={52} />
+      <Sparkles count={38} scale={[42, 6, 42]} size={1.05} speed={0.08} color="#bff8ff" opacity={0.22} />
     </>
+  );
+}
+
+function CrystalFormation({
+  position,
+  rotation,
+  scale,
+  color,
+  emissive,
+  ambience,
+  hero = false,
+}: {
+  position: [number, number, number];
+  rotation: [number, number, number];
+  scale: number;
+  color: string;
+  emissive: string;
+  ambience: number;
+  hero?: boolean;
+}) {
+  const height = hero ? 4.5 : 2.6;
+  return (
+    <group position={position} rotation={rotation}>
+      <mesh position={[0, 0.18 * scale, 0]} scale={[1.05 * scale, 0.32 * scale, 0.9 * scale]} rotation={[0.05, 0.2, -0.05]}>
+        <dodecahedronGeometry args={[1, 0]} />
+        <meshStandardMaterial color="#15162a" emissive={emissive} emissiveIntensity={0.12 + ambience * 0.08} roughness={0.9} />
+      </mesh>
+      <mesh position={[0, (height * scale) / 2, 0]} scale={[0.55 * scale, height * scale, 0.55 * scale]} rotation={[0.06, 0.1, -0.12]}>
+        <coneGeometry args={[1, 1, 6]} />
+        <meshStandardMaterial color={color} emissive={emissive} emissiveIntensity={(hero ? 0.9 : 0.55) + ambience * 0.55} roughness={0.18} metalness={0.1} />
+      </mesh>
+      <mesh position={[-0.7 * scale, 1.05 * scale, 0.22 * scale]} scale={[0.32 * scale, 1.7 * scale, 0.32 * scale]} rotation={[0.18, -0.35, 0.28]}>
+        <coneGeometry args={[1, 1, 6]} />
+        <meshStandardMaterial color={color} emissive={emissive} emissiveIntensity={0.46 + ambience * 0.35} roughness={0.2} metalness={0.08} />
+      </mesh>
+      <mesh position={[0.78 * scale, 0.75 * scale, -0.18 * scale]} scale={[0.26 * scale, 1.25 * scale, 0.26 * scale]} rotation={[-0.2, 0.45, -0.24]}>
+        <coneGeometry args={[1, 1, 6]} />
+        <meshStandardMaterial color={color} emissive={emissive} emissiveIntensity={0.42 + ambience * 0.3} roughness={0.22} metalness={0.08} />
+      </mesh>
+    </group>
   );
 }
 
