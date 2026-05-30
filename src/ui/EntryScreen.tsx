@@ -13,13 +13,15 @@ export function EntryScreen({
   onImport,
 }: {
   onEnter: () => void;
-  onCreate: (meta: { title: string; artist: string; bpm: number }) => void;
+  onCreate: (meta: { title: string; artist?: string; bpm: number }) => void;
   onExport: () => Promise<void>;
   onImport: (file: File) => Promise<void>;
 }) {
   const library = useStore((s) => s.library);
   const currentId = useStore((s) => s.composition.id);
   const user = useStore((s) => s.user);
+  const accountArtist = useStore((s) => s.accountArtist);
+  const createAccountArtist = useStore((s) => s.createAccountArtist);
   const selectComposition = useStore((s) => s.selectComposition);
   const renameComposition = useStore((s) => s.renameComposition);
   const duplicateComposition = useStore((s) => s.duplicateComposition);
@@ -48,6 +50,22 @@ export function EntryScreen({
     }
   }
 
+  async function create() {
+    setError(null);
+    if (user && isSharingConfigured && !accountArtist) {
+      if (!artist.trim()) {
+        setError("Enter your artist name first.");
+        return;
+      }
+      await run("Saving artist…", async () => {
+        await createAccountArtist(artist.trim());
+        onCreate({ title, bpm: parseInt(bpm, 10) || 120 });
+      });
+      return;
+    }
+    onCreate({ title, artist: accountArtist?.artist ?? artist, bpm: parseInt(bpm, 10) || 120 });
+  }
+
   return (
     <div style={overlay}>
       <h1 style={{ fontSize: 44, margin: 0, letterSpacing: 2 }}>POLYPHONIA</h1>
@@ -55,7 +73,16 @@ export function EntryScreen({
       {creating ? (
         <div style={form}>
           <input style={input} placeholder="Title" value={title} autoFocus onChange={(e) => setTitle(e.target.value)} />
-          <input style={input} placeholder="Artist" value={artist} onChange={(e) => setArtist(e.target.value)} />
+          {accountArtist ? (
+            <div style={artistLine}>Artist: {accountArtist.artist}</div>
+          ) : user && isSharingConfigured ? (
+            <>
+              <input style={input} placeholder="Artist name" value={artist} onChange={(e) => setArtist(e.target.value)} />
+              <div style={artistLine}>This will be saved to your account for new compositions.</div>
+            </>
+          ) : (
+            <input style={input} placeholder="Artist" value={artist} onChange={(e) => setArtist(e.target.value)} />
+          )}
           <label style={bpmRow}>
             <span style={{ opacity: 0.8 }}>BPM</span>
             <input
@@ -67,8 +94,8 @@ export function EntryScreen({
               onChange={(e) => setBpm(e.target.value)}
             />
           </label>
-          <button style={button} onClick={() => onCreate({ title, artist, bpm: parseInt(bpm, 10) || 120 })}>
-            Create & start
+          <button style={button} disabled={!!busy} onClick={create}>
+            {busy === "Saving artist…" ? "Saving artist…" : "Create & start"}
           </button>
           <button style={linkBtn} onClick={() => setCreating(false)}>
             Cancel
@@ -235,6 +262,17 @@ const linkBtn: React.CSSProperties = {
   fontSize: 14,
   cursor: "pointer",
   textDecoration: "underline",
+};
+
+const artistLine: React.CSSProperties = {
+  width: "100%",
+  boxSizing: "border-box",
+  textAlign: "center",
+  padding: "8px 10px",
+  borderRadius: 8,
+  background: "rgba(255,255,255,0.05)",
+  color: "rgba(255,255,255,0.68)",
+  fontSize: 13,
 };
 
 const list: React.CSSProperties = {

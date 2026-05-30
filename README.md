@@ -14,9 +14,9 @@ these spatial compositions.
   with every stem kept sample-locked in sync.
 - **Edit** — an overhead edit mode to place tracks in space (drag gizmo), and a
   properties panel to rename, recolor, set volume, and tune distance falloff.
-- **Build from scratch** — create a new composition (title / artist / BPM) and
-  add stems by file picker or drag-and-drop; uploads drop into the running loop
-  in time.
+- **Build from scratch** — create a new composition (title / BPM, plus an
+  artist name for local-only use) and add stems by file picker or
+  drag-and-drop; uploads drop into the running loop in time.
 - **Local-first** — your work autosaves to the browser (manifests in
   `localStorage`, stem audio in IndexedDB) and survives reloads. Keep a library
   of compositions and switch between them.
@@ -24,6 +24,8 @@ these spatial compositions.
   `.polyphonia.json` (audio embedded) and re-import it anywhere.
 - **Share** — publish a composition to the cloud and get a stable read-only link
   (`/c/:id`) anyone can open. *(Requires Supabase config — see below.)*
+- **Account artist identity** — signed-in accounts keep a primary artist
+  profile; new compositions and publishing use that artist automatically.
 - **Discover artists** — browse the public gallery or an artist page
   (`/artist/:slug`) to find everything published under a unique artist slug.
 

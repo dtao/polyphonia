@@ -90,7 +90,20 @@ function toArtistIdentity(row: ArtistRow): ArtistIdentity {
   };
 }
 
-async function ensureArtistForCurrentUser(name: string): Promise<ArtistIdentity> {
+export async function getAccountArtist(): Promise<ArtistIdentity | null> {
+  const user = await getCurrentUser();
+  if (!user) return null;
+  const { data, error } = await supabase()
+    .from(ARTISTS_TABLE)
+    .select("id, name, slug, avatar_url, avatar_email_hash")
+    .eq("owner", user.id)
+    .order("created_at", { ascending: true })
+    .limit(1);
+  if (error) throw error;
+  return data?.[0] ? toArtistIdentity(data[0] as ArtistRow) : null;
+}
+
+export async function ensureArtistForCurrentUser(name: string): Promise<ArtistIdentity> {
   const sb = supabase();
   const user = await getCurrentUser();
   if (!user) throw new Error("Please sign in to publish.");
@@ -144,7 +157,7 @@ export async function publishComposition(comp: Composition): Promise<PublishResu
   const user = await getCurrentUser();
   if (!user) throw new Error("Please sign in to publish.");
   const id = comp.publishedId ?? newId();
-  const artist = await ensureArtistForCurrentUser(comp.artist);
+  const artist = (await getAccountArtist()) ?? (await ensureArtistForCurrentUser(comp.artist));
   const title = comp.title.trim() || "Untitled";
   await assertUniqueTitleForArtist(artist.artistId!, title, id);
 

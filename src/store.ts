@@ -14,12 +14,15 @@ import {
   importComposition as importBundle,
 } from "./persistence";
 import { newId } from "./id";
+import { ArtistIdentity } from "./artist";
 import {
   AuthUser,
   signInWithEmail,
   signOut as cloudSignOut,
   onAuthChange,
   getCurrentUser,
+  getAccountArtist,
+  ensureArtistForCurrentUser,
   publishComposition,
   unpublish as cloudUnpublish,
 } from "./cloud";
@@ -50,6 +53,7 @@ interface StoreState {
   entered: boolean; // has the user started the experience (left the entry screen)
   viewer: boolean; // read-only shared-link view (no autosave, no editing)
   user: AuthUser | null; // signed-in account (for publishing); null = anonymous
+  accountArtist: ArtistIdentity | null; // primary artist identity for signed-in publishing
 
   setEngine: (e: AudioEngine | null) => void;
   setEntered: (entered: boolean) => void;
@@ -60,6 +64,7 @@ interface StoreState {
   initAuth: () => void;
   signIn: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
+  createAccountArtist: (name: string) => Promise<void>;
 
   // Publish/unpublish, reflected on the composition via publishedId.
   publishCurrent: () => Promise<void>;
@@ -80,7 +85,7 @@ interface StoreState {
 
   // Composition library.
   initLibrary: () => Promise<void>;
-  newComposition: (meta: { title: string; artist: string; bpm: number }) => void;
+  newComposition: (meta: { title: string; artist?: string; bpm: number }) => void;
   importComposition: (file: File) => Promise<void>;
   selectComposition: (id: string) => Promise<void>;
   renameComposition: (id: string, title: string) => void;
@@ -119,19 +124,28 @@ export const useStore = create<StoreState>((set, get) => ({
   entered: false,
   viewer: false,
   user: null,
+  accountArtist: null,
 
   setEngine: (engine) => set({ engine }),
   setEntered: (entered) => set({ entered }),
   setViewer: (viewer) => set({ viewer }),
 
   initAuth: () => {
-    getCurrentUser().then((user) => set({ user }));
-    onAuthChange((user) => set({ user }));
+    getCurrentUser().then(async (user) => {
+      set({ user, accountArtist: user ? await getAccountArtist() : null });
+    });
+    onAuthChange(async (user) => {
+      set({ user, accountArtist: user ? await getAccountArtist() : null });
+    });
   },
   signIn: (email) => signInWithEmail(email),
   signOut: async () => {
     await cloudSignOut();
-    set({ user: null });
+    set({ user: null, accountArtist: null });
+  },
+  createAccountArtist: async (name) => {
+    const accountArtist = await ensureArtistForCurrentUser(name);
+    set({ accountArtist });
   },
 
   publishCurrent: async () => {
@@ -267,7 +281,11 @@ export const useStore = create<StoreState>((set, get) => ({
     const comp: Composition = {
       id: newId(),
       title: meta.title.trim() || "Untitled",
-      artist: meta.artist.trim() || "Unknown",
+      artist: get().accountArtist?.artist ?? meta.artist?.trim() ?? "Unknown",
+      artistId: get().accountArtist?.artistId,
+      artistSlug: get().accountArtist?.artistSlug,
+      artistAvatarUrl: get().accountArtist?.artistAvatarUrl,
+      artistAvatarEmailHash: get().accountArtist?.artistAvatarEmailHash,
       bpm: meta.bpm || 120,
       tracks: [],
     };

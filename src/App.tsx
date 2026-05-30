@@ -50,7 +50,7 @@ export default function App() {
 
   // Create a fresh empty composition and drop straight into edit mode so the
   // user can start adding stems (no pointer lock needed — edit keeps the cursor).
-  function createAndEnter(meta: { title: string; artist: string; bpm: number }) {
+  function createAndEnter(meta: { title: string; artist?: string; bpm: number }) {
     useStore.getState().newComposition(meta);
     useStore.getState().setMode("edit");
     useStore.getState().setEntered(true);
