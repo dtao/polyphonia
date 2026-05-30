@@ -133,7 +133,7 @@ export default function App() {
         />
       )}
 
-      {engine && (
+      {entered && (
         <>
           <div style={hud}>
             <strong>{comp.title}</strong> — {comp.artist}
