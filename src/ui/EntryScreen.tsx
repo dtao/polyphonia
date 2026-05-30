@@ -1,7 +1,6 @@
 import { useRef, useState } from "react";
 import { useStore } from "../store";
 import { Account } from "./Account";
-import { MyPublished } from "./MyPublished";
 
 // The start screen: pick a composition from the library to enter, start a fresh
 // one, or export/import a portable bundle.
@@ -18,10 +17,13 @@ export function EntryScreen({
 }) {
   const library = useStore((s) => s.library);
   const currentId = useStore((s) => s.composition.id);
+  const user = useStore((s) => s.user);
   const selectComposition = useStore((s) => s.selectComposition);
   const renameComposition = useStore((s) => s.renameComposition);
   const duplicateComposition = useStore((s) => s.duplicateComposition);
   const deleteComposition = useStore((s) => s.deleteComposition);
+  const unpublishComposition = useStore((s) => s.unpublishComposition);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
@@ -87,10 +89,40 @@ export function EntryScreen({
                     <div style={rowTitle}>
                       {isCurrent ? "● " : ""}
                       {c.title}
+                      {c.publishedId && <span style={pubPill}>shared</span>}
                     </div>
                     <div style={rowSub}>
                       {c.artist} · {c.tracks.length} {c.tracks.length === 1 ? "track" : "tracks"}
                     </div>
+                    {c.publishedId && (
+                      <div style={pubLine} onClick={(e) => e.stopPropagation()}>
+                        <button
+                          style={miniLink}
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(`${location.origin}/c/${c.publishedId}`);
+                              setCopiedId(c.id);
+                            } catch {
+                              /* clipboard blocked */
+                            }
+                          }}
+                        >
+                          {copiedId === c.id ? "Link copied" : "Copy link"}
+                        </button>
+                        {user && (
+                          <button
+                            style={{ ...miniLink, color: "#ff9b8f" }}
+                            onClick={() => {
+                              if (window.confirm("Unpublish? The shared link will stop working.")) {
+                                run("Unpublishing…", () => unpublishComposition(c.id));
+                              }
+                            }}
+                          >
+                            Unpublish
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div style={{ display: "flex", gap: 4 }} onClick={(e) => e.stopPropagation()}>
                     <button
@@ -156,7 +188,6 @@ export function EntryScreen({
           <div style={{ marginTop: 8 }}>
             <Account />
           </div>
-          <MyPublished />
 
           <p style={{ opacity: 0.45, fontSize: 13, marginTop: 12 }}>
             WASD to move · mouse to look · Esc to release cursor
@@ -233,6 +264,31 @@ const rowTitle: React.CSSProperties = {
 };
 
 const rowSub: React.CSSProperties = { fontSize: 12, opacity: 0.55 };
+
+const pubPill: React.CSSProperties = {
+  marginLeft: 8,
+  fontSize: 10,
+  fontWeight: 600,
+  textTransform: "uppercase",
+  letterSpacing: 0.5,
+  color: "#9fd0a0",
+  border: "1px solid rgba(126,224,129,0.4)",
+  borderRadius: 999,
+  padding: "1px 6px",
+  verticalAlign: "middle",
+};
+
+const pubLine: React.CSSProperties = { display: "flex", gap: 12, marginTop: 4 };
+
+const miniLink: React.CSSProperties = {
+  background: "none",
+  border: "none",
+  color: "rgba(255,255,255,0.6)",
+  fontSize: 12,
+  cursor: "pointer",
+  textDecoration: "underline",
+  padding: 0,
+};
 
 const iconBtn: React.CSSProperties = {
   width: 30,

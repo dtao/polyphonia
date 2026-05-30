@@ -61,13 +61,15 @@ export function onAuthChange(cb: (user: AuthUser | null) => void): () => void {
 
 // ===== Publish / fetch / manage =====
 
-// Publish the current composition (requires sign-in). Uploads uploaded stems to
-// Storage, rewrites their URLs to public CDN URLs, and inserts the manifest as a
-// row owned by the current user (owner is set by a DB default = auth.uid()).
+// Publish (or re-publish) a composition (requires sign-in). Uploads uploaded
+// stems to Storage, rewrites their URLs to public CDN URLs, and upserts the
+// manifest as a row owned by the current user. Reuses the composition's existing
+// publishedId so re-publishing keeps the same stable link.
 export async function publishComposition(comp: Composition): Promise<string> {
   const sb = supabase();
-  if (!(await getCurrentUser())) throw new Error("Please sign in to publish.");
-  const id = newId();
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Please sign in to publish.");
+  const id = comp.publishedId ?? newId();
 
   const tracks = [];
   for (const t of comp.tracks) {
@@ -85,8 +87,8 @@ export async function publishComposition(comp: Composition): Promise<string> {
     }
   }
 
-  const manifest: Composition = { ...comp, tracks };
-  const { error } = await sb.from(TABLE).insert({ id, manifest });
+  const manifest: Composition = { ...comp, tracks, publishedId: id };
+  const { error } = await sb.from(TABLE).upsert({ id, manifest, owner: user.id });
   if (error) throw error;
   return id;
 }
@@ -96,31 +98,6 @@ export async function fetchPublishedComposition(id: string): Promise<Composition
   const { data, error } = await supabase().from(TABLE).select("manifest").eq("id", id).maybeSingle();
   if (error) throw error;
   return (data?.manifest as Composition) ?? null;
-}
-
-export interface PublishedSummary {
-  id: string;
-  title: string;
-  artist: string;
-  createdAt: string;
-}
-
-// List the current user's published compositions (RLS also scopes by owner).
-export async function listMyPublished(): Promise<PublishedSummary[]> {
-  const user = await getCurrentUser();
-  if (!user) return [];
-  const { data, error } = await supabase()
-    .from(TABLE)
-    .select("id, manifest, created_at")
-    .eq("owner", user.id)
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  return (data ?? []).map((row: any) => ({
-    id: row.id,
-    title: row.manifest?.title ?? "Untitled",
-    artist: row.manifest?.artist ?? "Unknown",
-    createdAt: row.created_at,
-  }));
 }
 
 // Unpublish: remove the row and its stored stems (owner-gated by RLS).

@@ -40,6 +40,8 @@ export interface Composition {
    */
   bars?: number;
   tracks: TrackDef[];
+  /** Share id if this composition is currently published (cleared on unpublish). */
+  publishedId?: string;
 }
 
 // "Journey" — six stems (32s / 16-bar loop at 120 BPM), arranged in a hexagon

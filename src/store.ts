@@ -14,7 +14,15 @@ import {
   importComposition as importBundle,
 } from "./persistence";
 import { newId } from "./id";
-import { AuthUser, signInWithEmail, signOut as cloudSignOut, onAuthChange, getCurrentUser } from "./cloud";
+import {
+  AuthUser,
+  signInWithEmail,
+  signOut as cloudSignOut,
+  onAuthChange,
+  getCurrentUser,
+  publishComposition,
+  unpublish as cloudUnpublish,
+} from "./cloud";
 
 // Non-reactive registry of each track marker's 3D object, so the move-gizmo
 // can attach to the selected track's object without prop-drilling refs.
@@ -52,6 +60,10 @@ interface StoreState {
   initAuth: () => void;
   signIn: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
+
+  // Publish/unpublish, reflected on the composition via publishedId.
+  publishCurrent: () => Promise<void>;
+  unpublishComposition: (id: string) => Promise<void>;
   setMode: (mode: Mode) => void;
   toggleMode: () => void;
   select: (id: string | null) => void;
@@ -120,6 +132,24 @@ export const useStore = create<StoreState>((set, get) => ({
   signOut: async () => {
     await cloudSignOut();
     set({ user: null });
+  },
+
+  publishCurrent: async () => {
+    const id = await publishComposition(get().composition);
+    const composition = { ...get().composition, publishedId: id };
+    const library = upsert(get().library, serializeComposition(composition));
+    set({ composition, library });
+    persistLibrary(library, composition.id);
+  },
+
+  unpublishComposition: async (compId) => {
+    const s = get();
+    const entry = compId === s.composition.id ? serializeComposition(s.composition) : s.library.find((c) => c.id === compId);
+    if (entry?.publishedId) await cloudUnpublish(entry.publishedId);
+    const composition = s.composition.id === compId ? { ...s.composition, publishedId: undefined } : s.composition;
+    const library = s.library.map((c) => (c.id === compId ? { ...c, publishedId: undefined } : c));
+    set({ composition, library });
+    persistLibrary(library, composition.id);
   },
 
   // Boot the audio engine for the current composition (idempotent). Used by both
@@ -274,6 +304,8 @@ export const useStore = create<StoreState>((set, get) => ({
     const target = library.find((c) => c.id === id);
     if (target) {
       for (const t of target.tracks) if (t.source.kind === "stored") stemDelete(t.source.key);
+      // Best-effort: also remove the published copy (needs sign-in; ignore errors).
+      if (target.publishedId) cloudUnpublish(target.publishedId).catch(() => {});
     }
     let nextLibrary = library.filter((c) => c.id !== id);
     let nextComposition = composition;

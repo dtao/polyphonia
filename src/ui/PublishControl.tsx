@@ -1,28 +1,34 @@
 import { useState } from "react";
 import { useStore } from "../store";
-import { isSharingConfigured, publishComposition } from "../cloud";
+import { isSharingConfigured } from "../cloud";
 import { Account } from "./Account";
 
-// Publish the current composition to the cloud and surface a shareable link.
+// Publish / re-publish / unpublish the current composition. Published state lives
+// on the composition (publishedId), so it stays consistent with the library list.
 export function PublishControl() {
   const comp = useStore((s) => s.composition);
   const user = useStore((s) => s.user);
-  const [status, setStatus] = useState<"idle" | "publishing" | "done" | "error">("idle");
-  const [link, setLink] = useState("");
+  const publishCurrent = useStore((s) => s.publishCurrent);
+  const unpublishComposition = useStore((s) => s.unpublishComposition);
+
+  const [busy, setBusy] = useState<null | string>(null);
+  const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   const empty = comp.tracks.length === 0;
+  const published = Boolean(comp.publishedId);
+  const link = comp.publishedId ? `${location.origin}/c/${comp.publishedId}` : "";
 
-  async function publish() {
-    setStatus("publishing");
-    setCopied(false);
+  async function run(label: string, fn: () => Promise<void>) {
+    setBusy(label);
+    setError(null);
     try {
-      const id = await publishComposition(comp);
-      setLink(`${location.origin}/c/${id}`);
-      setStatus("done");
+      await fn();
     } catch (e) {
       console.error(e);
-      setStatus("error");
+      setError(e instanceof Error ? e.message : `${label} failed.`);
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -31,45 +37,61 @@ export function PublishControl() {
       await navigator.clipboard.writeText(link);
       setCopied(true);
     } catch {
-      /* clipboard may be blocked; the link is selectable anyway */
+      /* clipboard may be blocked; link is selectable */
     }
+  }
+
+  let body: React.ReactNode;
+  if (!isSharingConfigured) {
+    body = (
+      <button style={{ ...btn, opacity: 0.5 }} disabled title="Sharing isn't configured (Supabase env vars missing)">
+        ⬆ Publish
+      </button>
+    );
+  } else if (!user) {
+    body = (
+      <>
+        <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>Sign in to publish:</div>
+        <Account />
+      </>
+    );
+  } else if (published) {
+    body = (
+      <>
+        <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>● Published (read-only link):</div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <input style={linkInput} readOnly value={link} onFocus={(e) => e.target.select()} />
+          <button style={btn} onClick={copy}>
+            {copied ? "Copied" : "Copy"}
+          </button>
+        </div>
+        <div style={{ display: "flex", gap: 14, marginTop: 8 }}>
+          <button style={link2} disabled={!!busy} onClick={() => run("Updating…", publishCurrent)}>
+            {busy === "Updating…" ? "Updating…" : "Update"}
+          </button>
+          <button style={{ ...link2, color: "#ff9b8f" }} disabled={!!busy} onClick={() => run("Unpublishing…", () => unpublishComposition(comp.id))}>
+            Unpublish
+          </button>
+        </div>
+      </>
+    );
+  } else {
+    body = (
+      <button
+        style={{ ...btn, opacity: empty || busy ? 0.5 : 1 }}
+        disabled={empty || !!busy}
+        title={empty ? "Add a track first" : "Publish a read-only shareable link"}
+        onClick={() => run("Publishing…", publishCurrent)}
+      >
+        {busy === "Publishing…" ? "Publishing…" : "⬆ Publish"}
+      </button>
+    );
   }
 
   return (
     <div style={panel}>
-      {status === "done" ? (
-        <>
-          <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>Shareable link (read-only):</div>
-          <div style={{ display: "flex", gap: 6 }}>
-            <input style={linkInput} readOnly value={link} onFocus={(e) => e.target.select()} />
-            <button style={btn} onClick={copy}>
-              {copied ? "Copied" : "Copy"}
-            </button>
-          </div>
-          <button style={againBtn} onClick={() => setStatus("idle")}>
-            Publish again
-          </button>
-        </>
-      ) : !isSharingConfigured ? (
-        <button style={{ ...btn, opacity: 0.5 }} disabled title="Sharing isn't configured (Supabase env vars missing)">
-          ⬆ Publish
-        </button>
-      ) : !user ? (
-        <>
-          <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>Sign in to publish:</div>
-          <Account />
-        </>
-      ) : (
-        <button
-          style={{ ...btn, opacity: empty || status === "publishing" ? 0.5 : 1 }}
-          disabled={empty || status === "publishing"}
-          title={empty ? "Add a track first" : "Publish a read-only shareable link"}
-          onClick={publish}
-        >
-          {status === "publishing" ? "Publishing…" : "⬆ Publish"}
-        </button>
-      )}
-      {status === "error" && <div style={{ color: "#ff9b8f", fontSize: 12, marginTop: 6 }}>Publish failed.</div>}
+      {body}
+      {error && <div style={{ color: "#ff9b8f", fontSize: 12, marginTop: 6 }}>{error}</div>}
     </div>
   );
 }
@@ -98,14 +120,14 @@ const btn: React.CSSProperties = {
   cursor: "pointer",
 };
 
-const againBtn: React.CSSProperties = {
-  marginTop: 8,
+const link2: React.CSSProperties = {
   background: "none",
   border: "none",
-  color: "rgba(255,255,255,0.55)",
+  color: "rgba(255,255,255,0.6)",
   fontSize: 13,
   cursor: "pointer",
   textDecoration: "underline",
+  padding: 0,
 };
 
 const linkInput: React.CSSProperties = {
