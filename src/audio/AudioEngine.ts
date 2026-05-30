@@ -29,7 +29,9 @@ export class AudioEngine {
   }
 
   async load(comp: Composition): Promise<void> {
-    const stems = createPlaceholderStems(this.ctx, comp.bpm, comp.bars);
+    // Only synthesize placeholders if some track actually needs them.
+    const needsSynth = comp.tracks.some((t) => t.source.kind === "synth");
+    const stems = needsSynth ? createPlaceholderStems(this.ctx, comp.bpm, comp.bars) : null;
 
     for (const def of comp.tracks) {
       let buffer: AudioBuffer;
@@ -37,7 +39,7 @@ export class AudioEngine {
         const res = await fetch(def.source.url);
         buffer = await this.ctx.decodeAudioData(await res.arrayBuffer());
       } else {
-        buffer = stems[def.source.preset];
+        buffer = stems![def.source.preset];
       }
 
       const panner = this.ctx.createPanner();

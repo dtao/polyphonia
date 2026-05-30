@@ -34,50 +34,55 @@ export interface Composition {
   tracks: TrackDef[];
 }
 
-// The default Phase-0 composition: four coordinated parts in A-minor, spread
-// across the corners of a plaza so that walking around rebalances the mix.
+// "Journey" — six stems (32s / 16-bar loop at 120 BPM), arranged in a hexagon
+// around the origin so you can walk between the voices. The rhythm section
+// (bass + drums) sits together; the harmonic/melodic voices spread around.
+//
+// Positions are points on a circle of radius ~10, every 60 degrees.
 export const defaultComposition: Composition = {
-  id: "demo-plaza",
-  title: "Plaza (placeholder)",
+  id: "journey",
+  title: "Journey",
   artist: "Polyphonia",
   bpm: 120,
-  bars: 4,
+  bars: 16,
   tracks: [
     {
       name: "bass",
       color: "#5b8cff",
-      position: [-9, 1.5, -9],
-      source: { kind: "synth", preset: "bass" },
-      refDistance: 4,
-      maxDistance: 40,
-      rolloff: 1.1,
-    },
-    {
-      name: "pad",
-      color: "#b96bff",
-      position: [9, 1.5, -9],
-      source: { kind: "synth", preset: "pad" },
-      refDistance: 5,
-      maxDistance: 45,
-      rolloff: 0.9,
-    },
-    {
-      name: "arp",
-      color: "#56e0c0",
-      position: [9, 1.5, 9],
-      source: { kind: "synth", preset: "arp" },
-      refDistance: 4,
-      maxDistance: 40,
-      rolloff: 1.2,
+      position: [10, 1.5, 0],
+      source: { kind: "file", url: "/stems/Journey_Bass.mp3" },
     },
     {
       name: "drums",
       color: "#ff7a6b",
-      position: [-9, 1.5, 9],
-      source: { kind: "synth", preset: "drums" },
-      refDistance: 4,
-      maxDistance: 40,
-      rolloff: 1.2,
+      position: [5, 1.5, 8.7],
+      source: { kind: "file", url: "/stems/Journey_Drums.mp3" },
+    },
+    {
+      name: "piano",
+      color: "#ffd166",
+      position: [-5, 1.5, 8.7],
+      source: { kind: "file", url: "/stems/Journey_Piano.mp3" },
+    },
+    {
+      name: "choir",
+      color: "#b96bff",
+      position: [-10, 1.5, 0],
+      source: { kind: "file", url: "/stems/Journey_Choir.mp3" },
+    },
+    {
+      name: "synth",
+      color: "#56e0c0",
+      position: [-5, 1.5, -8.7],
+      source: { kind: "file", url: "/stems/Journey_Synth.mp3" },
+    },
+    {
+      name: "sine",
+      color: "#f78fb3",
+      position: [5, 1.5, -8.7],
+      source: { kind: "file", url: "/stems/Journey_Sine.mp3" },
     },
   ],
+  // Shared falloff: gentle enough to always hear the whole piece, but each
+  // voice clearly strengthens as you approach it.
 };
