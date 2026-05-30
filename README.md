@@ -12,6 +12,9 @@ these spatial compositions.
 - **Explore** — first-person movement (WASD + mouse) through a composition;
   realistic 3D audio via the Web Audio API (HRTF panning + distance falloff),
   with every stem kept sample-locked in sync.
+- **Immersive spaces** — compositions carry environment metadata and can render
+  procedural spaces such as a studio void, cavern, forest clearing, or crystal
+  hall.
 - **Edit** — an overhead edit mode to place tracks in space (drag gizmo), and a
   properties panel to rename, recolor, set volume, and tune distance falloff.
 - **Build from scratch** — create a new composition (title / BPM, plus an
@@ -154,7 +157,7 @@ SPA fallback so routes like `/c/:id`, `/gallery`, and `/artist/:slug` serve
 ```
 src/
   audio/        AudioEngine (Web Audio) + procedural placeholder synth
-  scene/        React Three Fiber scene: Player, EditControls, gizmo, markers
+  scene/        React Three Fiber scene: environments, Player, EditControls, gizmo, markers
   ui/           EntryScreen, PropertiesPanel, AddStem, LoopPanel, PublishControl, Account, Viewer, Gallery, ArtistPage
   artist.ts       artist identity helpers (slugs, artist routes)
   environment.ts  environment presets, materials, and tiling metadata

@@ -38,7 +38,7 @@ depends only on earlier ones.
 ## Milestone 5 — Immersive environments
 
 - [x] **21. Environment model** — add composition-level environment metadata (`environment.type`, palette/material preset, ambience intensity, optional tiling settings) with persistence/export/publish compatibility and safe defaults for older compositions.
-- [ ] **22. Visual environment presets** — replace the bare abstract grid with selectable preset spaces (e.g. studio void, cavern, forest clearing, crystalline hall) while preserving edit readability, marker selection, and performance.
+- [x] **22. Visual environment presets** — replace the bare abstract grid with selectable preset spaces (e.g. studio void, cavern, forest clearing, crystalline hall) while preserving edit readability, marker selection, and performance.
 - [ ] **23. Environment picker** — add an Edit-mode environment panel so composers can choose a preset and tune visual intensity without touching stem placement or audio settings.
 - [ ] **24. Material-aware ambience** — map environment material presets to broad acoustic character (dry/soft → low reflections, stone/glass → brighter/longer reflections) using a conservative global reverb/filter path that can be bypassed.
 - [ ] **25. Occlusion and obstruction pass** — introduce simple geometry-aware sound shaping between listener and stems (line-of-sight checks against environment obstacles; blocked sounds get softer/darker without breaking timing).

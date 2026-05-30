@@ -44,11 +44,12 @@ add a test framework unless asked.
   feeds an HRTF `PannerNode` while the camera drives the `AudioListener`. See
   gotchas below. `src/audio/synth.ts` is a procedural placeholder generator
   (fallback; the live demo uses real files in `public/stems`).
-- **Scene (R3F):** `src/scene/` — `Scene` (composes it), `Player` (explore:
-  WASD + pointer-lock look), `EditControls` (orbit/pan/turn camera),
-  `TrackGizmo` (drag-to-move selected track), `TrackMarker` (pillar + billboard
-  label; selected edit-mode marker also shows Near/Far rings, rolloff gradient,
-  and volume-scaled pillar), `ListenerSync` (drives the AudioListener in both
+- **Scene (R3F):** `src/scene/` — `Scene` (composes it), `EnvironmentScene`
+  (procedural studio/cavern/forest/crystal presets), `Player` (explore: WASD +
+  pointer-lock look), `EditControls` (orbit/pan/turn camera), `TrackGizmo`
+  (drag-to-move selected track), `TrackMarker` (pillar + billboard label;
+  selected edit-mode marker also shows Near/Far rings, rolloff gradient, and
+  volume-scaled pillar), `ListenerSync` (drives the AudioListener in both
   modes).
 - **UI (DOM overlays):** `src/ui/` — `EntryScreen` (start screen: library
   chooser, new/export/import, sign-in, gallery link), `PropertiesPanel`,
