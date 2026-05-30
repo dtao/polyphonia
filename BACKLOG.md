@@ -15,7 +15,7 @@ depends only on earlier ones.
 ## Milestone 2 — Build a composition from scratch
 
 - [x] **7. Add stems (upload)** — file picker + drag-and-drop; decoded and inserted in sync with the running loop.
-- [ ] **8. New / empty composition** — create a composition from scratch with title, artist, and BPM; add tracks to it; empty-state UX.
+- [x] **8. New / empty composition** — start screen "new composition" form (title, artist, BPM) drops into edit mode on an empty composition; empty-state hint prompts adding the first stem.
 - [x] **9. Loop-point cleanup** — trim MP3 encoder padding by looping `[offset, offset + musical-length]` per source (offset = shared leading silence), so imported stems loop seamlessly.
 
 ## Milestone 3 — Persistence (local-first)

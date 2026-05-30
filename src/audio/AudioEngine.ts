@@ -34,7 +34,7 @@ export class AudioEngine {
   async load(comp: Composition): Promise<void> {
     // Only synthesize placeholders if some track actually needs them.
     const needsSynth = comp.tracks.some((t) => t.source.kind === "synth");
-    const stems = needsSynth ? createPlaceholderStems(this.ctx, comp.bpm, comp.bars) : null;
+    const stems = needsSynth ? createPlaceholderStems(this.ctx, comp.bpm, comp.bars ?? 4) : null;
 
     for (const def of comp.tracks) {
       let buffer: AudioBuffer;
@@ -51,7 +51,7 @@ export class AudioEngine {
     // Loop bookkeeping (see startSource / loopRegion). The musical loop length
     // comes from the composition's tempo; the offset is the smallest leading
     // silence across file stems — the shared MP3 encoder delay to skip.
-    this.loopLength = comp.bars * 4 * (60 / comp.bpm);
+    this.loopLength = comp.bars ? comp.bars * 4 * (60 / comp.bpm) : 0;
     const fileBuffers = this.tracks.filter((t) => t.def.source.kind === "file").map((t) => t.buffer);
     this.loopOffset = fileBuffers.length
       ? Math.min(0.1, Math.min(...fileBuffers.map((b) => this.leadingSilence(b))))

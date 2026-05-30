@@ -4,6 +4,7 @@ import { Scene } from "./scene/Scene";
 import { AudioEngine } from "./audio/AudioEngine";
 import { PropertiesPanel } from "./ui/PropertiesPanel";
 import { AddStem } from "./ui/AddStem";
+import { EntryScreen } from "./ui/EntryScreen";
 import { useStore } from "./store";
 
 export default function App() {
@@ -36,6 +37,19 @@ export default function App() {
   // in the background so mouse-look is live right away.
   async function enter() {
     if (useStore.getState().engine || useStore.getState().entered) return;
+    useStore.getState().setEntered(true);
+    const e = new AudioEngine();
+    await e.ctx.resume();
+    await e.load(useStore.getState().composition);
+    e.start();
+    setEngine(e);
+  }
+
+  // Create a fresh empty composition and drop straight into edit mode so the
+  // user can start adding stems (no pointer lock needed — edit keeps the cursor).
+  async function createAndEnter(meta: { title: string; artist: string; bpm: number }) {
+    useStore.getState().newComposition(meta);
+    useStore.getState().setMode("edit");
     useStore.getState().setEntered(true);
     const e = new AudioEngine();
     await e.ctx.resume();
@@ -109,20 +123,7 @@ export default function App() {
         <Scene />
       </Canvas>
 
-      {!entered && (
-        <div style={overlay}>
-          <h1 style={{ fontSize: 44, margin: 0, letterSpacing: 2 }}>POLYPHONIA</h1>
-          <p style={{ opacity: 0.7, maxWidth: 440, textAlign: "center", lineHeight: 1.5 }}>
-            {comp.title} — move between the instruments and hear the mix shift around you.
-          </p>
-          <button id="enter-btn" style={button} onClick={enter}>
-            Click to enter
-          </button>
-          <p style={{ opacity: 0.45, fontSize: 13, marginTop: 24 }}>
-            WASD to move · mouse to look · Esc to release cursor
-          </p>
-        </div>
-      )}
+      {!entered && <EntryScreen onEnter={enter} onCreate={createAndEnter} />}
 
       {engine && (
         <>
@@ -150,34 +151,22 @@ export default function App() {
           )}
 
           <PropertiesPanel />
+
+          {/* Empty composition: prompt the user to add their first stem. */}
+          {comp.tracks.length === 0 && !locked && (
+            <div style={emptyHint}>
+              <strong>{comp.title}</strong> is empty.
+              <br />
+              {mode === "edit"
+                ? "Drop audio files anywhere, or click ＋ Add stem to begin."
+                : "Switch to Edit to add stems."}
+            </div>
+          )}
         </>
       )}
     </>
   );
 }
-
-const overlay: React.CSSProperties = {
-  position: "absolute",
-  inset: 0,
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: 16,
-  color: "white",
-  fontFamily: "system-ui, sans-serif",
-  background: "radial-gradient(circle at center, rgba(20,24,48,0.85), rgba(5,6,10,0.97))",
-};
-
-const button: React.CSSProperties = {
-  padding: "14px 36px",
-  fontSize: 17,
-  borderRadius: 999,
-  border: "1px solid rgba(255,255,255,0.25)",
-  background: "rgba(91,140,255,0.18)",
-  color: "white",
-  cursor: "pointer",
-};
 
 const hud: React.CSSProperties = {
   position: "absolute",
@@ -216,4 +205,17 @@ const exitBtn: React.CSSProperties = {
   background: "rgba(255,255,255,0.08)",
   color: "rgba(255,255,255,0.85)",
   cursor: "pointer",
+};
+
+const emptyHint: React.CSSProperties = {
+  position: "absolute",
+  top: "42%",
+  left: "50%",
+  transform: "translate(-50%, -50%)",
+  textAlign: "center",
+  color: "rgba(255,255,255,0.8)",
+  fontFamily: "system-ui, sans-serif",
+  fontSize: 16,
+  lineHeight: 1.6,
+  pointerEvents: "none",
 };

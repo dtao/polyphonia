@@ -25,7 +25,12 @@ export function Player() {
   }, [camera]);
 
   useEffect(() => {
-    const down = (e: KeyboardEvent) => (keys.current[e.code] = true);
+    const down = (e: KeyboardEvent) => {
+      // Ignore keys while typing in a form field (e.g. the entry screen).
+      const el = document.activeElement;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return;
+      keys.current[e.code] = true;
+    };
     const upFn = (e: KeyboardEvent) => (keys.current[e.code] = false);
     window.addEventListener("keydown", down);
     window.addEventListener("keyup", upFn);
@@ -36,6 +41,7 @@ export function Player() {
   }, []);
 
   useFrame((_, dt) => {
+    if (!entered) return; // no movement until the experience has started
     const speed = 7 * dt;
     camera.getWorldDirection(forward.current);
     forward.current.y = 0;

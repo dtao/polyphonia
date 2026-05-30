@@ -34,7 +34,10 @@ interface StoreState {
   setTrackColor: (id: string, color: string) => void;
   deleteTrack: (id: string) => void;
   addStem: (file: File) => Promise<void>;
+  newComposition: (meta: { title: string; artist: string; bpm: number }) => void;
 }
+
+const newId = () => (crypto as any).randomUUID?.() ?? `id-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 const PALETTE = ["#5b8cff", "#ff7a6b", "#ffd166", "#b96bff", "#56e0c0", "#f78fb3", "#7ee081", "#ffa057"];
 const randomColor = () => PALETTE[Math.floor(Math.random() * PALETTE.length)];
@@ -100,7 +103,7 @@ export const useStore = create<StoreState>((set, get) => ({
     const engine = get().engine;
     if (!engine) throw new Error("Audio engine not ready");
     const buffer = await engine.decode(await file.arrayBuffer());
-    const id = (crypto as any).randomUUID?.() ?? `stem-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const id = newId();
     const def: TrackDef = {
       id,
       name: stripExt(file.name),
@@ -115,6 +118,25 @@ export const useStore = create<StoreState>((set, get) => ({
       selectedId: id,
       mode: "edit",
     }));
+  },
+
+  // Replace the current composition with a fresh empty one. (Multiple saved
+  // compositions come later with the library; for now this is in-memory.)
+  newComposition: (meta) => {
+    // Free any uploaded object URLs from the outgoing composition.
+    for (const t of get().composition.tracks) {
+      if (t.source.kind === "file" && t.source.url.startsWith("blob:")) URL.revokeObjectURL(t.source.url);
+    }
+    set({
+      composition: {
+        id: newId(),
+        title: meta.title.trim() || "Untitled",
+        artist: meta.artist.trim() || "Unknown",
+        bpm: meta.bpm || 120,
+        tracks: [],
+      },
+      selectedId: null,
+    });
   },
 }));
 

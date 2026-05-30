@@ -33,8 +33,12 @@ export interface Composition {
   title: string;
   artist: string;
   bpm: number;
-  /** Loop length in bars (4 beats each). All stems share this for tight sync. */
-  bars: number;
+  /**
+   * Loop length in bars (4 beats each). When set, stems are trimmed to this
+   * musical length for seamless looping. Omitted for user-built compositions,
+   * where each stem simply loops its whole buffer.
+   */
+  bars?: number;
   tracks: TrackDef[];
 }
 
