@@ -44,5 +44,6 @@ depends only on earlier ones.
 - [x] Exit back to the start screen (audio teardown), with edits preserved for re-entry.
 - [x] Hide UI chrome during camera control; "Add stem" only in edit mode.
 - [x] Billboard track labels so they stay readable from any angle.
+- [x] Preserve position across Explore/Edit (altitude shifts, location doesn't); new stems spawn at the view center.
 
 **Cross-cutting** (interleave opportunistically): mobile / touch controls, undo / redo, loading & error states.

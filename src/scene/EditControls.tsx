@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
+import { viewState } from "../store";
 
 // Edit-mode camera: drag to orbit, scroll to zoom, and WASD to glide across
 // the plane (panning the orbit pivot with you). Moving the camera moves the
@@ -15,9 +16,18 @@ export function EditControls() {
   const move = useRef(new THREE.Vector3());
   const up = new THREE.Vector3(0, 1, 0);
 
-  // Start from an overview vantage when entering edit mode.
+  // Rise to an overhead vantage while preserving both position and heading: the
+  // orbit pivot stays at the spot you were standing on, and the camera lifts up
+  // and *back along your facing direction* — so it feels like floating up and
+  // tilting your head down, still pointing the same compass direction.
   useEffect(() => {
-    camera.position.set(0, 14, 22);
+    const c = controls.current;
+    if (!c) return;
+    const back = 18; // how far behind the anchor, along -facing
+    const height = 14;
+    c.target.set(viewState.x, 1.5, viewState.z);
+    camera.position.set(viewState.x - viewState.fx * back, height, viewState.z - viewState.fz * back);
+    c.update();
   }, [camera]);
 
   useEffect(() => {
@@ -58,13 +68,23 @@ export function EditControls() {
       camera.position.add(move.current);
       c.target.add(move.current);
     }
+
+    // Keep the shared anchor at the orbit pivot (screen center) and the heading
+    // at the camera's facing, so explore mode and new stems stay aligned with
+    // where you're looking — including after orbiting to a new direction.
+    viewState.x = c.target.x;
+    viewState.z = c.target.z;
+    const len = Math.hypot(fwd.current.x, fwd.current.z);
+    if (len > 0) {
+      viewState.fx = fwd.current.x / len;
+      viewState.fz = fwd.current.z / len;
+    }
   });
 
   return (
     <OrbitControls
       ref={controls}
       makeDefault
-      target={[0, 1.5, 0]}
       enableDamping
       enablePan
       maxPolarAngle={Math.PI / 2.05} // don't dip below the floor

@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { PointerLockControls } from "@react-three/drei";
 import * as THREE from "three";
-import { useStore } from "../store";
+import { useStore, viewState } from "../store";
 
 // Explore mode: WASD movement on the ground plane + pointer-lock mouse look.
 // (The AudioListener is driven separately by <ListenerSync>, which works in
@@ -15,13 +15,11 @@ export function Player() {
   const right = useRef(new THREE.Vector3());
   const up = new THREE.Vector3(0, 1, 0);
 
-  // Face forward (horizontal) on load instead of inheriting R3F's default
-  // "look at the origin" — which, since we spawn above the origin, points
-  // the camera straight down. PointerLockControls only changes orientation
-  // on mouse movement, so this initial heading sticks until you look around.
+  // Drop in at the shared ground position and facing direction (both preserved
+  // across mode switches), at eye height and horizontal.
   useEffect(() => {
-    camera.position.set(0, 1.7, 0);
-    camera.lookAt(0, 1.7, -1);
+    camera.position.set(viewState.x, 1.7, viewState.z);
+    camera.lookAt(viewState.x + viewState.fx, 1.7, viewState.z + viewState.fz);
   }, [camera]);
 
   useEffect(() => {
@@ -53,6 +51,15 @@ export function Player() {
     if (keys.current["KeyD"]) camera.position.addScaledVector(right.current, speed);
     if (keys.current["KeyA"]) camera.position.addScaledVector(right.current, -speed);
     camera.position.y = 1.7; // keep eye height fixed
+
+    // Record position + heading so edit mode (and new stems) stay anchored here.
+    viewState.x = camera.position.x;
+    viewState.z = camera.position.z;
+    const len = Math.hypot(forward.current.x, forward.current.z);
+    if (len > 0) {
+      viewState.fx = forward.current.x / len;
+      viewState.fz = forward.current.z / len;
+    }
   });
 
   // Before entering, the lock is armed on the entry button so its single click

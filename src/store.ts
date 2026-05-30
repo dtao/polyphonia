@@ -7,6 +7,13 @@ import { AudioEngine } from "./audio/AudioEngine";
 // can attach to the selected track's object without prop-drilling refs.
 export const markerObjects = new Map<string, THREE.Object3D>();
 
+// Your location and facing on the spatial plane, shared across camera modes so
+// switching Explore <-> Edit preserves both position and heading. `x,z` is the
+// ground anchor (in edit it's the orbit pivot / screen center); `fx,fz` is the
+// unit facing direction on the plane. New stems spawn at the anchor. Kept
+// outside React to avoid per-frame re-renders.
+export const viewState = { x: 0, z: 0, fx: 0, fz: -1 };
+
 type Falloff = Pick<TrackDef, "refDistance" | "maxDistance" | "rolloff">;
 
 export type Mode = "explore" | "edit";
@@ -108,7 +115,9 @@ export const useStore = create<StoreState>((set, get) => ({
       id,
       name: stripExt(file.name),
       color: randomColor(),
-      position: [(Math.random() * 2 - 1) * 4, 1.5, (Math.random() * 2 - 1) * 4],
+      // Spawn at the center of the view (with a little jitter so repeated adds
+      // don't stack exactly on top of each other).
+      position: [viewState.x + (Math.random() * 2 - 1) * 0.8, 1.5, viewState.z + (Math.random() * 2 - 1) * 0.8],
       volume: 1,
       source: { kind: "file", url: URL.createObjectURL(file) },
     };
