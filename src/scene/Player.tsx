@@ -64,6 +64,8 @@ export function Player() {
 
   // Before entering, the lock is armed on the entry button so its single click
   // both starts the experience and locks the pointer (no second click). After
-  // entering, fall back to the default (click anywhere) to re-lock after Esc.
-  return <PointerLockControls selector={entered ? undefined : "#enter-btn"} />;
+  // entering, arm it on the canvas only — so clicking the 3D scene re-locks
+  // (to look around after Esc), but clicking UI buttons does NOT grab the
+  // pointer.
+  return <PointerLockControls selector={entered ? "canvas" : "#enter-btn"} />;
 }

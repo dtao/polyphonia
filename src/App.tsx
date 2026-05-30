@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Scene } from "./scene/Scene";
-import { AudioEngine } from "./audio/AudioEngine";
 import { PropertiesPanel } from "./ui/PropertiesPanel";
 import { AddStem } from "./ui/AddStem";
 import { EntryScreen } from "./ui/EntryScreen";
+import { PublishControl } from "./ui/PublishControl";
 import { useStore } from "./store";
 import { exportComposition } from "./persistence";
 
@@ -41,27 +41,19 @@ export default function App() {
   // PointerLockControls (armed on this button) locks the pointer, and here we
   // boot the audio engine. We leave the entry screen immediately and load audio
   // in the background so mouse-look is live right away.
-  async function enter() {
+  function enter() {
     if (useStore.getState().engine || useStore.getState().entered) return;
     useStore.getState().setEntered(true);
-    const e = new AudioEngine();
-    await e.ctx.resume();
-    await e.load(useStore.getState().composition);
-    e.start();
-    setEngine(e);
+    useStore.getState().startAudio();
   }
 
   // Create a fresh empty composition and drop straight into edit mode so the
   // user can start adding stems (no pointer lock needed — edit keeps the cursor).
-  async function createAndEnter(meta: { title: string; artist: string; bpm: number }) {
+  function createAndEnter(meta: { title: string; artist: string; bpm: number }) {
     useStore.getState().newComposition(meta);
     useStore.getState().setMode("edit");
     useStore.getState().setEntered(true);
-    const e = new AudioEngine();
-    await e.ctx.resume();
-    await e.load(useStore.getState().composition);
-    e.start();
-    setEngine(e);
+    useStore.getState().startAudio();
   }
 
   // Stop the experience and return to the entry screen. Edits to the
@@ -144,7 +136,7 @@ export default function App() {
             <strong>{comp.title}</strong> — {comp.artist}
             <span style={{ opacity: 0.6 }}>
               {" "}
-              · {mode === "explore" ? "WASD + mouse to move · Esc for cursor" : "WASD to move · drag to orbit · click a track"}
+              · {mode === "explore" ? "WASD + mouse to move · click to look · Esc for cursor" : "WASD to move · drag to orbit · click a track"}
             </span>
           </div>
 
@@ -160,6 +152,7 @@ export default function App() {
                 </button>
               </div>
               {mode === "edit" && <AddStem />}
+              <PublishControl />
             </>
           )}
 

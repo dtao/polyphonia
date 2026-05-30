@@ -26,10 +26,10 @@ depends only on earlier ones.
 
 ## Milestone 4 — Backend & shareable URLs
 
-- [ ] **13. Backend + storage** — stems to object storage (S3 / Cloudflare R2 + CDN), manifests to a database; replace in-memory stems with an upload flow.
-- [ ] **14. Stable share URLs** — `/c/:id` loads any composition (read-only).
+- [x] **13. Backend + storage** — Supabase: uploaded stems → public Storage bucket, manifest → Postgres row; anonymous publish (no custom server, gated by RLS).
+- [x] **14. Stable share URLs** — `/c/:id` loads a published composition read-only (React Router + read-only viewer).
 - [ ] **15. Accounts & ownership** — light auth so people edit only their own work and links are safe to share.
-- [ ] **16. Public gallery** — browse and open compositions others have shared.
+- [ ] **16. Public gallery** — browse and open compositions others have shared. _Schema note: at this point add denormalized, indexed `title` / `artist` columns to the `compositions` table (currently only in the `manifest` jsonb) plus an `owner` column (from #15), populated at publish time, for efficient listing/sorting/search. Backfill v1 rows from the manifest._
 
 ## Later — Immersive environments (north star)
 

@@ -39,9 +39,12 @@ interface StoreState {
   mode: Mode;
   selectedId: string | null;
   entered: boolean; // has the user started the experience (left the entry screen)
+  viewer: boolean; // read-only shared-link view (no autosave, no editing)
 
   setEngine: (e: AudioEngine | null) => void;
   setEntered: (entered: boolean) => void;
+  setViewer: (viewer: boolean) => void;
+  startAudio: () => Promise<void>;
   setMode: (mode: Mode) => void;
   toggleMode: () => void;
   select: (id: string | null) => void;
@@ -95,9 +98,22 @@ export const useStore = create<StoreState>((set, get) => ({
   mode: "explore",
   selectedId: null,
   entered: false,
+  viewer: false,
 
   setEngine: (engine) => set({ engine }),
   setEntered: (entered) => set({ entered }),
+  setViewer: (viewer) => set({ viewer }),
+
+  // Boot the audio engine for the current composition (idempotent). Used by both
+  // the editor entry and the read-only viewer; needs a prior user gesture.
+  startAudio: async () => {
+    if (get().engine) return;
+    const e = new AudioEngine();
+    await e.ctx.resume();
+    await e.load(get().composition);
+    e.start();
+    set({ engine: e });
+  },
 
   // Leaving edit mode clears the selection (the properties panel is edit-only).
   setMode: (mode) => set((s) => ({ mode, selectedId: mode === "edit" ? s.selectedId : null })),
@@ -262,6 +278,7 @@ export const useStore = create<StoreState>((set, get) => ({
 // (debounced) whenever it changes.
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 useStore.subscribe((state, prev) => {
+  if (state.viewer) return; // never persist a read-only shared composition
   if (state.composition === prev.composition) return;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
