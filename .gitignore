@@ -4,5 +4,8 @@ dist
 *.local
 .env
 
+# Local temp/linking state for supabase CLI
+supabase/.temp
+
 # Local Claude Code settings (machine-specific)
 .claude/settings.local.json

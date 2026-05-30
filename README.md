@@ -48,8 +48,15 @@ publishing/sharing needs the optional Supabase setup.
 Sharing uses [Supabase](https://supabase.com) directly from the frontend — no
 custom server. In a Supabase project:
 
-1. Create a **public** Storage bucket named `stems`.
-2. Create the table and policies (SQL editor):
+1. Create a **public** Storage bucket named `stems`, tables, and policies by
+   running the SQL migrations in [`supabase/migrations`](supabase/migrations):
+
+   - `202605300001_initial_sharing.sql` sets up the original sharing schema
+     (`compositions` + `stems` bucket).
+   - `202605300002_add_artist_identities.sql` adds artist identity, slug routes,
+     avatar metadata, and per-artist composition title uniqueness.
+
+   The resulting schema is:
 
    ```sql
    create table artists (
@@ -106,7 +113,7 @@ custom server. In a Supabase project:
      for delete to authenticated using (bucket_id = 'stems');
    ```
 
-3. Copy `.env.example` to `.env.local` and fill in your project URL + anon key
+2. Copy `.env.example` to `.env.local` and fill in your project URL + anon key
    (the anon key is safe to expose in frontend code), then restart the dev
    server.
 
