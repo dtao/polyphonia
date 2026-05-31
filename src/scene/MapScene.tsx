@@ -3,16 +3,33 @@ import { CompositionMap, WalkableSegment } from "../map";
 
 export function MapScene({ map, editMode }: { map: CompositionMap; editMode: boolean }) {
   if (!map.segments.length) return null;
+  const endpointCounts = new Map<string, number>();
+  for (const segment of map.segments) {
+    for (const point of [segment.start, segment.end]) {
+      const key = pointKey(point);
+      endpointCounts.set(key, (endpointCounts.get(key) ?? 0) + 1);
+    }
+  }
   return (
     <group>
       {map.segments.map((segment) => (
-        <Segment key={segment.id} segment={segment} height={map.wallHeight} editMode={editMode} />
+        <Segment key={segment.id} segment={segment} height={map.wallHeight} editMode={editMode} endpointCounts={endpointCounts} />
       ))}
     </group>
   );
 }
 
-function Segment({ segment, height, editMode }: { segment: WalkableSegment; height: number; editMode: boolean }) {
+function Segment({
+  segment,
+  height,
+  editMode,
+  endpointCounts,
+}: {
+  segment: WalkableSegment;
+  height: number;
+  editMode: boolean;
+  endpointCounts: Map<string, number>;
+}) {
   const dx = segment.end[0] - segment.start[0];
   const dz = segment.end[1] - segment.start[1];
   const length = Math.hypot(dx, dz);
@@ -46,11 +63,30 @@ function Segment({ segment, height, editMode }: { segment: WalkableSegment; heig
         </mesh>
       ))}
       {[segment.start, segment.end].map((point, i) => (
-        <mesh key={i} position={[point[0], 0.035, point[1]]} rotation={[-Math.PI / 2, 0, 0]}>
-          <circleGeometry args={[halfWidth, 40]} />
-          <meshBasicMaterial color="#5b8cff" transparent opacity={editMode ? 0.1 : 0.045} depthWrite={false} />
-        </mesh>
+        <group key={i}>
+          <mesh position={[point[0], 0.035, point[1]]} rotation={[-Math.PI / 2, 0, 0]}>
+            <circleGeometry args={[halfWidth, 40]} />
+            <meshBasicMaterial color="#5b8cff" transparent opacity={editMode ? 0.1 : 0.045} depthWrite={false} />
+          </mesh>
+          {(endpointCounts.get(pointKey(point)) ?? 0) === 1 && (
+            <mesh position={[point[0], height / 2, point[1]]} rotation={[0, angle, 0]}>
+              <boxGeometry args={[0.18, height, segment.width]} />
+              <meshStandardMaterial
+                color={wallColor}
+                emissive="#2f4b9b"
+                emissiveIntensity={editMode ? 0.34 : 0.18}
+                transparent
+                opacity={editMode ? 0.34 : 0.22}
+                roughness={0.45}
+              />
+            </mesh>
+          )}
+        </group>
       ))}
     </group>
   );
+}
+
+function pointKey(point: [number, number]): string {
+  return `${point[0].toFixed(3)},${point[1].toFixed(3)}`;
 }

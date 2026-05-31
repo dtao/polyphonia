@@ -47,6 +47,7 @@ export default function App() {
   // in the background so mouse-look is live right away.
   function enter() {
     if (useStore.getState().engine || useStore.getState().entered) return;
+    useStore.getState().resetViewToMapStart();
     useStore.getState().setEntered(true);
     useStore.getState().startAudio();
   }
@@ -55,6 +56,7 @@ export default function App() {
   // user can start adding stems (no pointer lock needed — edit keeps the cursor).
   function createAndEnter(meta: { title: string; artist?: string; bpm: number }) {
     useStore.getState().newComposition(meta);
+    useStore.getState().resetViewToMapStart();
     useStore.getState().setMode("edit");
     useStore.getState().setEntered(true);
     useStore.getState().startAudio();

@@ -11,22 +11,28 @@ export interface CompositionMap {
   preset: MapPreset;
   segments: WalkableSegment[];
   wallHeight: number;
+  start: {
+    position: [number, number];
+    direction: [number, number];
+  };
 }
 
 export const MAP_PRESETS: Record<MapPreset, CompositionMap> = {
-  open: { preset: "open", segments: [], wallHeight: 0 },
+  open: { preset: "open", segments: [], wallHeight: 0, start: { position: [0, 0], direction: [0, -1] } },
   line: {
     preset: "line",
     wallHeight: 2.1,
-    segments: [{ id: "line", start: [0, 18], end: [0, -18], width: 5 }],
+    start: { position: [0, 36], direction: [0, -1] },
+    segments: [{ id: "line", start: [0, 40.5], end: [0, -40.5], width: 7.5 }],
   },
   y: {
     preset: "y",
     wallHeight: 2.1,
+    start: { position: [0, 36], direction: [0, -1] },
     segments: [
-      { id: "trunk", start: [0, 18], end: [0, -3], width: 5 },
-      { id: "left", start: [0, -3], end: [-12, -17], width: 5 },
-      { id: "right", start: [0, -3], end: [12, -17], width: 5 },
+      { id: "trunk", start: [0, 40.5], end: [0, -6.75], width: 7.5 },
+      { id: "left", start: [0, -6.75], end: [-27, -38.25], width: 7.5 },
+      { id: "right", start: [0, -6.75], end: [27, -38.25], width: 7.5 },
     ],
   },
 };
@@ -37,10 +43,23 @@ export function normalizeMap(value: Partial<CompositionMap> | undefined): Compos
   const preset = isMapPreset(value?.preset) ? value.preset : defaultMap.preset;
   const fallback = MAP_PRESETS[preset];
   const segments = Array.isArray(value?.segments) ? value.segments.filter(isWalkableSegment) : fallback.segments;
-  return {
+  const startPosition = isPoint(value?.start?.position) ? value.start.position : fallback.start.position;
+  const startDirection = normalizeDirection(isPoint(value?.start?.direction) ? value.start.direction : fallback.start.direction);
+  const map = {
     preset,
     segments,
     wallHeight: clamp(value?.wallHeight ?? fallback.wallHeight, 0, 8),
+    start: {
+      position: startPosition,
+      direction: startDirection,
+    },
+  };
+  return {
+    ...map,
+    start: {
+      ...map.start,
+      position: clampToMap(map, map.start.position),
+    },
   };
 }
 
@@ -111,6 +130,11 @@ function isWalkableSegment(value: unknown): value is WalkableSegment {
 
 function isPoint(value: unknown): value is [number, number] {
   return Array.isArray(value) && value.length === 2 && value.every((n) => typeof n === "number" && Number.isFinite(n));
+}
+
+function normalizeDirection(direction: [number, number]): [number, number] {
+  const length = Math.hypot(direction[0], direction[1]);
+  return length > 0 ? [direction[0] / length, direction[1] / length] : [0, -1];
 }
 
 function clamp(value: number, min: number, max: number): number {

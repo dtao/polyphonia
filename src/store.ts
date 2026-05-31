@@ -59,6 +59,7 @@ interface StoreState {
 
   setEngine: (e: AudioEngine | null) => void;
   setEntered: (entered: boolean) => void;
+  resetViewToMapStart: () => void;
   setViewer: (viewer: boolean) => void;
   startAudio: () => Promise<void>;
 
@@ -122,6 +123,13 @@ function patchTrack(comp: Composition, id: string, patch: Partial<TrackDef>): Co
   return { ...comp, tracks: comp.tracks.map((t) => (t.id === id ? { ...t, ...patch } : t)) };
 }
 
+export function moveViewToMapStart(map: CompositionMap): void {
+  viewState.x = map.start.position[0];
+  viewState.z = map.start.position[1];
+  viewState.fx = map.start.direction[0];
+  viewState.fz = map.start.direction[1];
+}
+
 export const useStore = create<StoreState>((set, get) => ({
   composition: defaultComposition,
   library: [],
@@ -135,6 +143,7 @@ export const useStore = create<StoreState>((set, get) => ({
 
   setEngine: (engine) => set({ engine }),
   setEntered: (entered) => set({ entered }),
+  resetViewToMapStart: () => moveViewToMapStart(get().composition.map),
   setViewer: (viewer) => set({ viewer }),
 
   initAuth: () => {
@@ -276,18 +285,23 @@ export const useStore = create<StoreState>((set, get) => ({
       },
     })),
   setMap: (map) =>
-    set((s) => ({
-      composition: {
-        ...s.composition,
-        map: normalizeMap({ ...s.composition.map, ...map }),
-      },
-    })),
+    set((s) => {
+      const nextMap = normalizeMap({ ...s.composition.map, ...map });
+      moveViewToMapStart(nextMap);
+      return {
+        composition: {
+          ...s.composition,
+          map: nextMap,
+        },
+      };
+    }),
 
   // Load the saved library (or seed/migrate) and resolve the current composition.
   initLibrary: async () => {
     const { library, currentId } = loadLibrary();
     const current = library.find((c) => c.id === currentId) ?? library[0];
     const composition = current ? await resolveComposition(current) : get().composition;
+    moveViewToMapStart(composition.map);
     set({ library, composition });
   },
 
@@ -301,6 +315,7 @@ export const useStore = create<StoreState>((set, get) => ({
     const target = flushed.find((c) => c.id === id);
     if (!target) return;
     const resolved = await resolveComposition(target);
+    moveViewToMapStart(resolved.map);
     set({ library: flushed, composition: resolved, selectedId: null });
     persistLibrary(flushed, id);
   },
@@ -323,6 +338,7 @@ export const useStore = create<StoreState>((set, get) => ({
       tracks: [],
     };
     const next = upsert(upsert(library, serializeComposition(composition)), serializeComposition(comp));
+    moveViewToMapStart(comp.map);
     set({ composition: comp, selectedId: null, library: next });
     persistLibrary(next, comp.id);
   },
@@ -333,6 +349,7 @@ export const useStore = create<StoreState>((set, get) => ({
     const { composition, library } = get();
     revokeBlobUrls(composition);
     const next = upsert(upsert(library, serializeComposition(composition)), serializeComposition(comp));
+    moveViewToMapStart(comp.map);
     set({ composition: comp, selectedId: null, library: next });
     persistLibrary(next, comp.id);
   },
@@ -378,6 +395,7 @@ export const useStore = create<StoreState>((set, get) => ({
         nextComposition = await resolveComposition(nextLibrary[0]);
       }
     }
+    moveViewToMapStart(nextComposition.map);
     set({ library: nextLibrary, composition: nextComposition, selectedId: null });
     persistLibrary(nextLibrary, nextComposition.id);
   },

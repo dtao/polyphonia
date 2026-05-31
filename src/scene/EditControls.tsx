@@ -2,13 +2,14 @@ import { useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
-import { viewState } from "../store";
+import { useStore, viewState } from "../store";
 
 // Edit-mode camera: drag to orbit, scroll to zoom, and WASD to glide across
 // the plane (panning the orbit pivot with you). Moving the camera moves the
 // audio listener, so you can reposition a track and go hear it from elsewhere.
 export function EditControls() {
   const { camera } = useThree();
+  const start = useStore((s) => s.composition.map.start);
   const controls = useRef<any>(null);
   const keys = useRef<Record<string, boolean>>({});
   const fwd = useRef(new THREE.Vector3());
@@ -28,7 +29,7 @@ export function EditControls() {
     c.target.set(viewState.x, 1.5, viewState.z);
     camera.position.set(viewState.x - viewState.fx * back, height, viewState.z - viewState.fz * back);
     c.update();
-  }, [camera]);
+  }, [camera, start.position, start.direction]);
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
