@@ -167,10 +167,9 @@ export function EntryScreen({
                   >
                     <div style={cardBody}>
                       <div style={cardTitle}>
-                        {isCurrent ? "● " : ""}
                         {c.title}
                         {c.publishedId && <span style={pubPill}>shared</span>}
-                        {hasUnpublishedChanges && <span style={draftPill}>changes</span>}
+                        {hasUnpublishedChanges && <span style={draftDot} title="Local changes not yet published" />}
                       </div>
                       <div style={cardSub}>
                         {c.artist} · {c.tracks.length} {c.tracks.length === 1 ? "track" : "tracks"}
@@ -273,8 +272,9 @@ export function EntryScreen({
             }}
           />
 
-          {busy && <p style={{ opacity: 0.6, fontSize: 13, margin: 0 }}>{busy}</p>}
-          {error && <p style={{ color: "#ff9b8f", fontSize: 13, margin: 0 }}>{error}</p>}
+          <div style={statusLine}>
+            {error ? <span style={{ color: "#ff9b8f" }}>{error}</span> : busy ? <span style={{ opacity: 0.6 }}>{busy}</span> : null}
+          </div>
 
           <div style={{ marginTop: 8 }}>
             <Account />
@@ -490,10 +490,15 @@ const pubPill: React.CSSProperties = {
   verticalAlign: "middle",
 };
 
-const draftPill: React.CSSProperties = {
-  ...pubPill,
-  color: "#ffdca8",
-  border: "1px solid rgba(255,220,168,0.45)",
+const draftDot: React.CSSProperties = {
+  display: "inline-block",
+  width: 7,
+  height: 7,
+  marginLeft: 7,
+  borderRadius: 999,
+  background: "#ffdca8",
+  boxShadow: "0 0 8px rgba(255,220,168,0.55)",
+  verticalAlign: "middle",
 };
 
 const pubLine: React.CSSProperties = { display: "flex", gap: 12, marginTop: 4 };
@@ -524,6 +529,13 @@ const form: React.CSSProperties = {
   flexDirection: "column",
   gap: 12,
   width: 280,
+};
+
+const statusLine: React.CSSProperties = {
+  minHeight: 18,
+  fontSize: 13,
+  margin: 0,
+  lineHeight: "18px",
 };
 
 const input: React.CSSProperties = {
