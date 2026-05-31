@@ -52,6 +52,7 @@ interface StoreState {
 
   mode: Mode;
   selectedId: string | null;
+  selectedMapPointKey: string | null;
   entered: boolean; // has the user started the experience (left the entry screen)
   viewer: boolean; // read-only shared-link view (no autosave, no editing)
   user: AuthUser | null; // signed-in account (for publishing); null = anonymous
@@ -75,6 +76,7 @@ interface StoreState {
   setMode: (mode: Mode) => void;
   toggleMode: () => void;
   select: (id: string | null) => void;
+  selectMapPoint: (key: string | null) => void;
 
   // Track edits. Those that affect audio also push the change to the engine,
   // so a playing composition responds live without ever restarting.
@@ -124,6 +126,14 @@ function patchTrack(comp: Composition, id: string, patch: Partial<TrackDef>): Co
   return { ...comp, tracks: comp.tracks.map((t) => (t.id === id ? { ...t, ...patch } : t)) };
 }
 
+function mapPointExists(segment: { start: [number, number]; end: [number, number] }, key: string): boolean {
+  return mapPointKey(segment.start) === key || mapPointKey(segment.end) === key;
+}
+
+function mapPointKey(point: [number, number]): string {
+  return `${point[0].toFixed(3)},${point[1].toFixed(3)}`;
+}
+
 export function moveViewToMapStart(map: CompositionMap): void {
   viewState.x = map.start.position[0];
   viewState.z = map.start.position[1];
@@ -137,6 +147,7 @@ export const useStore = create<StoreState>((set, get) => ({
   engine: null,
   mode: "explore",
   selectedId: null,
+  selectedMapPointKey: null,
   entered: false,
   viewer: false,
   user: null,
@@ -205,7 +216,8 @@ export const useStore = create<StoreState>((set, get) => ({
   // Leaving edit mode clears the selection (the properties panel is edit-only).
   setMode: (mode) => set((s) => ({ mode, selectedId: mode === "edit" ? s.selectedId : null })),
   toggleMode: () => get().setMode(get().mode === "edit" ? "explore" : "edit"),
-  select: (selectedId) => set({ selectedId }),
+  select: (selectedId) => set({ selectedId, selectedMapPointKey: null }),
+  selectMapPoint: (selectedMapPointKey) => set({ selectedMapPointKey, selectedId: null }),
 
   setTrackVolume: (id, volume) => {
     set((s) => ({ composition: patchTrack(s.composition, id, { volume }) }));
@@ -293,12 +305,17 @@ export const useStore = create<StoreState>((set, get) => ({
   setMap: (map, options) =>
     set((s) => {
       const nextMap = normalizeMap({ ...s.composition.map, ...map });
+      const selectedMapPointKey = s.selectedMapPointKey;
       if (options?.moveViewToStart) moveViewToMapStart(nextMap);
       return {
         composition: {
           ...s.composition,
           map: nextMap,
         },
+        selectedMapPointKey:
+          selectedMapPointKey && nextMap.segments.some((segment) => mapPointExists(segment, selectedMapPointKey))
+            ? selectedMapPointKey
+            : null,
       };
     }),
 

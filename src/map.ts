@@ -1,4 +1,4 @@
-export type MapPreset = "open" | "line" | "y";
+export type MapPreset = "open" | "line" | "y" | "custom";
 
 export interface WalkableSegment {
   id: string;
@@ -17,7 +17,7 @@ export interface CompositionMap {
   };
 }
 
-export const MAP_PRESETS: Record<MapPreset, CompositionMap> = {
+export const MAP_PRESETS: Record<Exclude<MapPreset, "custom">, CompositionMap> = {
   open: { preset: "open", segments: [], wallHeight: 0, start: { position: [0, 0], direction: [0, -1] } },
   line: {
     preset: "line",
@@ -41,7 +41,7 @@ export const defaultMap: CompositionMap = MAP_PRESETS.open;
 
 export function normalizeMap(value: Partial<CompositionMap> | undefined): CompositionMap {
   const preset = isMapPreset(value?.preset) ? value.preset : defaultMap.preset;
-  const fallback = MAP_PRESETS[preset];
+  const fallback = preset === "custom" ? defaultMap : MAP_PRESETS[preset];
   const segments = Array.isArray(value?.segments) ? value.segments.filter(isWalkableSegment) : fallback.segments;
   const startPosition = isPoint(value?.start?.position) ? value.start.position : fallback.start.position;
   const startDirection = normalizeDirection(isPoint(value?.start?.direction) ? value.start.direction : fallback.start.direction);
@@ -113,7 +113,7 @@ function closestPointOnCenterline(point: [number, number], segment: WalkableSegm
 }
 
 function isMapPreset(value: unknown): value is MapPreset {
-  return value === "open" || value === "line" || value === "y";
+  return value === "open" || value === "line" || value === "y" || value === "custom";
 }
 
 function isWalkableSegment(value: unknown): value is WalkableSegment {

@@ -114,7 +114,9 @@ function Segment({
 
 function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpointCounts: Map<string, number> }) {
   const controls = useThree((s) => s.controls as { enabled?: boolean } | undefined);
+  const selectedMapPointKey = useStore((s) => s.selectedMapPointKey);
   const setMap = useStore((s) => s.setMap);
+  const selectMapPoint = useStore((s) => s.selectMapPoint);
   const drag = useRef<{ pointKey: string } | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const ground = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), []);
@@ -143,12 +145,14 @@ function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpoint
     drag.current.pointKey = nextKey;
     setActiveId(nextKey);
     setMap({
+      preset: "custom",
       segments: useStore.getState().composition.map.segments.map((segment) => ({
         ...segment,
         start: pointKey(segment.start) === activeKey ? next : segment.start,
         end: pointKey(segment.end) === activeKey ? next : segment.end,
       })),
     });
+    selectMapPoint(nextKey);
   }
 
   function endDrag(e?: ThreeEvent<PointerEvent>) {
@@ -165,6 +169,7 @@ function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpoint
     <group onPointerMove={moveEndpoint} onPointerUp={endDrag} onPointerCancel={endDrag} onPointerLeave={endDrag}>
       {endpoints.map(({ id, key, point, shared }) => {
         const active = activeId === id;
+        const selected = selectedMapPointKey === key;
         return (
         <mesh
           key={id}
@@ -173,6 +178,7 @@ function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpoint
             e.stopPropagation();
             drag.current = { pointKey: key };
             setActiveId(id);
+            selectMapPoint(key);
             if (controls) controls.enabled = false;
             const target = e.nativeEvent.target as Element | null;
             target?.setPointerCapture?.(e.pointerId);
@@ -188,12 +194,12 @@ function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpoint
             if (!drag.current) document.body.style.cursor = "auto";
           }}
         >
-          <sphereGeometry args={[active ? 0.95 : shared ? 0.72 : 0.58, 24, 16]} />
-          <meshBasicMaterial color={active ? "#8fffe8" : shared ? "#ffd166" : "#ffffff"} transparent opacity={1} toneMapped={false} />
-          {active && (
+          <sphereGeometry args={[active ? 0.95 : selected ? 0.82 : shared ? 0.72 : 0.58, 24, 16]} />
+          <meshBasicMaterial color={active ? "#8fffe8" : selected ? "#9fb4ff" : shared ? "#ffd166" : "#ffffff"} transparent opacity={1} toneMapped={false} />
+          {(active || selected) && (
             <mesh>
-              <sphereGeometry args={[1.35, 24, 16]} />
-              <meshBasicMaterial color="#8fffe8" transparent opacity={0.22} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
+              <sphereGeometry args={[active ? 1.35 : 1.12, 24, 16]} />
+              <meshBasicMaterial color={active ? "#8fffe8" : "#9fb4ff"} transparent opacity={active ? 0.22 : 0.16} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
             </mesh>
           )}
         </mesh>
