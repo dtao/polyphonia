@@ -55,6 +55,8 @@ interface StoreState {
   selectedMapPointKey: string | null;
   selectedMapSegmentId: string | null;
   branchStartPointKey: string | null;
+  selectedStart: boolean; // the map start marker is selected (shows its gizmo)
+  startGizmoMode: "translate" | "rotate";
   entered: boolean; // has the user started the experience (left the entry screen)
   viewer: boolean; // read-only shared-link view (no autosave, no editing)
   user: AuthUser | null; // signed-in account (for publishing); null = anonymous
@@ -81,6 +83,8 @@ interface StoreState {
   selectMapPoint: (key: string | null) => void;
   selectMapSegment: (id: string | null) => void;
   setBranchStartPoint: (key: string | null) => void;
+  selectStart: () => void;
+  setStartGizmoMode: (mode: "translate" | "rotate") => void;
 
   // Track edits. Those that affect audio also push the change to the engine,
   // so a playing composition responds live without ever restarting.
@@ -154,6 +158,8 @@ export const useStore = create<StoreState>((set, get) => ({
   selectedMapPointKey: null,
   selectedMapSegmentId: null,
   branchStartPointKey: null,
+  selectedStart: false,
+  startGizmoMode: "translate",
   entered: false,
   viewer: false,
   user: null,
@@ -226,12 +232,14 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   // Leaving edit mode clears the selection (the properties panel is edit-only).
-  setMode: (mode) => set((s) => ({ mode, selectedId: mode === "edit" ? s.selectedId : null })),
+  setMode: (mode) => set((s) => ({ mode, selectedId: mode === "edit" ? s.selectedId : null, selectedStart: mode === "edit" ? s.selectedStart : false })),
   toggleMode: () => get().setMode(get().mode === "edit" ? "explore" : "edit"),
-  select: (selectedId) => set({ selectedId, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null }),
-  selectMapPoint: (selectedMapPointKey) => set({ selectedMapPointKey, selectedMapSegmentId: null, selectedId: null }),
-  selectMapSegment: (selectedMapSegmentId) => set({ selectedMapSegmentId, selectedMapPointKey: null, selectedId: null, branchStartPointKey: null }),
-  setBranchStartPoint: (branchStartPointKey) => set({ branchStartPointKey, selectedMapPointKey: branchStartPointKey, selectedMapSegmentId: null, selectedId: null }),
+  select: (selectedId) => set({ selectedId, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
+  selectMapPoint: (selectedMapPointKey) => set({ selectedMapPointKey, selectedMapSegmentId: null, selectedId: null, selectedStart: false }),
+  selectMapSegment: (selectedMapSegmentId) => set({ selectedMapSegmentId, selectedMapPointKey: null, selectedId: null, branchStartPointKey: null, selectedStart: false }),
+  setBranchStartPoint: (branchStartPointKey) => set({ branchStartPointKey, selectedMapPointKey: branchStartPointKey, selectedMapSegmentId: null, selectedId: null, selectedStart: false }),
+  selectStart: () => set({ selectedStart: true, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null }),
+  setStartGizmoMode: (startGizmoMode) => set({ startGizmoMode }),
 
   setTrackVolume: (id, volume) => {
     set((s) => ({ composition: patchTrack(s.composition, id, { volume }) }));

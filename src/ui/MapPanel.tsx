@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { clampToMap, CompositionMap, isPointInsideMap, MAP_PRESETS, MapPreset, WalkableSegment } from "../map";
-import { useStore, viewState } from "../store";
+import { useStore } from "../store";
 
 const LABELS: Record<MapPreset, string> = {
   open: "Open",
@@ -20,6 +20,8 @@ export function MapPanel() {
   const setBranchStartPoint = useStore((s) => s.setBranchStartPoint);
   const setTrackPosition = useStore((s) => s.setTrackPosition);
   const resetViewToMapStart = useStore((s) => s.resetViewToMapStart);
+  const startGizmoMode = useStore((s) => s.startGizmoMode);
+  const setStartGizmoMode = useStore((s) => s.setStartGizmoMode);
   const [expanded, setExpanded] = useState(false);
   const selectedPoint = selectedMapPointKey ? findPoint(map, selectedMapPointKey) : null;
   const selectedSegment = selectedMapSegmentId ? map.segments.find((segment) => segment.id === selectedMapSegmentId) ?? null : null;
@@ -31,15 +33,6 @@ export function MapPanel() {
   function setPreset(preset: Exclude<MapPreset, "custom">) {
     const next = MAP_PRESETS[preset];
     setMap({ ...next, start: map.start });
-  }
-
-  function setStartHere() {
-    setMap({
-      start: {
-        position: [viewState.x, viewState.z],
-        direction: [viewState.fx, viewState.fz],
-      },
-    });
   }
 
   function goToStart() {
@@ -110,13 +103,25 @@ export function MapPanel() {
         })}
       </div>
       <div style={actionRow}>
-        <button style={actionBtn} onClick={setStartHere}>
-          Set start here
+        <button
+          style={{ ...presetBtn, ...(startGizmoMode === "translate" ? presetActive : null) }}
+          onClick={() => setStartGizmoMode("translate")}
+        >
+          Move start
         </button>
-        <button style={actionBtn} onClick={goToStart}>
+        <button
+          style={{ ...presetBtn, ...(startGizmoMode === "rotate" ? presetActive : null) }}
+          onClick={() => setStartGizmoMode("rotate")}
+        >
+          Rotate start
+        </button>
+      </div>
+      <div style={actionRow}>
+        <button style={{ ...actionBtn, gridColumn: "1 / -1" }} onClick={goToStart}>
           Go to start
         </button>
       </div>
+      <div style={hint}>Click the start disc to select it, then drag the gizmo to {startGizmoMode === "rotate" ? "rotate the heading" : "move it"}.</div>
       <div style={editorGroup}>
         <div style={editorHead}>
           {selectedPoint

@@ -1,4 +1,5 @@
 import { ThreeEvent, useFrame, useThree } from "@react-three/fiber";
+import { TransformControls } from "@react-three/drei";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
@@ -36,95 +37,82 @@ export function MapScene({ map, tracks, editMode }: { map: CompositionMap; track
   );
 }
 
+// Click the start disc to select it (clears other selections), then drag the
+// drei TransformControls gizmo to move it — the exact mechanism stems use, so
+// it's reliable. A Move/Rotate toggle (Map panel) flips the gizmo between
+// translating the position and rotating the starting heading.
 function StartMarker({ map, editMode }: { map: CompositionMap; editMode: boolean }) {
-  const controls = useThree((s) => s.controls as { enabled?: boolean } | undefined);
   const setMap = useStore((s) => s.setMap);
-  const drag = useRef<"position" | "direction" | null>(null);
-  const [activeDrag, setActiveDrag] = useState<"position" | "direction" | null>(null);
-  const ground = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), []);
-  const hit = useMemo(() => new THREE.Vector3(), []);
+  const selectedStart = useStore((s) => s.selectedStart);
+  const selectStart = useStore((s) => s.selectStart);
+  const gizmoMode = useStore((s) => s.startGizmoMode);
+  const [obj, setObj] = useState<THREE.Group | null>(null);
   const [x, z] = map.start.position;
   const [fx, fz] = map.start.direction;
   const angle = -Math.atan2(fz, fx);
-  const opacity = editMode ? 0.9 : 0.45;
+  const active = editMode && selectedStart;
+  const opacity = editMode ? 0.92 : 0.4;
+  const color = active ? "#8fffe8" : "#ffffff";
 
-  function beginDrag(kind: "position" | "direction", e: ThreeEvent<PointerEvent>) {
-    if (!editMode) return;
-    e.stopPropagation();
-    drag.current = kind;
-    setActiveDrag(kind);
-    if (controls) controls.enabled = false;
-    const target = e.nativeEvent.target as Element | null;
-    target?.setPointerCapture?.(e.pointerId);
-    document.body.style.cursor = "grabbing";
-  }
-
-  function moveStart(e: ThreeEvent<PointerEvent>) {
-    if (!drag.current) return;
-    e.stopPropagation();
-    if (!e.ray.intersectPlane(ground, hit)) return;
-    if (drag.current === "position") {
-      setMap({ start: { ...map.start, position: [hit.x, hit.z] } });
-      return;
+  function handleObjectChange() {
+    if (!obj) return;
+    const start = useStore.getState().composition.map.start;
+    if (gizmoMode === "translate") {
+      setMap({ start: { ...start, position: [obj.position.x, obj.position.z] } });
+    } else {
+      const a = obj.rotation.y;
+      setMap({ start: { ...start, direction: [Math.cos(a), -Math.sin(a)] } });
     }
-    const dx = hit.x - x;
-    const dz = hit.z - z;
-    const length = Math.hypot(dx, dz);
-    if (length > 0.2) setMap({ start: { ...map.start, direction: [dx / length, dz / length] } });
-  }
-
-  function endDrag(e?: ThreeEvent<PointerEvent>) {
-    e?.stopPropagation();
-    drag.current = null;
-    setActiveDrag(null);
-    if (controls) controls.enabled = true;
-    const target = e?.nativeEvent.target as Element | null | undefined;
-    target?.releasePointerCapture?.(e?.pointerId ?? -1);
-    document.body.style.cursor = "auto";
   }
 
   return (
-    <group
-      position={[x, 0.08, z]}
-      rotation={[0, angle, 0]}
-      onPointerMove={moveStart}
-      onPointerUp={endDrag}
-      onPointerCancel={endDrag}
-      onPointerLeave={endDrag}
-    >
-      <mesh
-        rotation={[-Math.PI / 2, 0, 0]}
-        onPointerDown={(e) => beginDrag("position", e)}
+    <>
+      <group
+        ref={setObj}
+        position={[x, 0.08, z]}
+        rotation={[0, angle, 0]}
+        onClick={(e) => {
+          if (!editMode) return;
+          e.stopPropagation();
+          selectStart();
+        }}
         onPointerOver={(e) => {
           if (!editMode) return;
           e.stopPropagation();
-          document.body.style.cursor = "grab";
+          document.body.style.cursor = "pointer";
         }}
         onPointerOut={() => {
-          if (!drag.current) document.body.style.cursor = "auto";
+          document.body.style.cursor = "auto";
         }}
       >
-        <ringGeometry args={[0.65, 1.15, 48]} />
-        <meshBasicMaterial color={activeDrag === "position" ? "#8fffe8" : "#ffffff"} transparent opacity={opacity} toneMapped={false} depthWrite={false} />
-      </mesh>
-      <mesh
-        position={[1.45, 0.02, 0]}
-        rotation={[0, 0, -Math.PI / 2]}
-        onPointerDown={(e) => beginDrag("direction", e)}
-        onPointerOver={(e) => {
-          if (!editMode) return;
-          e.stopPropagation();
-          document.body.style.cursor = "grab";
-        }}
-        onPointerOut={() => {
-          if (!drag.current) document.body.style.cursor = "auto";
-        }}
-      >
-        <coneGeometry args={[0.38, 0.9, 3]} />
-        <meshBasicMaterial color={activeDrag === "direction" ? "#8fffe8" : "#ffffff"} transparent opacity={opacity} toneMapped={false} depthWrite={false} />
-      </mesh>
-      <pointLight position={[0, 0.8, 0]} color="#ffffff" intensity={editMode ? 1.2 : 0.5} distance={5} />
-    </group>
+        <mesh rotation={[-Math.PI / 2, 0, 0]}>
+          <circleGeometry args={[1.15, 48]} />
+          <meshBasicMaterial color={color} transparent opacity={editMode ? 0.26 : 0.14} toneMapped={false} depthWrite={false} />
+        </mesh>
+        <mesh rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[1.1, 1.24, 48]} />
+          <meshBasicMaterial color={color} transparent opacity={opacity} toneMapped={false} depthWrite={false} />
+        </mesh>
+        <mesh position={[1.75, 0.02, 0]} rotation={[0, 0, -Math.PI / 2]}>
+          <coneGeometry args={[0.36, 0.85, 3]} />
+          <meshBasicMaterial color={color} transparent opacity={opacity} toneMapped={false} depthWrite={false} />
+        </mesh>
+        <pointLight position={[0, 0.8, 0]} color="#ffffff" intensity={editMode ? 1.2 : 0.5} distance={5} />
+      </group>
+
+      {active && obj && (
+        <TransformControls
+          key={gizmoMode}
+          object={obj}
+          mode={gizmoMode}
+          showX={gizmoMode === "translate"}
+          showZ={gizmoMode === "translate"}
+          showY={gizmoMode === "rotate"}
+          size={0.9}
+          onObjectChange={handleObjectChange}
+        />
+      )}
+    </>
   );
 }
 
