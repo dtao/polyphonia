@@ -1,8 +1,10 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useStore } from "../store";
 import { Account } from "./Account";
 import { isSharingConfigured } from "../cloud";
+
+type SortMode = "library" | "title" | "artist" | "tracks";
 
 // The start screen: pick a composition from the library to enter, start a fresh
 // one, or export/import a portable bundle.
@@ -35,7 +37,28 @@ export function EntryScreen({
   const [bpm, setBpm] = useState("120");
   const [busy, setBusy] = useState<null | string>(null);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [sortMode, setSortMode] = useState<SortMode>("library");
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const visibleLibrary = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const filtered = q
+      ? library.filter((c) => {
+          const haystack = [c.title, c.artist, c.publishedId ? "shared published" : "", `${c.tracks.length} tracks`]
+            .join(" ")
+            .toLowerCase();
+          return haystack.includes(q);
+        })
+      : library;
+
+    return [...filtered].sort((a, b) => {
+      if (sortMode === "title") return a.title.localeCompare(b.title);
+      if (sortMode === "artist") return a.artist.localeCompare(b.artist) || a.title.localeCompare(b.title);
+      if (sortMode === "tracks") return b.tracks.length - a.tracks.length || a.title.localeCompare(b.title);
+      return library.findIndex((c) => c.id === a.id) - library.findIndex((c) => c.id === b.id);
+    });
+  }, [library, query, sortMode]);
 
   async function run(label: string, fn: () => Promise<void>) {
     setError(null);
@@ -105,83 +128,110 @@ export function EntryScreen({
         <>
           <p style={{ opacity: 0.6, fontSize: 14, margin: 0 }}>Choose a composition, then enter.</p>
 
-          <div style={list}>
-            {library.map((c) => {
-              const isCurrent = c.id === currentId;
-              return (
-                <div
-                  key={c.id}
-                  style={{ ...row, ...(isCurrent ? rowCurrent : null) }}
-                  onClick={() => run("Loading…", () => selectComposition(c.id))}
-                >
-                  <div style={{ flex: 1, overflow: "hidden" }}>
-                    <div style={rowTitle}>
-                      {isCurrent ? "● " : ""}
-                      {c.title}
-                      {c.publishedId && <span style={pubPill}>shared</span>}
-                    </div>
-                    <div style={rowSub}>
-                      {c.artist} · {c.tracks.length} {c.tracks.length === 1 ? "track" : "tracks"}
-                    </div>
-                    {c.publishedId && (
-                      <div style={pubLine} onClick={(e) => e.stopPropagation()}>
-                        <button
-                          style={miniLink}
-                          onClick={async () => {
-                            try {
-                              await navigator.clipboard.writeText(`${location.origin}/c/${c.publishedId}`);
-                              setCopiedId(c.id);
-                            } catch {
-                              /* clipboard blocked */
-                            }
-                          }}
-                        >
-                          {copiedId === c.id ? "Link copied" : "Copy link"}
-                        </button>
-                        {user && (
+          <div style={libraryPanel}>
+            <div style={libraryToolbar}>
+              <input
+                style={{ ...input, ...searchInput }}
+                placeholder="Search compositions"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+              <label style={sortLabel}>
+                <span style={{ opacity: 0.62 }}>Sort</span>
+                <select style={selectInput} value={sortMode} onChange={(e) => setSortMode(e.target.value as SortMode)}>
+                  <option value="library">Library order</option>
+                  <option value="title">Title</option>
+                  <option value="artist">Artist</option>
+                  <option value="tracks">Track count</option>
+                </select>
+              </label>
+            </div>
+
+            <div style={resultLine}>
+              {visibleLibrary.length} of {library.length} {library.length === 1 ? "composition" : "compositions"}
+            </div>
+
+            <div style={grid}>
+              {visibleLibrary.map((c) => {
+                const isCurrent = c.id === currentId;
+                return (
+                  <div
+                    key={c.id}
+                    style={{ ...card, ...(isCurrent ? cardCurrent : null) }}
+                    onClick={() => run("Loading…", () => selectComposition(c.id))}
+                  >
+                    <div style={cardBody}>
+                      <div style={cardTitle}>
+                        {isCurrent ? "● " : ""}
+                        {c.title}
+                        {c.publishedId && <span style={pubPill}>shared</span>}
+                      </div>
+                      <div style={cardSub}>
+                        {c.artist} · {c.tracks.length} {c.tracks.length === 1 ? "track" : "tracks"}
+                      </div>
+                      {c.publishedId && (
+                        <div style={pubLine} onClick={(e) => e.stopPropagation()}>
                           <button
-                            style={{ ...miniLink, color: "#ff9b8f" }}
-                            onClick={() => {
-                              if (window.confirm("Unpublish? The shared link will stop working.")) {
-                                run("Unpublishing…", () => unpublishComposition(c.id));
+                            style={miniLink}
+                            onClick={async () => {
+                              try {
+                                await navigator.clipboard.writeText(`${location.origin}/c/${c.publishedId}`);
+                                setCopiedId(c.id);
+                              } catch {
+                                /* clipboard blocked */
                               }
                             }}
                           >
-                            Unpublish
+                            {copiedId === c.id ? "Link copied" : "Copy link"}
                           </button>
-                        )}
-                      </div>
-                    )}
+                          {user && (
+                            <button
+                              style={{ ...miniLink, color: "#ff9b8f" }}
+                              onClick={() => {
+                                if (window.confirm("Unpublish? The shared link will stop working.")) {
+                                  run("Unpublishing…", () => unpublishComposition(c.id));
+                                }
+                              }}
+                            >
+                              Unpublish
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <div style={cardActions} onClick={(e) => e.stopPropagation()}>
+                      <button
+                        style={iconBtn}
+                        title="Rename"
+                        onClick={() => {
+                          const t = window.prompt("Rename composition", c.title);
+                          if (t != null) renameComposition(c.id, t);
+                        }}
+                      >
+                        ✎
+                      </button>
+                      <button style={iconBtn} title="Duplicate" onClick={() => run("Duplicating…", () => duplicateComposition(c.id))}>
+                        ⧉
+                      </button>
+                      <button
+                        style={iconBtn}
+                        title="Delete"
+                        onClick={() => {
+                          if (window.confirm(`Delete "${c.title}"? This can't be undone.`)) {
+                            run("Deleting…", () => deleteComposition(c.id));
+                          }
+                        }}
+                      >
+                        🗑
+                      </button>
+                    </div>
                   </div>
-                  <div style={{ display: "flex", gap: 4 }} onClick={(e) => e.stopPropagation()}>
-                    <button
-                      style={iconBtn}
-                      title="Rename"
-                      onClick={() => {
-                        const t = window.prompt("Rename composition", c.title);
-                        if (t != null) renameComposition(c.id, t);
-                      }}
-                    >
-                      ✎
-                    </button>
-                    <button style={iconBtn} title="Duplicate" onClick={() => run("Duplicating…", () => duplicateComposition(c.id))}>
-                      ⧉
-                    </button>
-                    <button
-                      style={iconBtn}
-                      title="Delete"
-                      onClick={() => {
-                        if (window.confirm(`Delete "${c.title}"? This can't be undone.`)) {
-                          run("Deleting…", () => deleteComposition(c.id));
-                        }
-                      }}
-                    >
-                      🗑
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
+              {!visibleLibrary.length && (
+                <div style={emptyState}>No compositions match "{query.trim()}".</div>
+              )}
+            </div>
           </div>
 
           <button id="enter-btn" style={button} onClick={onEnter}>
@@ -240,6 +290,9 @@ const overlay: React.CSSProperties = {
   alignItems: "center",
   justifyContent: "center",
   gap: 14,
+  overflowY: "auto",
+  padding: "24px 20px",
+  boxSizing: "border-box",
   color: "white",
   fontFamily: "system-ui, sans-serif",
   background: "radial-gradient(circle at center, rgba(20,24,48,0.85), rgba(5,6,10,0.97))",
@@ -275,40 +328,121 @@ const artistLine: React.CSSProperties = {
   fontSize: 13,
 };
 
-const list: React.CSSProperties = {
-  width: 380,
-  maxHeight: 240,
-  overflowY: "auto",
+const libraryPanel: React.CSSProperties = {
+  width: "min(1040px, calc(100vw - 40px))",
   display: "flex",
   flexDirection: "column",
-  gap: 6,
-  padding: 4,
+  gap: 10,
 };
 
-const row: React.CSSProperties = {
+const libraryToolbar: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 12,
+  flexWrap: "wrap",
+};
+
+const searchInput: React.CSSProperties = {
+  flex: "1 1 260px",
+  minWidth: 0,
+  boxSizing: "border-box",
+};
+
+const sortLabel: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
   gap: 8,
-  padding: "10px 12px",
-  borderRadius: 10,
+  flex: "0 0 auto",
+  fontSize: 13,
+};
+
+const selectInput: React.CSSProperties = {
+  background: "rgba(255,255,255,0.07)",
+  border: "1px solid rgba(255,255,255,0.18)",
+  borderRadius: 8,
+  color: "white",
+  padding: "10px 32px 10px 12px",
+  fontSize: 15,
+  minWidth: 150,
+  appearance: "auto",
+};
+
+const resultLine: React.CSSProperties = {
+  color: "rgba(255,255,255,0.48)",
+  fontSize: 12,
+  textAlign: "left",
+};
+
+const grid: React.CSSProperties = {
+  maxHeight: "min(52vh, 520px)",
+  overflowY: "auto",
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))",
+  gap: 10,
+  padding: 4,
+};
+
+const card: React.CSSProperties = {
+  minHeight: 112,
+  display: "flex",
+  flexDirection: "column",
+  justifyContent: "space-between",
+  gap: 12,
+  padding: 12,
+  borderRadius: 8,
   border: "1px solid rgba(255,255,255,0.1)",
   background: "rgba(255,255,255,0.04)",
   cursor: "pointer",
+  boxSizing: "border-box",
+  minWidth: 0,
 };
 
-const rowCurrent: React.CSSProperties = {
+const cardCurrent: React.CSSProperties = {
   border: "1px solid rgba(91,140,255,0.7)",
   background: "rgba(91,140,255,0.16)",
 };
 
-const rowTitle: React.CSSProperties = {
+const cardBody: React.CSSProperties = {
+  minWidth: 0,
+};
+
+const cardTitle: React.CSSProperties = {
+  minWidth: 0,
   fontWeight: 600,
-  whiteSpace: "nowrap",
+  lineHeight: 1.25,
   overflow: "hidden",
+  display: "-webkit-box",
+  WebkitLineClamp: 2,
+  WebkitBoxOrient: "vertical",
+  overflowWrap: "anywhere",
+};
+
+const cardSub: React.CSSProperties = {
+  marginTop: 6,
+  fontSize: 12,
+  lineHeight: 1.35,
+  color: "rgba(255,255,255,0.55)",
+  overflow: "hidden",
+  whiteSpace: "nowrap",
   textOverflow: "ellipsis",
 };
 
-const rowSub: React.CSSProperties = { fontSize: 12, opacity: 0.55 };
+const cardActions: React.CSSProperties = {
+  display: "flex",
+  gap: 4,
+  justifyContent: "flex-end",
+};
+
+const emptyState: React.CSSProperties = {
+  gridColumn: "1 / -1",
+  padding: "28px 12px",
+  borderRadius: 8,
+  border: "1px dashed rgba(255,255,255,0.16)",
+  color: "rgba(255,255,255,0.58)",
+  textAlign: "center",
+  fontSize: 14,
+};
 
 const pubPill: React.CSSProperties = {
   marginLeft: 8,
