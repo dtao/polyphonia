@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { useFrame, ThreeEvent } from "@react-three/fiber";
 import { Billboard, Text } from "@react-three/drei";
 import * as THREE from "three";
@@ -14,24 +14,49 @@ export function TrackMarker({ track }: { track: TrackDef }) {
   const selected = useStore((s) => s.selectedId === track.id);
   const core = useRef<THREE.Mesh>(null);
   const aura = useRef<THREE.Mesh>(null);
+  const outerAura = useRef<THREE.Mesh>(null);
+  const flare = useRef<THREE.ShaderMaterial>(null);
+  const rays = useRef<THREE.ShaderMaterial>(null);
+  const starburst = useRef<THREE.Mesh>(null);
   const glow = useRef<THREE.PointLight>(null);
   const ring = useRef<THREE.Mesh>(null);
   const smoothedLevel = useRef(0);
+  const seed = useMemo(() => trackSeed(track.id), [track.id]);
   const [x, , z] = track.position;
   const volume = track.volume ?? 1;
   const orbRadius = 0.42 + volume * 0.32;
   const markerTop = 1.1 + orbRadius * 0.9;
 
-  useFrame((_, dt) => {
+  useFrame(({ clock }, dt) => {
     const level = engine?.level(track.id) ?? 0;
     smoothedLevel.current = THREE.MathUtils.damp(smoothedLevel.current, level, 14, dt);
     const pulse = smoothedLevel.current;
-    const breath = 1 + Math.sin(performance.now() * 0.003 + x * 0.2 + z * 0.13) * 0.035;
+    const t = clock.elapsedTime;
+    const breath = 1 + Math.sin(t * 0.9 + seed + x * 0.2 + z * 0.13) * 0.035;
     if (core.current) core.current.scale.setScalar(breath + pulse * 0.85);
     if (aura.current) {
       aura.current.scale.setScalar(1.35 + pulse * 1.45);
       const material = aura.current.material;
-      if (material instanceof THREE.MeshBasicMaterial) material.opacity = 0.16 + pulse * 0.26;
+      if (material instanceof THREE.MeshBasicMaterial) material.opacity = 0.22 + pulse * 0.3;
+    }
+    if (outerAura.current) {
+      outerAura.current.scale.setScalar(2.1 + pulse * 2.2);
+      const material = outerAura.current.material;
+      if (material instanceof THREE.MeshBasicMaterial) material.opacity = 0.08 + pulse * 0.18;
+    }
+    if (flare.current) {
+      flare.current.uniforms.opacity.value = 0.5 + pulse * 0.45;
+      flare.current.uniforms.radius.value = 0.42 + pulse * 0.18;
+    }
+    if (rays.current) {
+      rays.current.uniforms.opacity.value = 0.38 + pulse * 0.52;
+      rays.current.uniforms.radius.value = 0.22 + pulse * 0.1;
+    }
+    if (starburst.current) {
+      starburst.current.rotation.z =
+        seed +
+        Math.sin(t * 0.075 + seed * 1.7) * 0.85 +
+        Math.sin(t * 0.031 + seed * 4.1) * 0.55;
     }
     if (glow.current) {
       glow.current.intensity = (selected ? 8 : 4.8) + volume * 3.2 + pulse * 34;
@@ -77,14 +102,47 @@ export function TrackMarker({ track }: { track: TrackDef }) {
         <sphereGeometry args={[orbRadius, 24, 16]} />
         <meshBasicMaterial color={track.color} transparent opacity={0.18} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
       </mesh>
+      <mesh ref={outerAura} position={[0, markerTop, 0]}>
+        <sphereGeometry args={[orbRadius, 24, 16]} />
+        <meshBasicMaterial color={track.color} transparent opacity={0.1} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </mesh>
+      <Billboard position={[0, markerTop, 0]}>
+        <mesh scale={[orbRadius * 5.6, orbRadius * 5.6, 1]}>
+          <planeGeometry args={[1, 1]} />
+          <shaderMaterial
+            ref={flare}
+            transparent
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+            uniforms={{
+              color: { value: new THREE.Color(track.color) },
+              opacity: { value: 0.5 },
+              radius: { value: 0.42 },
+            }}
+            vertexShader={flareVertexShader}
+            fragmentShader={flareFragmentShader}
+          />
+        </mesh>
+        <mesh ref={starburst} scale={[orbRadius * 10.8, orbRadius * 10.8, 1]} rotation={[0, 0, seed]}>
+          <planeGeometry args={[1, 1]} />
+          <shaderMaterial
+            ref={rays}
+            transparent
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+            uniforms={{
+              color: { value: new THREE.Color(track.color) },
+              opacity: { value: 0.38 },
+              radius: { value: 0.22 },
+            }}
+            vertexShader={flareVertexShader}
+            fragmentShader={starRayFragmentShader}
+          />
+        </mesh>
+      </Billboard>
       <mesh ref={core} position={[0, markerTop, 0]}>
-        <sphereGeometry args={[orbRadius, 32, 20]} />
-        <meshStandardMaterial
-          color={track.color}
-          emissive={track.color}
-          emissiveIntensity={selected ? 3.2 : 2.1}
-          toneMapped={false}
-        />
+        <sphereGeometry args={[orbRadius * 0.62, 32, 20]} />
+        <meshBasicMaterial color="white" toneMapped={false} />
       </mesh>
       {/* selection ring */}
       {selected && (
@@ -103,6 +161,12 @@ export function TrackMarker({ track }: { track: TrackDef }) {
       </Billboard>
     </group>
   );
+}
+
+function trackSeed(id: string): number {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  return (hash / 0xffffffff) * Math.PI * 2;
 }
 
 function FalloffMap({ track }: { track: TrackDef }) {
@@ -161,6 +225,64 @@ const falloffVertexShader = `
   void main() {
     vPos = position.xy;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const flareVertexShader = `
+  varying vec2 vUv;
+
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const flareFragmentShader = `
+  uniform vec3 color;
+  uniform float opacity;
+  uniform float radius;
+  varying vec2 vUv;
+
+  void main() {
+    vec2 p = vUv - vec2(0.5);
+    float d = length(p);
+    float core = smoothstep(radius, 0.0, d);
+    float haze = exp(-d * 5.6);
+    float alpha = (core * 0.85 + haze * 0.38) * opacity;
+    vec3 hot = mix(color, vec3(1.0), core * 0.72);
+    gl_FragColor = vec4(hot, alpha);
+  }
+`;
+
+const starRayFragmentShader = `
+  uniform vec3 color;
+  uniform float opacity;
+  uniform float radius;
+  varying vec2 vUv;
+
+  float ray(vec2 p, vec2 dir, float width, float length, float strength) {
+    float along = dot(p, dir);
+    float across = abs(dot(p, vec2(-dir.y, dir.x)));
+    float body = exp(-across * width) * smoothstep(length, 0.02, along);
+    return body * step(0.0, along) * strength;
+  }
+
+  void main() {
+    vec2 p = vUv - vec2(0.5);
+    float d = length(p);
+    float rays = 0.0;
+    rays += ray(p, normalize(vec2( 1.00,  0.06)), 52.0, 0.52, 1.00);
+    rays += ray(p, normalize(vec2(-1.00, -0.14)), 42.0, 0.38, 0.58);
+    rays += ray(p, normalize(vec2( 0.10,  1.00)), 48.0, 0.46, 0.82);
+    rays += ray(p, normalize(vec2(-0.16, -1.00)), 58.0, 0.30, 0.46);
+    rays += ray(p, normalize(vec2( 0.72,  0.70)), 66.0, 0.34, 0.54);
+    rays += ray(p, normalize(vec2(-0.62, -0.78)), 54.0, 0.44, 0.72);
+    rays += ray(p, normalize(vec2(-0.74,  0.66)), 70.0, 0.28, 0.38);
+    rays += ray(p, normalize(vec2( 0.58, -0.82)), 46.0, 0.40, 0.62);
+    float center = smoothstep(radius, 0.0, d);
+    float alpha = (rays + center * 0.5) * smoothstep(0.56, 0.02, d) * opacity;
+    vec3 hot = mix(color, vec3(1.0), center * 0.85);
+    gl_FragColor = vec4(hot, alpha);
   }
 `;
 
