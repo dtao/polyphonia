@@ -3,7 +3,7 @@ import { TransformControls } from "@react-three/drei";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
-import { CompositionMap, WalkableSegment } from "../map";
+import { clampToMap, CompositionMap, WalkableSegment } from "../map";
 import { useStore } from "../store";
 
 const MAX_TRACK_LIGHTS = 12;
@@ -56,9 +56,13 @@ function StartMarker({ map, editMode }: { map: CompositionMap; editMode: boolean
 
   function handleObjectChange() {
     if (!obj) return;
-    const start = useStore.getState().composition.map.start;
+    const { map: compositionMap, map: { start } } = useStore.getState().composition;
     if (gizmoMode === "translate") {
-      setMap({ start: { ...start, position: [obj.position.x, obj.position.z] } });
+      // Clamp to the walkable area, then snap the gizmo object to the clamped
+      // position so it never fights against the boundary on the next frame.
+      const [cx, cz] = clampToMap(compositionMap, [obj.position.x, obj.position.z]);
+      obj.position.set(cx, obj.position.y, cz);
+      setMap({ start: { ...start, position: [cx, cz] } });
     } else {
       const a = obj.rotation.y;
       setMap({ start: { ...start, direction: [Math.cos(a), -Math.sin(a)] } });

@@ -121,7 +121,10 @@ export function MapPanel() {
           Go to start
         </button>
       </div>
-      <div style={hint}>Click the start disc to select it, then drag the gizmo to {startGizmoMode === "rotate" ? "rotate the heading" : "move it"}.</div>
+      <div style={hint}>
+        Click the start disc to select it, then drag the gizmo.
+        Use <strong>Move start</strong> to reposition it, or <strong>Rotate start</strong> to change the facing direction.
+      </div>
       <div style={editorGroup}>
         <div style={editorHead}>
           {selectedPoint
