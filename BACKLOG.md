@@ -40,22 +40,26 @@ depends only on earlier ones.
 - [x] **21. Environment model** — add composition-level environment metadata (`environment.type`, palette/material preset, ambience intensity, optional tiling settings) with persistence/export/publish compatibility and safe defaults for older compositions.
 - [x] **22. Visual environment presets** — replace the bare abstract grid with selectable preset spaces (e.g. studio void, cavern, forest clearing, crystalline hall) while preserving edit readability, marker selection, and performance.
 - [x] **23. Environment picker** — add an Edit-mode environment panel so composers can choose a preset and tune visual intensity without touching stem placement or audio settings.
-- [ ] **24. Material-aware ambience** — map environment material presets to broad acoustic character (dry/soft → low reflections, stone/glass → brighter/longer reflections) using a conservative global reverb/filter path that can be bypassed.
-- [ ] **25. Occlusion and obstruction pass** — introduce simple geometry-aware sound shaping between listener and stems (line-of-sight checks against environment obstacles; blocked sounds get softer/darker without breaking timing).
-- [ ] **26. Looping space model** — support composition-level spatial tiling (`none`, square, hex) with tile size/origin so a stem layout can repeat infinitely like the audio loop.
-- [ ] **27. Tiled rendering and audio instances** — render nearby visual tiles and create/cull nearby virtual stem instances around the listener, bounded by distance/performance limits so infinite space stays cheap.
-- [ ] **28. Tiling editor aids** — show tile boundaries, mirrored/ghost copies, and edge-continuity hints in Edit mode so composers can intentionally make square/hex layouts that tile cleanly.
-- [ ] **29. Publish/viewer compatibility for environments** — ensure `/c/:id`, `/gallery`, artist pages, export/import, and older manifests all handle environment and tiling metadata gracefully.
-- [ ] **30. Open-world stitching prototype** — explore streaming/culling multiple artists' spaces into neighborhoods once single-composition tiling works.
+- [x] **24. Map model and presets** — add composition-level walkable maps with Open, Line, and Y presets, visible boundary walls, closed route ends, and Explore-mode movement constraints.
+- [x] **25. Composition start point** — each composition stores a start position + facing direction; Edit mode can set or jump to it, and Explore entry begins there.
+- [ ] **26. Map shape editor** — replace preset-only maps with editable route geometry: add/move/delete endpoints, branches, widths, and closed boundaries directly in Edit mode.
+- [ ] **27. Map-aware stem tools** — snap stems to paths, show distance along branches, warn when stems are outside the walkable area, and provide quick distribute-along-path helpers.
+- [ ] **28. Material-aware ambience** — map environment material presets to broad acoustic character (dry/soft → low reflections, stone/glass → brighter/longer reflections) using a conservative global reverb/filter path that can be bypassed.
+- [ ] **29. Occlusion and obstruction pass** — introduce simple geometry-aware sound shaping between listener and stems (line-of-sight checks against environment/map obstacles; blocked sounds get softer/darker without breaking timing).
+- [ ] **30. Looping space model** — support composition-level spatial tiling (`none`, square, hex, path-loop`) with tile size/origin and compatible map topology so a stem layout can repeat infinitely like the audio loop.
+- [ ] **31. Tiled map rendering and audio instances** — render nearby visual tiles/map copies and create/cull nearby virtual stem instances around the listener, bounded by distance/performance limits so infinite space stays cheap.
+- [ ] **32. Tiling editor aids** — show tile boundaries, mirrored/ghost map copies, and edge-continuity hints in Edit mode so composers can intentionally make square/hex/path layouts that tile cleanly.
+- [ ] **33. Publish/viewer compatibility for maps and environments** — ensure `/c/:id`, `/gallery`, artist pages, export/import, and older manifests all handle environment, map, start, and tiling metadata gracefully.
+- [ ] **34. Open-world stitching prototype** — explore streaming/culling multiple artists' spaces into neighborhoods once single-composition maps and tiling work.
 
 ## Milestone 6 — Authored high-fidelity environments
 
-- [ ] **31. Environment asset pipeline** — support GLB/GLTF scene kits with compressed geometry/textures, preloading, attribution metadata, and safe fallbacks when assets fail.
-- [ ] **32. PBR material pipeline** — load authored albedo/normal/roughness/metalness/AO/emissive maps so rock, foliage, crystal, water, and architectural surfaces read as real materials.
-- [ ] **33. Hero environment prototype** — build one hand-composed AAA-style cavern scene with modular assets, authored lighting, landmarks, and an edit-friendly visibility mode.
-- [ ] **34. Postprocessing pass** — add a restrained configurable stack for bloom, ambient occlusion, tone mapping, color grading, vignette, and depth fog.
-- [ ] **35. Runtime optimization pass** — introduce instancing/LOD/culling/texture budgets so high-detail environments stay responsive in the browser.
-- [ ] **36. Environment authoring workflow** — document how new environment packs are produced, reviewed, optimized, licensed, and wired into composition metadata.
+- [ ] **35. Environment asset pipeline** — support GLB/GLTF scene kits with compressed geometry/textures, preloading, attribution metadata, and safe fallbacks when assets fail.
+- [ ] **36. PBR material pipeline** — load authored albedo/normal/roughness/metalness/AO/emissive maps so rock, foliage, crystal, water, and architectural surfaces read as real materials.
+- [ ] **37. Hero environment prototype** — build one hand-composed AAA-style cavern scene with modular assets, authored lighting, landmarks, and an edit-friendly visibility mode.
+- [ ] **38. Postprocessing pass** — add a restrained configurable stack for bloom, ambient occlusion, tone mapping, color grading, vignette, and depth fog.
+- [ ] **39. Runtime optimization pass** — introduce instancing/LOD/culling/texture budgets so high-detail environments stay responsive in the browser.
+- [ ] **40. Environment authoring workflow** — document how new environment packs are produced, reviewed, optimized, licensed, and wired into composition metadata.
 
 ## Polish & fixes (done along the way)
 
@@ -66,7 +70,6 @@ depends only on earlier ones.
 - [x] Billboard track labels so they stay readable from any angle.
 - [x] Preserve position across Explore/Edit (altitude shifts, location doesn't); new stems spawn at the view center.
 - [x] First high-fidelity environment pass: cavern uses richer procedural geometry, torch/fog/water atmosphere, and a readable first-person opening view.
-- [x] First map-authoring pass: compositions can choose Open, Line, or Y walkable maps with visible boundary walls and Explore-mode movement constraints.
 - [ ] **Choppy mouse-look** — camera *rotation* (mouse-look) in explore mode often feels choppy, while *walking* (WASD translation) stays smooth. Investigate why rotation specifically stutters.
 - [x] **Mode cleanup on Exit** — after exiting to the start screen, the mouse still controls the camera. More generally, be consistent about which "mode" we're in and when clicks / mouse movement should take effect.
 - [ ] **Turn in Edit mode** — you can move (pan) in edit mode but not turn/rotate the view. Add the ability to turn while keeping the elevated perspective.
