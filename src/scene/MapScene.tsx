@@ -19,7 +19,14 @@ export function MapScene({ map, tracks, editMode }: { map: CompositionMap; track
     <group>
       <StartMarker map={map} editMode={editMode} />
       {map.segments.map((segment) => (
-        <Segment key={segment.id} segment={segment} tracks={tracks} editMode={editMode} endpointCounts={endpointCounts} />
+        <Segment
+          key={segment.id}
+          segment={segment}
+          segments={map.segments}
+          tracks={tracks}
+          editMode={editMode}
+          endpointCounts={endpointCounts}
+        />
       ))}
       {editMode && <EndpointEditor map={map} endpointCounts={endpointCounts} />}
     </group>
@@ -49,11 +56,13 @@ function StartMarker({ map, editMode }: { map: CompositionMap; editMode: boolean
 
 function Segment({
   segment,
+  segments,
   tracks,
   editMode,
   endpointCounts,
 }: {
   segment: WalkableSegment;
+  segments: WalkableSegment[];
   tracks: TrackDef[];
   editMode: boolean;
   endpointCounts: Map<string, number>;
@@ -64,7 +73,6 @@ function Segment({
   const angle = -Math.atan2(dz, dx);
   const mid: [number, number, number] = [(segment.start[0] + segment.end[0]) / 2, 0, (segment.start[1] + segment.end[1]) / 2];
   const halfWidth = segment.width / 2;
-  const normal: [number, number] = length === 0 ? [0, 1] : [-dz / length, dx / length];
 
   return (
     <group>
@@ -72,25 +80,16 @@ function Segment({
         <planeGeometry args={[length, segment.width]} />
         <PathMaterial tracks={tracks} editMode={editMode} />
       </mesh>
-      {[-1, 1].map((side) => (
-        <mesh key={side} position={[mid[0] + normal[0] * halfWidth * side, 0.045, mid[2] + normal[1] * halfWidth * side]} rotation={[-Math.PI / 2, 0, angle]}>
-          <planeGeometry args={[length, 0.16]} />
-          <meshBasicMaterial
-            color={editMode ? "#dce7ff" : "#c8d2df"}
-            transparent
-            opacity={editMode ? 0.42 : 0.24}
-            toneMapped={false}
-            depthWrite={false}
-            blending={THREE.AdditiveBlending}
-          />
-        </mesh>
+      {([-1, 1] as const).map((side) => (
+        <BorderRail
+          key={side}
+          start={borderPoint(segment, segments, "start", side)}
+          end={borderPoint(segment, segments, "end", side)}
+          editMode={editMode}
+        />
       ))}
       {[segment.start, segment.end].map((point, i) => (
         <group key={i}>
-          <mesh position={[point[0], 0.028, point[1]]} rotation={[-Math.PI / 2, 0, 0]}>
-            <circleGeometry args={[halfWidth, 40]} />
-            <PathMaterial tracks={tracks} editMode={editMode} />
-          </mesh>
           {(endpointCounts.get(pointKey(point)) ?? 0) === 1 && (
             <mesh position={[point[0], 0.047, point[1]]} rotation={[-Math.PI / 2, 0, angle]}>
               <planeGeometry args={[0.16, segment.width]} />
@@ -108,6 +107,112 @@ function Segment({
       ))}
     </group>
   );
+}
+
+function BorderRail({ start, end, editMode }: { start: [number, number]; end: [number, number]; editMode: boolean }) {
+  const dx = end[0] - start[0];
+  const dz = end[1] - start[1];
+  const length = Math.hypot(dx, dz);
+  if (length < 0.02) return null;
+  const angle = -Math.atan2(dz, dx);
+  const mid: [number, number, number] = [(start[0] + end[0]) / 2, 0.045, (start[1] + end[1]) / 2];
+
+  return (
+    <mesh position={mid} rotation={[-Math.PI / 2, 0, angle]}>
+      <planeGeometry args={[length, 0.16]} />
+      <meshBasicMaterial
+        color={editMode ? "#dce7ff" : "#c8d2df"}
+        transparent
+        opacity={editMode ? 0.42 : 0.24}
+        toneMapped={false}
+        depthWrite={false}
+        blending={THREE.AdditiveBlending}
+      />
+    </mesh>
+  );
+}
+
+type SegmentEnd = "start" | "end";
+type Arm = {
+  segment: WalkableSegment;
+  end: SegmentEnd;
+  dir: [number, number];
+  angle: number;
+};
+
+function borderPoint(segment: WalkableSegment, segments: WalkableSegment[], end: SegmentEnd, segmentSide: -1 | 1): [number, number] {
+  const joint = end === "start" ? segment.start : segment.end;
+  const arms = incidentArms(segments, joint);
+  const armIndex = arms.findIndex((arm) => arm.segment.id === segment.id && arm.end === end);
+  const arm = arms[armIndex];
+  if (!arm) return offsetEndpoint(segment, end, segmentSide);
+  const outwardSide = end === "start" ? segmentSide : (-segmentSide as -1 | 1);
+  const fallback = offsetFromArm(joint, arm, outwardSide, segment.width / 2);
+  if (arms.length < 2) return fallback;
+
+  const neighborIndex = outwardSide === 1 ? (armIndex + 1) % arms.length : (armIndex - 1 + arms.length) % arms.length;
+  const neighbor = arms[neighborIndex];
+  const neighborSide = outwardSide === 1 ? -1 : 1;
+  const intersect = intersectOffsetRays(joint, arm, outwardSide, segment.width / 2, neighbor, neighborSide, neighbor.segment.width / 2);
+  if (!intersect) return fallback;
+
+  const dx = intersect[0] - joint[0];
+  const dz = intersect[1] - joint[1];
+  const maxMiter = Math.max(segment.width, neighbor.segment.width) * 1.4;
+  return dx * dx + dz * dz <= maxMiter * maxMiter ? intersect : fallback;
+}
+
+function incidentArms(segments: WalkableSegment[], joint: [number, number]): Arm[] {
+  return segments
+    .flatMap((segment): Arm[] => {
+      const arms: Arm[] = [];
+      if (pointKey(segment.start) === pointKey(joint)) arms.push(makeArm(segment, "start"));
+      if (pointKey(segment.end) === pointKey(joint)) arms.push(makeArm(segment, "end"));
+      return arms;
+    })
+    .sort((a, b) => a.angle - b.angle);
+}
+
+function makeArm(segment: WalkableSegment, end: SegmentEnd): Arm {
+  const from = end === "start" ? segment.start : segment.end;
+  const to = end === "start" ? segment.end : segment.start;
+  const dx = to[0] - from[0];
+  const dz = to[1] - from[1];
+  const length = Math.hypot(dx, dz) || 1;
+  const dir: [number, number] = [dx / length, dz / length];
+  return { segment, end, dir, angle: Math.atan2(dir[1], dir[0]) };
+}
+
+function offsetEndpoint(segment: WalkableSegment, end: SegmentEnd, side: -1 | 1): [number, number] {
+  const dx = segment.end[0] - segment.start[0];
+  const dz = segment.end[1] - segment.start[1];
+  const length = Math.hypot(dx, dz) || 1;
+  const normal: [number, number] = [-dz / length, dx / length];
+  const point = end === "start" ? segment.start : segment.end;
+  return [point[0] + normal[0] * (segment.width / 2) * side, point[1] + normal[1] * (segment.width / 2) * side];
+}
+
+function offsetFromArm(joint: [number, number], arm: Arm, side: -1 | 1, halfWidth: number): [number, number] {
+  const normal: [number, number] = [-arm.dir[1], arm.dir[0]];
+  return [joint[0] + normal[0] * halfWidth * side, joint[1] + normal[1] * halfWidth * side];
+}
+
+function intersectOffsetRays(
+  joint: [number, number],
+  a: Arm,
+  aSide: -1 | 1,
+  aHalfWidth: number,
+  b: Arm,
+  bSide: -1 | 1,
+  bHalfWidth: number,
+): [number, number] | null {
+  const aPoint = offsetFromArm(joint, a, aSide, aHalfWidth);
+  const bPoint = offsetFromArm(joint, b, bSide, bHalfWidth);
+  const cross = a.dir[0] * b.dir[1] - a.dir[1] * b.dir[0];
+  if (Math.abs(cross) < 0.0001) return null;
+  const delta: [number, number] = [bPoint[0] - aPoint[0], bPoint[1] - aPoint[1]];
+  const t = (delta[0] * b.dir[1] - delta[1] * b.dir[0]) / cross;
+  return [aPoint[0] + a.dir[0] * t, aPoint[1] + a.dir[1] * t];
 }
 
 function PathMaterial({ tracks, editMode }: { tracks: TrackDef[]; editMode: boolean }) {
