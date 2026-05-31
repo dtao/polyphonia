@@ -1,5 +1,8 @@
+import { ThreeEvent, useThree } from "@react-three/fiber";
+import { useMemo, useRef } from "react";
 import * as THREE from "three";
 import { CompositionMap, WalkableSegment } from "../map";
+import { useStore } from "../store";
 
 export function MapScene({ map, editMode }: { map: CompositionMap; editMode: boolean }) {
   const endpointCounts = new Map<string, number>();
@@ -15,6 +18,7 @@ export function MapScene({ map, editMode }: { map: CompositionMap; editMode: boo
       {map.segments.map((segment) => (
         <Segment key={segment.id} segment={segment} height={map.wallHeight} editMode={editMode} endpointCounts={endpointCounts} />
       ))}
+      {editMode && <EndpointEditor map={map} endpointCounts={endpointCounts} />}
     </group>
   );
 }
@@ -103,6 +107,80 @@ function Segment({
             </mesh>
           )}
         </group>
+      ))}
+    </group>
+  );
+}
+
+function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpointCounts: Map<string, number> }) {
+  const controls = useThree((s) => s.controls as { enabled?: boolean } | undefined);
+  const setMap = useStore((s) => s.setMap);
+  const dragKey = useRef<string | null>(null);
+  const ground = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), []);
+  const hit = useMemo(() => new THREE.Vector3(), []);
+  const endpoints = useMemo(() => {
+    const points = new Map<string, [number, number]>();
+    for (const segment of map.segments) {
+      points.set(pointKey(segment.start), segment.start);
+      points.set(pointKey(segment.end), segment.end);
+    }
+    return Array.from(points.entries()).map(([key, point]) => ({
+      key,
+      point,
+      shared: (endpointCounts.get(key) ?? 0) > 1,
+    }));
+  }, [endpointCounts, map.segments]);
+
+  function moveEndpoint(e: ThreeEvent<PointerEvent>) {
+    if (!dragKey.current) return;
+    e.stopPropagation();
+    if (!e.ray.intersectPlane(ground, hit)) return;
+    const next: [number, number] = [hit.x, hit.z];
+    const activeKey = dragKey.current;
+    dragKey.current = pointKey(next);
+    setMap({
+      segments: useStore.getState().composition.map.segments.map((segment) => ({
+        ...segment,
+        start: pointKey(segment.start) === activeKey ? next : segment.start,
+        end: pointKey(segment.end) === activeKey ? next : segment.end,
+      })),
+    });
+  }
+
+  return (
+    <group>
+      {endpoints.map(({ key, point, shared }) => (
+        <mesh
+          key={key}
+          position={[point[0], 0.35, point[1]]}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            dragKey.current = key;
+            if (controls) controls.enabled = false;
+            const target = e.nativeEvent.target as Element | null;
+            target?.setPointerCapture?.(e.pointerId);
+            document.body.style.cursor = "grabbing";
+          }}
+          onPointerMove={moveEndpoint}
+          onPointerUp={(e) => {
+            e.stopPropagation();
+            dragKey.current = null;
+            if (controls) controls.enabled = true;
+            const target = e.nativeEvent.target as Element | null;
+            target?.releasePointerCapture?.(e.pointerId);
+            document.body.style.cursor = "grab";
+          }}
+          onPointerOver={(e) => {
+            e.stopPropagation();
+            document.body.style.cursor = "grab";
+          }}
+          onPointerOut={() => {
+            if (!dragKey.current) document.body.style.cursor = "auto";
+          }}
+        >
+          <sphereGeometry args={[shared ? 0.72 : 0.58, 24, 16]} />
+          <meshBasicMaterial color={shared ? "#ffd166" : "#ffffff"} transparent opacity={0.95} toneMapped={false} />
+        </mesh>
       ))}
     </group>
   );

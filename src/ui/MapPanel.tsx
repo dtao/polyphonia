@@ -11,6 +11,7 @@ const LABELS: Record<MapPreset, string> = {
 export function MapPanel() {
   const map = useStore((s) => s.composition.map);
   const setMap = useStore((s) => s.setMap);
+  const resetViewToMapStart = useStore((s) => s.resetViewToMapStart);
   const [expanded, setExpanded] = useState(false);
 
   function setPreset(preset: MapPreset) {
@@ -28,7 +29,7 @@ export function MapPanel() {
   }
 
   function goToStart() {
-    setMap({ start: map.start });
+    resetViewToMapStart();
   }
 
   if (!expanded) {

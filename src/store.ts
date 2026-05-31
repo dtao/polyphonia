@@ -90,7 +90,7 @@ interface StoreState {
   auditionLoopSeam: () => void;
   loopProgress: () => { mode: "playing" | "audition"; position: number; duration: number } | null;
   setEnvironment: (environment: Partial<EnvironmentSettings>) => void;
-  setMap: (map: Partial<CompositionMap>) => void;
+  setMap: (map: Partial<CompositionMap>, options?: { moveViewToStart?: boolean }) => void;
 
   // Composition library.
   initLibrary: () => Promise<void>;
@@ -290,10 +290,10 @@ export const useStore = create<StoreState>((set, get) => ({
         environment: normalizeEnvironment({ ...s.composition.environment, ...environment }),
       },
     })),
-  setMap: (map) =>
+  setMap: (map, options) =>
     set((s) => {
       const nextMap = normalizeMap({ ...s.composition.map, ...map });
-      moveViewToMapStart(nextMap);
+      if (options?.moveViewToStart) moveViewToMapStart(nextMap);
       return {
         composition: {
           ...s.composition,
