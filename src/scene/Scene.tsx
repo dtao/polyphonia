@@ -16,7 +16,7 @@ export function Scene() {
   return (
     <>
       <EnvironmentScene environment={environment} editMode={mode === "edit"} />
-      <MapScene map={map} editMode={mode === "edit"} />
+      <MapScene map={map} tracks={tracks} editMode={mode === "edit"} />
 
       {tracks.map((t) => (
         <TrackMarker key={t.id} track={t} />

@@ -1,10 +1,13 @@
 import { ThreeEvent, useThree } from "@react-three/fiber";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
+import { TrackDef } from "../composition";
 import { CompositionMap, WalkableSegment } from "../map";
 import { useStore } from "../store";
 
-export function MapScene({ map, editMode }: { map: CompositionMap; editMode: boolean }) {
+const MAX_TRACK_LIGHTS = 12;
+
+export function MapScene({ map, tracks, editMode }: { map: CompositionMap; tracks: TrackDef[]; editMode: boolean }) {
   const selectedMapSegmentId = useStore((s) => s.selectedMapSegmentId);
   const endpointCounts = new Map<string, number>();
   for (const segment of map.segments) {
@@ -20,7 +23,8 @@ export function MapScene({ map, editMode }: { map: CompositionMap; editMode: boo
         <Segment
           key={segment.id}
           segment={segment}
-          height={map.wallHeight}
+          segments={map.segments}
+          tracks={tracks}
           editMode={editMode}
           endpointCounts={endpointCounts}
           selected={selectedMapSegmentId === segment.id}
@@ -101,13 +105,7 @@ function StartMarker({ map, editMode }: { map: CompositionMap; editMode: boolean
         }}
       >
         <ringGeometry args={[0.65, 1.15, 48]} />
-        <meshBasicMaterial
-          color={activeDrag === "position" ? "#8fffe8" : "#ffffff"}
-          transparent
-          opacity={opacity}
-          toneMapped={false}
-          depthWrite={false}
-        />
+        <meshBasicMaterial color={activeDrag === "position" ? "#8fffe8" : "#ffffff"} transparent opacity={opacity} toneMapped={false} depthWrite={false} />
       </mesh>
       <mesh
         position={[1.45, 0.02, 0]}
@@ -123,13 +121,7 @@ function StartMarker({ map, editMode }: { map: CompositionMap; editMode: boolean
         }}
       >
         <coneGeometry args={[0.38, 0.9, 3]} />
-        <meshBasicMaterial
-          color={activeDrag === "direction" ? "#8fffe8" : "#ffffff"}
-          transparent
-          opacity={opacity}
-          toneMapped={false}
-          depthWrite={false}
-        />
+        <meshBasicMaterial color={activeDrag === "direction" ? "#8fffe8" : "#ffffff"} transparent opacity={opacity} toneMapped={false} depthWrite={false} />
       </mesh>
       <pointLight position={[0, 0.8, 0]} color="#ffffff" intensity={editMode ? 1.2 : 0.5} distance={5} />
     </group>
@@ -138,13 +130,15 @@ function StartMarker({ map, editMode }: { map: CompositionMap; editMode: boolean
 
 function Segment({
   segment,
-  height,
+  segments,
+  tracks,
   editMode,
   endpointCounts,
   selected,
 }: {
   segment: WalkableSegment;
-  height: number;
+  segments: WalkableSegment[];
+  tracks: TrackDef[];
   editMode: boolean;
   endpointCounts: Map<string, number>;
   selected: boolean;
@@ -155,17 +149,11 @@ function Segment({
   const length = Math.hypot(dx, dz);
   const angle = -Math.atan2(dz, dx);
   const mid: [number, number, number] = [(segment.start[0] + segment.end[0]) / 2, 0, (segment.start[1] + segment.end[1]) / 2];
-  const halfWidth = segment.width / 2;
-  const normal: [number, number] = length === 0 ? [0, 1] : [-dz / length, dx / length];
-  const wallColor = selected ? "#8fffe8" : editMode ? "#9fb4ff" : "#d9e4ff";
-  const floorOpacity = selected ? 0.23 : editMode ? 0.12 : 0.055;
-  const wallOpacity = selected ? 0.52 : editMode ? 0.34 : 0.22;
-  const emissiveIntensity = selected ? 0.7 : editMode ? 0.34 : 0.18;
 
   return (
     <group>
       <mesh
-        position={[mid[0], 0.025, mid[2]]}
+        position={[mid[0], 0.026, mid[2]]}
         rotation={[-Math.PI / 2, 0, angle]}
         onClick={(e) => {
           if (!editMode) return;
@@ -174,41 +162,29 @@ function Segment({
         }}
       >
         <planeGeometry args={[length, segment.width]} />
-        <meshBasicMaterial color={selected ? "#8fffe8" : "#5b8cff"} transparent opacity={floorOpacity} depthWrite={false} side={THREE.DoubleSide} />
+        <PathMaterial tracks={tracks} editMode={editMode} selected={selected} />
       </mesh>
-      {[-1, 1].map((side) => (
-        <mesh
+      {([-1, 1] as const).map((side) => (
+        <BorderRail
           key={side}
-          position={[mid[0] + normal[0] * halfWidth * side, height / 2, mid[2] + normal[1] * halfWidth * side]}
-          rotation={[0, angle, 0]}
-        >
-          <boxGeometry args={[length, height, 0.18]} />
-          <meshStandardMaterial
-            color={wallColor}
-            emissive="#2f4b9b"
-            emissiveIntensity={emissiveIntensity}
-            transparent
-            opacity={wallOpacity}
-            roughness={0.45}
-          />
-        </mesh>
+          start={borderPoint(segment, segments, "start", side)}
+          end={borderPoint(segment, segments, "end", side)}
+          editMode={editMode}
+          selected={selected}
+        />
       ))}
       {[segment.start, segment.end].map((point, i) => (
         <group key={i}>
-          <mesh position={[point[0], 0.035, point[1]]} rotation={[-Math.PI / 2, 0, 0]}>
-            <circleGeometry args={[halfWidth, 40]} />
-            <meshBasicMaterial color="#5b8cff" transparent opacity={editMode ? 0.1 : 0.045} depthWrite={false} />
-          </mesh>
           {(endpointCounts.get(pointKey(point)) ?? 0) === 1 && (
-            <mesh position={[point[0], height / 2, point[1]]} rotation={[0, angle, 0]}>
-              <boxGeometry args={[0.18, height, segment.width]} />
-              <meshStandardMaterial
-                color={wallColor}
-                emissive="#2f4b9b"
-                emissiveIntensity={emissiveIntensity}
+            <mesh position={[point[0], 0.047, point[1]]} rotation={[-Math.PI / 2, 0, angle]}>
+              <planeGeometry args={[0.16, segment.width]} />
+              <meshBasicMaterial
+                color={selected ? "#8fffe8" : editMode ? "#dce7ff" : "#c8d2df"}
                 transparent
-                opacity={wallOpacity}
-                roughness={0.45}
+                opacity={selected ? 0.72 : editMode ? 0.46 : 0.28}
+                toneMapped={false}
+                depthWrite={false}
+                blending={THREE.AdditiveBlending}
               />
             </mesh>
           )}
@@ -230,25 +206,29 @@ function BranchPlacementLayer({ map }: { map: CompositionMap }) {
 
   return (
     <group>
-      <mesh position={[0, 0.12, 0]} rotation={[-Math.PI / 2, 0, 0]} onClick={(e) => {
-        e.stopPropagation();
-        const end: [number, number] = [e.point.x, e.point.z];
-        setMap({
-          preset: "custom",
-          segments: [
-            ...useStore.getState().composition.map.segments,
-            {
-              id: `branch-${Date.now().toString(36)}`,
-              start: startPoint,
-              end,
-              width: averageWidth,
-            },
-          ],
-        });
-        const endKey = pointKey(end);
-        setBranchStartPoint(null);
-        selectMapPoint(endKey);
-      }}>
+      <mesh
+        position={[0, 0.12, 0]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        onClick={(e) => {
+          e.stopPropagation();
+          const end: [number, number] = [e.point.x, e.point.z];
+          setMap({
+            preset: "custom",
+            segments: [
+              ...useStore.getState().composition.map.segments,
+              {
+                id: `branch-${Date.now().toString(36)}`,
+                start: startPoint,
+                end,
+                width: averageWidth,
+              },
+            ],
+          });
+          const endKey = pointKey(end);
+          setBranchStartPoint(null);
+          selectMapPoint(endKey);
+        }}
+      >
         <planeGeometry args={[220, 220]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
       </mesh>
@@ -257,6 +237,146 @@ function BranchPlacementLayer({ map }: { map: CompositionMap }) {
         <meshBasicMaterial color="#8fffe8" transparent opacity={0.8} toneMapped={false} depthWrite={false} />
       </mesh>
     </group>
+  );
+}
+
+function BorderRail({ start, end, editMode, selected }: { start: [number, number]; end: [number, number]; editMode: boolean; selected: boolean }) {
+  const dx = end[0] - start[0];
+  const dz = end[1] - start[1];
+  const length = Math.hypot(dx, dz);
+  if (length < 0.02) return null;
+  const angle = -Math.atan2(dz, dx);
+  const mid: [number, number, number] = [(start[0] + end[0]) / 2, 0.045, (start[1] + end[1]) / 2];
+
+  return (
+    <mesh position={mid} rotation={[-Math.PI / 2, 0, angle]}>
+      <planeGeometry args={[length, 0.16]} />
+      <meshBasicMaterial
+        color={selected ? "#8fffe8" : editMode ? "#dce7ff" : "#c8d2df"}
+        transparent
+        opacity={selected ? 0.72 : editMode ? 0.42 : 0.24}
+        toneMapped={false}
+        depthWrite={false}
+        blending={THREE.AdditiveBlending}
+      />
+    </mesh>
+  );
+}
+
+type SegmentEnd = "start" | "end";
+type Arm = {
+  segment: WalkableSegment;
+  end: SegmentEnd;
+  dir: [number, number];
+  angle: number;
+};
+
+function borderPoint(segment: WalkableSegment, segments: WalkableSegment[], end: SegmentEnd, segmentSide: -1 | 1): [number, number] {
+  const joint = end === "start" ? segment.start : segment.end;
+  const arms = incidentArms(segments, joint);
+  const armIndex = arms.findIndex((arm) => arm.segment.id === segment.id && arm.end === end);
+  const arm = arms[armIndex];
+  if (!arm) return offsetEndpoint(segment, end, segmentSide);
+  const outwardSide = end === "start" ? segmentSide : (-segmentSide as -1 | 1);
+  const fallback = offsetFromArm(joint, arm, outwardSide, segment.width / 2);
+  if (arms.length < 2) return fallback;
+
+  const neighborIndex = outwardSide === 1 ? (armIndex + 1) % arms.length : (armIndex - 1 + arms.length) % arms.length;
+  const neighbor = arms[neighborIndex];
+  const neighborSide = outwardSide === 1 ? -1 : 1;
+  const intersect = intersectOffsetRays(joint, arm, outwardSide, segment.width / 2, neighbor, neighborSide, neighbor.segment.width / 2);
+  if (!intersect) return fallback;
+
+  const dx = intersect[0] - joint[0];
+  const dz = intersect[1] - joint[1];
+  const maxMiter = Math.max(segment.width, neighbor.segment.width) * 1.4;
+  return dx * dx + dz * dz <= maxMiter * maxMiter ? intersect : fallback;
+}
+
+function incidentArms(segments: WalkableSegment[], joint: [number, number]): Arm[] {
+  return segments
+    .flatMap((segment): Arm[] => {
+      const arms: Arm[] = [];
+      if (pointKey(segment.start) === pointKey(joint)) arms.push(makeArm(segment, "start"));
+      if (pointKey(segment.end) === pointKey(joint)) arms.push(makeArm(segment, "end"));
+      return arms;
+    })
+    .sort((a, b) => a.angle - b.angle);
+}
+
+function makeArm(segment: WalkableSegment, end: SegmentEnd): Arm {
+  const from = end === "start" ? segment.start : segment.end;
+  const to = end === "start" ? segment.end : segment.start;
+  const dx = to[0] - from[0];
+  const dz = to[1] - from[1];
+  const length = Math.hypot(dx, dz) || 1;
+  const dir: [number, number] = [dx / length, dz / length];
+  return { segment, end, dir, angle: Math.atan2(dir[1], dir[0]) };
+}
+
+function offsetEndpoint(segment: WalkableSegment, end: SegmentEnd, side: -1 | 1): [number, number] {
+  const dx = segment.end[0] - segment.start[0];
+  const dz = segment.end[1] - segment.start[1];
+  const length = Math.hypot(dx, dz) || 1;
+  const normal: [number, number] = [-dz / length, dx / length];
+  const point = end === "start" ? segment.start : segment.end;
+  return [point[0] + normal[0] * (segment.width / 2) * side, point[1] + normal[1] * (segment.width / 2) * side];
+}
+
+function offsetFromArm(joint: [number, number], arm: Arm, side: -1 | 1, halfWidth: number): [number, number] {
+  const normal: [number, number] = [-arm.dir[1], arm.dir[0]];
+  return [joint[0] + normal[0] * halfWidth * side, joint[1] + normal[1] * halfWidth * side];
+}
+
+function intersectOffsetRays(
+  joint: [number, number],
+  a: Arm,
+  aSide: -1 | 1,
+  aHalfWidth: number,
+  b: Arm,
+  bSide: -1 | 1,
+  bHalfWidth: number,
+): [number, number] | null {
+  const aPoint = offsetFromArm(joint, a, aSide, aHalfWidth);
+  const bPoint = offsetFromArm(joint, b, bSide, bHalfWidth);
+  const cross = a.dir[0] * b.dir[1] - a.dir[1] * b.dir[0];
+  if (Math.abs(cross) < 0.0001) return null;
+  const delta: [number, number] = [bPoint[0] - aPoint[0], bPoint[1] - aPoint[1]];
+  const t = (delta[0] * b.dir[1] - delta[1] * b.dir[0]) / cross;
+  return [aPoint[0] + a.dir[0] * t, aPoint[1] + a.dir[1] * t];
+}
+
+function PathMaterial({ tracks, editMode, selected }: { tracks: TrackDef[]; editMode: boolean; selected: boolean }) {
+  const uniforms = useMemo(() => {
+    const positions = Array.from({ length: MAX_TRACK_LIGHTS }, () => new THREE.Vector3(0, 0, 0));
+    const colors = Array.from({ length: MAX_TRACK_LIGHTS }, () => new THREE.Color("#000000"));
+    tracks.slice(0, MAX_TRACK_LIGHTS).forEach((track, i) => {
+      const volume = track.volume ?? 1;
+      const refDistance = track.refDistance ?? 4;
+      const maxDistance = track.maxDistance ?? 40;
+      positions[i].set(track.position[0], track.position[2], Math.max(7, Math.min(24, refDistance + maxDistance * 0.22 + volume * 4)));
+      colors[i].set(track.color);
+    });
+    return {
+      baseColor: { value: new THREE.Color(selected ? "#8fffe8" : "#c8d2df") },
+      trackPositions: { value: positions },
+      trackColors: { value: colors },
+      trackCount: { value: Math.min(tracks.length, MAX_TRACK_LIGHTS) },
+      floorStrength: { value: selected ? 0.92 : editMode ? 0.78 : 0.66 },
+    };
+  }, [tracks, editMode, selected]);
+
+  return (
+    <shaderMaterial
+      transparent={false}
+      depthWrite
+      toneMapped={false}
+      blending={THREE.NormalBlending}
+      side={THREE.DoubleSide}
+      uniforms={uniforms}
+      vertexShader={pathVertexShader}
+      fragmentShader={pathFragmentShader}
+    />
   );
 }
 
@@ -319,38 +439,45 @@ function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpoint
         const active = activeId === id;
         const selected = selectedMapPointKey === key;
         return (
-        <mesh
-          key={id}
-          position={[point[0], 0.35, point[1]]}
-          onPointerDown={(e) => {
-            e.stopPropagation();
-            drag.current = { pointKey: key };
-            setActiveId(id);
-            selectMapPoint(key);
-            if (controls) controls.enabled = false;
-            const target = e.nativeEvent.target as Element | null;
-            target?.setPointerCapture?.(e.pointerId);
-            document.body.style.cursor = "grabbing";
-          }}
-          onPointerMove={moveEndpoint}
-          onPointerUp={endDrag}
-          onPointerOver={(e) => {
-            e.stopPropagation();
-            document.body.style.cursor = "grab";
-          }}
-          onPointerOut={() => {
-            if (!drag.current) document.body.style.cursor = "auto";
-          }}
-        >
-          <sphereGeometry args={[active ? 0.95 : selected ? 0.82 : shared ? 0.72 : 0.58, 24, 16]} />
-          <meshBasicMaterial color={active ? "#8fffe8" : selected ? "#9fb4ff" : shared ? "#ffd166" : "#ffffff"} transparent opacity={1} toneMapped={false} />
-          {(active || selected) && (
-            <mesh>
-              <sphereGeometry args={[active ? 1.35 : 1.12, 24, 16]} />
-              <meshBasicMaterial color={active ? "#8fffe8" : "#9fb4ff"} transparent opacity={active ? 0.22 : 0.16} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
-            </mesh>
-          )}
-        </mesh>
+          <mesh
+            key={id}
+            position={[point[0], 0.35, point[1]]}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              drag.current = { pointKey: key };
+              setActiveId(id);
+              selectMapPoint(key);
+              if (controls) controls.enabled = false;
+              const target = e.nativeEvent.target as Element | null;
+              target?.setPointerCapture?.(e.pointerId);
+              document.body.style.cursor = "grabbing";
+            }}
+            onPointerMove={moveEndpoint}
+            onPointerUp={endDrag}
+            onPointerOver={(e) => {
+              e.stopPropagation();
+              document.body.style.cursor = "grab";
+            }}
+            onPointerOut={() => {
+              if (!drag.current) document.body.style.cursor = "auto";
+            }}
+          >
+            <sphereGeometry args={[active ? 0.95 : selected ? 0.82 : shared ? 0.72 : 0.58, 24, 16]} />
+            <meshBasicMaterial color={active ? "#8fffe8" : selected ? "#9fb4ff" : shared ? "#ffd166" : "#ffffff"} transparent opacity={1} toneMapped={false} />
+            {(active || selected) && (
+              <mesh>
+                <sphereGeometry args={[active ? 1.35 : 1.12, 24, 16]} />
+                <meshBasicMaterial
+                  color={active ? "#8fffe8" : "#9fb4ff"}
+                  transparent
+                  opacity={active ? 0.22 : 0.16}
+                  toneMapped={false}
+                  depthWrite={false}
+                  blending={THREE.AdditiveBlending}
+                />
+              </mesh>
+            )}
+          </mesh>
         );
       })}
     </group>
@@ -368,3 +495,42 @@ function findPoint(map: CompositionMap, key: string): [number, number] | null {
   }
   return null;
 }
+
+const pathVertexShader = `
+  varying vec2 vWorld;
+
+  void main() {
+    vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+    vWorld = worldPosition.xz;
+    gl_Position = projectionMatrix * viewMatrix * worldPosition;
+  }
+`;
+
+const pathFragmentShader = `
+  #define MAX_TRACK_LIGHTS ${MAX_TRACK_LIGHTS}
+
+  uniform vec3 baseColor;
+  uniform vec3 trackColors[MAX_TRACK_LIGHTS];
+  uniform vec3 trackPositions[MAX_TRACK_LIGHTS];
+  uniform int trackCount;
+  uniform float floorStrength;
+  varying vec2 vWorld;
+
+  void main() {
+    vec3 color = baseColor * floorStrength;
+    float lightTotal = 0.0;
+
+    for (int i = 0; i < MAX_TRACK_LIGHTS; i++) {
+      if (i >= trackCount) break;
+      float radius = trackPositions[i].z;
+      float d = distance(vWorld, trackPositions[i].xy);
+      float light = pow(smoothstep(radius, 0.0, d), 1.55);
+      lightTotal += light;
+      color = mix(color, trackColors[i] * 1.08, light * 0.58);
+      color += trackColors[i] * light * 0.34;
+    }
+
+    color += baseColor * min(lightTotal, 1.0) * 0.08;
+    gl_FragColor = vec4(color, 1.0);
+  }
+`;

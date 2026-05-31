@@ -40,7 +40,7 @@ depends only on earlier ones.
 - [x] **21. Environment model** — add composition-level environment metadata (`environment.type`, palette/material preset, ambience intensity, optional tiling settings) with persistence/export/publish compatibility and safe defaults for older compositions.
 - [x] **22. Visual environment presets** — replace the bare abstract grid with selectable preset spaces (e.g. studio void, cavern, forest clearing, crystalline hall) while preserving edit readability, marker selection, and performance.
 - [x] **23. Environment picker** — add an Edit-mode environment panel so composers can choose a preset and tune visual intensity without touching stem placement or audio settings.
-- [x] **24. Map model and presets** — add composition-level walkable maps with Open, Line, and Y presets, visible boundary walls, closed route ends, and Explore-mode movement constraints.
+- [x] **24. Map model and presets** — add composition-level walkable maps with Open, Line, and Y presets, visible lighted ground paths, closed route ends, and Explore-mode movement constraints.
 - [x] **25. Composition start point** — each composition stores a start position + facing direction; Edit mode can set or jump to it, and Explore entry begins there.
 - [ ] **26. Map shape editor** — replace preset-only maps with editable route geometry: add/move/delete endpoints, branches, widths, and closed boundaries directly in Edit mode.
 - [ ] **27. Map-aware stem tools** — snap stems to paths, show distance along branches, warn when stems are outside the walkable area, and provide quick distribute-along-path helpers.
