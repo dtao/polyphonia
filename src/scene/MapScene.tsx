@@ -5,6 +5,7 @@ import { CompositionMap, WalkableSegment } from "../map";
 import { useStore } from "../store";
 
 export function MapScene({ map, editMode }: { map: CompositionMap; editMode: boolean }) {
+  const selectedMapSegmentId = useStore((s) => s.selectedMapSegmentId);
   const endpointCounts = new Map<string, number>();
   for (const segment of map.segments) {
     for (const point of [segment.start, segment.end]) {
@@ -16,28 +17,119 @@ export function MapScene({ map, editMode }: { map: CompositionMap; editMode: boo
     <group>
       <StartMarker map={map} editMode={editMode} />
       {map.segments.map((segment) => (
-        <Segment key={segment.id} segment={segment} height={map.wallHeight} editMode={editMode} endpointCounts={endpointCounts} />
+        <Segment
+          key={segment.id}
+          segment={segment}
+          height={map.wallHeight}
+          editMode={editMode}
+          endpointCounts={endpointCounts}
+          selected={selectedMapSegmentId === segment.id}
+        />
       ))}
+      {editMode && <BranchPlacementLayer map={map} />}
       {editMode && <EndpointEditor map={map} endpointCounts={endpointCounts} />}
     </group>
   );
 }
 
 function StartMarker({ map, editMode }: { map: CompositionMap; editMode: boolean }) {
+  const controls = useThree((s) => s.controls as { enabled?: boolean } | undefined);
+  const setMap = useStore((s) => s.setMap);
+  const drag = useRef<"position" | "direction" | null>(null);
+  const [activeDrag, setActiveDrag] = useState<"position" | "direction" | null>(null);
+  const ground = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), []);
+  const hit = useMemo(() => new THREE.Vector3(), []);
   const [x, z] = map.start.position;
   const [fx, fz] = map.start.direction;
   const angle = -Math.atan2(fz, fx);
   const opacity = editMode ? 0.9 : 0.45;
 
+  function beginDrag(kind: "position" | "direction", e: ThreeEvent<PointerEvent>) {
+    if (!editMode) return;
+    e.stopPropagation();
+    drag.current = kind;
+    setActiveDrag(kind);
+    if (controls) controls.enabled = false;
+    const target = e.nativeEvent.target as Element | null;
+    target?.setPointerCapture?.(e.pointerId);
+    document.body.style.cursor = "grabbing";
+  }
+
+  function moveStart(e: ThreeEvent<PointerEvent>) {
+    if (!drag.current) return;
+    e.stopPropagation();
+    if (!e.ray.intersectPlane(ground, hit)) return;
+    if (drag.current === "position") {
+      setMap({ start: { ...map.start, position: [hit.x, hit.z] } });
+      return;
+    }
+    const dx = hit.x - x;
+    const dz = hit.z - z;
+    const length = Math.hypot(dx, dz);
+    if (length > 0.2) setMap({ start: { ...map.start, direction: [dx / length, dz / length] } });
+  }
+
+  function endDrag(e?: ThreeEvent<PointerEvent>) {
+    e?.stopPropagation();
+    drag.current = null;
+    setActiveDrag(null);
+    if (controls) controls.enabled = true;
+    const target = e?.nativeEvent.target as Element | null | undefined;
+    target?.releasePointerCapture?.(e?.pointerId ?? -1);
+    document.body.style.cursor = "auto";
+  }
+
   return (
-    <group position={[x, 0.08, z]} rotation={[0, angle, 0]}>
-      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+    <group
+      position={[x, 0.08, z]}
+      rotation={[0, angle, 0]}
+      onPointerMove={moveStart}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      onPointerLeave={endDrag}
+    >
+      <mesh
+        rotation={[-Math.PI / 2, 0, 0]}
+        onPointerDown={(e) => beginDrag("position", e)}
+        onPointerOver={(e) => {
+          if (!editMode) return;
+          e.stopPropagation();
+          document.body.style.cursor = "grab";
+        }}
+        onPointerOut={() => {
+          if (!drag.current) document.body.style.cursor = "auto";
+        }}
+      >
         <ringGeometry args={[0.65, 1.15, 48]} />
-        <meshBasicMaterial color="#ffffff" transparent opacity={opacity} toneMapped={false} depthWrite={false} />
+        <meshBasicMaterial
+          color={activeDrag === "position" ? "#8fffe8" : "#ffffff"}
+          transparent
+          opacity={opacity}
+          toneMapped={false}
+          depthWrite={false}
+        />
       </mesh>
-      <mesh position={[1.45, 0.02, 0]} rotation={[0, 0, -Math.PI / 2]}>
+      <mesh
+        position={[1.45, 0.02, 0]}
+        rotation={[0, 0, -Math.PI / 2]}
+        onPointerDown={(e) => beginDrag("direction", e)}
+        onPointerOver={(e) => {
+          if (!editMode) return;
+          e.stopPropagation();
+          document.body.style.cursor = "grab";
+        }}
+        onPointerOut={() => {
+          if (!drag.current) document.body.style.cursor = "auto";
+        }}
+      >
         <coneGeometry args={[0.38, 0.9, 3]} />
-        <meshBasicMaterial color="#ffffff" transparent opacity={opacity} toneMapped={false} depthWrite={false} />
+        <meshBasicMaterial
+          color={activeDrag === "direction" ? "#8fffe8" : "#ffffff"}
+          transparent
+          opacity={opacity}
+          toneMapped={false}
+          depthWrite={false}
+        />
       </mesh>
       <pointLight position={[0, 0.8, 0]} color="#ffffff" intensity={editMode ? 1.2 : 0.5} distance={5} />
     </group>
@@ -49,12 +141,15 @@ function Segment({
   height,
   editMode,
   endpointCounts,
+  selected,
 }: {
   segment: WalkableSegment;
   height: number;
   editMode: boolean;
   endpointCounts: Map<string, number>;
+  selected: boolean;
 }) {
+  const selectMapSegment = useStore((s) => s.selectMapSegment);
   const dx = segment.end[0] - segment.start[0];
   const dz = segment.end[1] - segment.start[1];
   const length = Math.hypot(dx, dz);
@@ -62,13 +157,24 @@ function Segment({
   const mid: [number, number, number] = [(segment.start[0] + segment.end[0]) / 2, 0, (segment.start[1] + segment.end[1]) / 2];
   const halfWidth = segment.width / 2;
   const normal: [number, number] = length === 0 ? [0, 1] : [-dz / length, dx / length];
-  const wallColor = editMode ? "#9fb4ff" : "#d9e4ff";
+  const wallColor = selected ? "#8fffe8" : editMode ? "#9fb4ff" : "#d9e4ff";
+  const floorOpacity = selected ? 0.23 : editMode ? 0.12 : 0.055;
+  const wallOpacity = selected ? 0.52 : editMode ? 0.34 : 0.22;
+  const emissiveIntensity = selected ? 0.7 : editMode ? 0.34 : 0.18;
 
   return (
     <group>
-      <mesh position={[mid[0], 0.025, mid[2]]} rotation={[-Math.PI / 2, 0, angle]}>
+      <mesh
+        position={[mid[0], 0.025, mid[2]]}
+        rotation={[-Math.PI / 2, 0, angle]}
+        onClick={(e) => {
+          if (!editMode) return;
+          e.stopPropagation();
+          selectMapSegment(segment.id);
+        }}
+      >
         <planeGeometry args={[length, segment.width]} />
-        <meshBasicMaterial color="#5b8cff" transparent opacity={editMode ? 0.12 : 0.055} depthWrite={false} side={THREE.DoubleSide} />
+        <meshBasicMaterial color={selected ? "#8fffe8" : "#5b8cff"} transparent opacity={floorOpacity} depthWrite={false} side={THREE.DoubleSide} />
       </mesh>
       {[-1, 1].map((side) => (
         <mesh
@@ -80,9 +186,9 @@ function Segment({
           <meshStandardMaterial
             color={wallColor}
             emissive="#2f4b9b"
-            emissiveIntensity={editMode ? 0.34 : 0.18}
+            emissiveIntensity={emissiveIntensity}
             transparent
-            opacity={editMode ? 0.34 : 0.22}
+            opacity={wallOpacity}
             roughness={0.45}
           />
         </mesh>
@@ -99,15 +205,57 @@ function Segment({
               <meshStandardMaterial
                 color={wallColor}
                 emissive="#2f4b9b"
-                emissiveIntensity={editMode ? 0.34 : 0.18}
+                emissiveIntensity={emissiveIntensity}
                 transparent
-                opacity={editMode ? 0.34 : 0.22}
+                opacity={wallOpacity}
                 roughness={0.45}
               />
             </mesh>
           )}
         </group>
       ))}
+    </group>
+  );
+}
+
+function BranchPlacementLayer({ map }: { map: CompositionMap }) {
+  const branchStartPointKey = useStore((s) => s.branchStartPointKey);
+  const setBranchStartPoint = useStore((s) => s.setBranchStartPoint);
+  const setMap = useStore((s) => s.setMap);
+  const selectMapPoint = useStore((s) => s.selectMapPoint);
+  const startPoint = branchStartPointKey ? findPoint(map, branchStartPointKey) : null;
+  const averageWidth = map.segments.length ? map.segments.reduce((sum, s) => sum + s.width, 0) / map.segments.length : 7.5;
+
+  if (!branchStartPointKey || !startPoint) return null;
+
+  return (
+    <group>
+      <mesh position={[0, 0.12, 0]} rotation={[-Math.PI / 2, 0, 0]} onClick={(e) => {
+        e.stopPropagation();
+        const end: [number, number] = [e.point.x, e.point.z];
+        setMap({
+          preset: "custom",
+          segments: [
+            ...useStore.getState().composition.map.segments,
+            {
+              id: `branch-${Date.now().toString(36)}`,
+              start: startPoint,
+              end,
+              width: averageWidth,
+            },
+          ],
+        });
+        const endKey = pointKey(end);
+        setBranchStartPoint(null);
+        selectMapPoint(endKey);
+      }}>
+        <planeGeometry args={[220, 220]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
+      </mesh>
+      <mesh position={[startPoint[0], 0.09, startPoint[1]]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[1.3, 1.55, 48]} />
+        <meshBasicMaterial color="#8fffe8" transparent opacity={0.8} toneMapped={false} depthWrite={false} />
+      </mesh>
     </group>
   );
 }
@@ -211,4 +359,12 @@ function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpoint
 
 function pointKey(point: [number, number]): string {
   return `${point[0].toFixed(3)},${point[1].toFixed(3)}`;
+}
+
+function findPoint(map: CompositionMap, key: string): [number, number] | null {
+  for (const segment of map.segments) {
+    if (pointKey(segment.start) === key) return segment.start;
+    if (pointKey(segment.end) === key) return segment.end;
+  }
+  return null;
 }

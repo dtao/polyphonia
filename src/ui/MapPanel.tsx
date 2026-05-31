@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MAP_PRESETS, MapPreset } from "../map";
+import { clampToMap, CompositionMap, isPointInsideMap, MAP_PRESETS, MapPreset, WalkableSegment } from "../map";
 import { useStore, viewState } from "../store";
 
 const LABELS: Record<MapPreset, string> = {
@@ -11,13 +11,22 @@ const LABELS: Record<MapPreset, string> = {
 
 export function MapPanel() {
   const map = useStore((s) => s.composition.map);
+  const tracks = useStore((s) => s.composition.tracks);
   const selectedMapPointKey = useStore((s) => s.selectedMapPointKey);
+  const selectedMapSegmentId = useStore((s) => s.selectedMapSegmentId);
+  const branchStartPointKey = useStore((s) => s.branchStartPointKey);
   const setMap = useStore((s) => s.setMap);
   const selectMapPoint = useStore((s) => s.selectMapPoint);
+  const setBranchStartPoint = useStore((s) => s.setBranchStartPoint);
+  const setTrackPosition = useStore((s) => s.setTrackPosition);
   const resetViewToMapStart = useStore((s) => s.resetViewToMapStart);
   const [expanded, setExpanded] = useState(false);
   const selectedPoint = selectedMapPointKey ? findPoint(map, selectedMapPointKey) : null;
+  const selectedSegment = selectedMapSegmentId ? map.segments.find((segment) => segment.id === selectedMapSegmentId) ?? null : null;
   const averageWidth = map.segments.length ? map.segments.reduce((sum, s) => sum + s.width, 0) / map.segments.length : 7.5;
+  const widthValue = selectedSegment?.width ?? averageWidth;
+  const warnings = validateMap(map, tracks);
+  const outsideTrackCount = countTracksOutsideMap(map, tracks);
 
   function setPreset(preset: Exclude<MapPreset, "custom">) {
     const next = MAP_PRESETS[preset];
@@ -37,27 +46,9 @@ export function MapPanel() {
     resetViewToMapStart();
   }
 
-  function addBranch() {
-    if (!selectedPoint) return;
-    const length = 18;
-    const directionLength = Math.hypot(viewState.fx, viewState.fz) || 1;
-    const end: [number, number] = [
-      selectedPoint[0] + (viewState.fx / directionLength) * length,
-      selectedPoint[1] + (viewState.fz / directionLength) * length,
-    ];
-    setMap({
-      preset: "custom",
-      segments: [
-        ...map.segments,
-        {
-          id: `branch-${Date.now().toString(36)}`,
-          start: selectedPoint,
-          end,
-          width: averageWidth,
-        },
-      ],
-    });
-    selectMapPoint(pointKey(end));
+  function toggleBranchPlacement() {
+    if (!selectedMapPointKey) return;
+    setBranchStartPoint(branchStartPointKey === selectedMapPointKey ? null : selectedMapPointKey);
   }
 
   function deletePoint() {
@@ -67,13 +58,29 @@ export function MapPanel() {
       segments: map.segments.filter((segment) => pointKey(segment.start) !== selectedMapPointKey && pointKey(segment.end) !== selectedMapPointKey),
     });
     selectMapPoint(null);
+    setBranchStartPoint(null);
   }
 
   function setWidth(width: number) {
+    if (selectedSegment) {
+      setMap({
+        preset: "custom",
+        segments: map.segments.map((segment) => (segment.id === selectedSegment.id ? { ...segment, width } : segment)),
+      });
+      return;
+    }
     setMap({
       preset: "custom",
       segments: map.segments.map((segment) => ({ ...segment, width })),
     });
+  }
+
+  function snapStemsToMap() {
+    for (const track of tracks) {
+      const [x, y, z] = track.position;
+      const [nx, nz] = clampToMap(map, [x, z]);
+      if (Math.hypot(nx - x, nz - z) > 0.001) setTrackPosition(track.id, [nx, y, nz]);
+    }
   }
 
   if (!expanded) {
@@ -114,11 +121,13 @@ export function MapPanel() {
         <div style={editorHead}>
           {selectedPoint
             ? `Point ${selectedPoint[0].toFixed(1)}, ${selectedPoint[1].toFixed(1)}`
-            : "Select a map handle"}
+            : selectedSegment
+              ? `Segment ${selectedSegment.id}`
+              : "Select a corridor or handle"}
         </div>
         <div style={actionRow}>
-          <button style={{ ...actionBtn, opacity: selectedPoint ? 1 : 0.45 }} onClick={addBranch} disabled={!selectedPoint}>
-            Add branch
+          <button style={{ ...actionBtn, opacity: selectedPoint ? 1 : 0.45 }} onClick={toggleBranchPlacement} disabled={!selectedPoint}>
+            {branchStartPointKey ? "Cancel branch" : "Place branch"}
           </button>
           <button style={{ ...dangerBtn, opacity: selectedPoint ? 1 : 0.45 }} onClick={deletePoint} disabled={!selectedPoint}>
             Delete point
@@ -126,21 +135,36 @@ export function MapPanel() {
         </div>
         <label style={widthLabel}>
           <div style={sliderHead}>
-            <span>Width</span>
-            <span>{averageWidth.toFixed(1)}</span>
+            <span>{selectedSegment ? "Segment width" : "All widths"}</span>
+            <span>{widthValue.toFixed(1)}</span>
           </div>
           <input
             type="range"
             min={3}
             max={18}
             step={0.5}
-            value={averageWidth}
+            value={widthValue}
             onChange={(e) => setWidth(parseFloat(e.target.value))}
             disabled={!map.segments.length}
             style={{ width: "100%", accentColor: "#5b8cff", cursor: map.segments.length ? "pointer" : "not-allowed" }}
           />
         </label>
+        <button
+          style={{ ...actionBtn, width: "100%", marginTop: 10, opacity: outsideTrackCount ? 1 : 0.45 }}
+          onClick={snapStemsToMap}
+          disabled={!outsideTrackCount}
+        >
+          Snap stems to map
+        </button>
       </div>
+      {branchStartPointKey && <div style={hint}>Click the floor to place the new branch endpoint.</div>}
+      {warnings.length > 0 && (
+        <div style={warningsBox}>
+          {warnings.map((warning) => (
+            <div key={warning}>{warning}</div>
+          ))}
+        </div>
+      )}
       <div style={meta}>{map.segments.length ? "Walkable corridors with boundary walls" : "Unbounded empty space"}</div>
     </div>
   );
@@ -156,6 +180,51 @@ function findPoint(map: { segments: Array<{ start: [number, number]; end: [numbe
 
 function pointKey(point: [number, number]): string {
   return `${point[0].toFixed(3)},${point[1].toFixed(3)}`;
+}
+
+function validateMap(map: CompositionMap, tracks: Array<{ position: [number, number, number] }>): string[] {
+  const warnings: string[] = [];
+  if (map.preset !== "open" && map.segments.length === 0) warnings.push("This map has no walkable corridors.");
+  const components = countConnectedComponents(map.segments);
+  if (components > 1) warnings.push("This map has disconnected corridors.");
+  const outside = countTracksOutsideMap(map, tracks);
+  if (outside > 0) warnings.push(`${outside} stem${outside === 1 ? "" : "s"} outside the walkable area.`);
+  return warnings;
+}
+
+function countTracksOutsideMap(map: CompositionMap, tracks: Array<{ position: [number, number, number] }>): number {
+  if (!map.segments.length) return 0;
+  return tracks.filter((track) => !isPointInsideMap(map, [track.position[0], track.position[2]])).length;
+}
+
+function countConnectedComponents(segments: WalkableSegment[]): number {
+  if (!segments.length) return 0;
+  const adjacency = new Map<string, Set<string>>();
+  for (const segment of segments) {
+    const start = pointKey(segment.start);
+    const end = pointKey(segment.end);
+    if (!adjacency.has(start)) adjacency.set(start, new Set());
+    if (!adjacency.has(end)) adjacency.set(end, new Set());
+    adjacency.get(start)?.add(end);
+    adjacency.get(end)?.add(start);
+  }
+  let count = 0;
+  const visited = new Set<string>();
+  for (const key of adjacency.keys()) {
+    if (visited.has(key)) continue;
+    count += 1;
+    const stack = [key];
+    visited.add(key);
+    while (stack.length) {
+      const current = stack.pop()!;
+      for (const next of adjacency.get(current) ?? []) {
+        if (visited.has(next)) continue;
+        visited.add(next);
+        stack.push(next);
+      }
+    }
+  }
+  return count;
 }
 
 const collapsed: React.CSSProperties = {
@@ -279,4 +348,24 @@ const meta: React.CSSProperties = {
   marginTop: 8,
   color: "rgba(255,255,255,0.55)",
   fontSize: 11,
+};
+
+const hint: React.CSSProperties = {
+  marginTop: 9,
+  color: "rgba(143,255,232,0.82)",
+  fontSize: 11,
+  lineHeight: 1.35,
+};
+
+const warningsBox: React.CSSProperties = {
+  display: "grid",
+  gap: 4,
+  marginTop: 10,
+  padding: "8px 9px",
+  borderRadius: 7,
+  border: "1px solid rgba(255,209,102,0.28)",
+  background: "rgba(255,209,102,0.1)",
+  color: "rgba(255,232,173,0.9)",
+  fontSize: 11,
+  lineHeight: 1.35,
 };

@@ -82,6 +82,10 @@ export function clampToMap(map: CompositionMap, point: [number, number]): [numbe
   return best;
 }
 
+export function isPointInsideMap(map: CompositionMap, point: [number, number]): boolean {
+  return !map.segments.length || map.segments.some((segment) => pointInSegment(point, segment));
+}
+
 function pointInSegment(point: [number, number], segment: WalkableSegment): boolean {
   const projected = closestPointOnCenterline(point, segment);
   const radius = segment.width / 2;
