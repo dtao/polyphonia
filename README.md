@@ -22,7 +22,7 @@ these spatial compositions.
   drag-and-drop; uploads drop into the running loop in time.
 - **Local-first** — your work autosaves to the browser (manifests in
   `localStorage`, stem audio in IndexedDB) and survives reloads. Keep a library
-  of compositions and switch between them.
+  of compositions in a searchable, sortable home grid and switch between them.
 - **Portable** — export a composition as a single self-contained
   `.polyphonia.json` (audio embedded) and re-import it anywhere.
 - **Share** — publish a composition to the cloud and get a stable read-only link
