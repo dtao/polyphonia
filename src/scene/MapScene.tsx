@@ -1,4 +1,4 @@
-import { ThreeEvent, useThree } from "@react-three/fiber";
+import { ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
@@ -347,9 +347,13 @@ function intersectOffsetRays(
 }
 
 function PathMaterial({ tracks, editMode, selected }: { tracks: TrackDef[]; editMode: boolean; selected: boolean }) {
+  const material = useRef<THREE.ShaderMaterial>(null);
+  const engine = useStore((s) => s.engine);
+  const smoothedLevels = useRef(new Float32Array(MAX_TRACK_LIGHTS));
   const uniforms = useMemo(() => {
     const positions = Array.from({ length: MAX_TRACK_LIGHTS }, () => new THREE.Vector3(0, 0, 0));
     const colors = Array.from({ length: MAX_TRACK_LIGHTS }, () => new THREE.Color("#000000"));
+    const levels = new Float32Array(MAX_TRACK_LIGHTS);
     tracks.slice(0, MAX_TRACK_LIGHTS).forEach((track, i) => {
       const volume = track.volume ?? 1;
       const refDistance = track.refDistance ?? 4;
@@ -361,13 +365,26 @@ function PathMaterial({ tracks, editMode, selected }: { tracks: TrackDef[]; edit
       baseColor: { value: new THREE.Color(selected ? "#8fffe8" : "#c8d2df") },
       trackPositions: { value: positions },
       trackColors: { value: colors },
+      trackLevels: { value: levels },
       trackCount: { value: Math.min(tracks.length, MAX_TRACK_LIGHTS) },
       floorStrength: { value: selected ? 0.92 : editMode ? 0.78 : 0.66 },
     };
   }, [tracks, editMode, selected]);
 
+  useFrame((_, dt) => {
+    if (!material.current) return;
+    const levels = material.current.uniforms.trackLevels.value as Float32Array;
+    for (let i = 0; i < MAX_TRACK_LIGHTS; i++) {
+      const track = tracks[i];
+      const target = track ? engine?.level(track.id) ?? 0 : 0;
+      smoothedLevels.current[i] = THREE.MathUtils.damp(smoothedLevels.current[i], target, 12, dt);
+      levels[i] = smoothedLevels.current[i];
+    }
+  });
+
   return (
     <shaderMaterial
+      ref={material}
       transparent={false}
       depthWrite
       toneMapped={false}
@@ -512,6 +529,7 @@ const pathFragmentShader = `
   uniform vec3 baseColor;
   uniform vec3 trackColors[MAX_TRACK_LIGHTS];
   uniform vec3 trackPositions[MAX_TRACK_LIGHTS];
+  uniform float trackLevels[MAX_TRACK_LIGHTS];
   uniform int trackCount;
   uniform float floorStrength;
   varying vec2 vWorld;
@@ -524,10 +542,11 @@ const pathFragmentShader = `
       if (i >= trackCount) break;
       float radius = trackPositions[i].z;
       float d = distance(vWorld, trackPositions[i].xy);
-      float light = pow(smoothstep(radius, 0.0, d), 1.55);
+      float pulse = trackLevels[i];
+      float light = pow(smoothstep(radius * (1.0 + pulse * 0.16), 0.0, d), 1.55) * (0.72 + pulse * 0.92);
       lightTotal += light;
-      color = mix(color, trackColors[i] * 1.08, light * 0.58);
-      color += trackColors[i] * light * 0.34;
+      color = mix(color, trackColors[i] * (1.08 + pulse * 0.28), light * 0.58);
+      color += trackColors[i] * light * (0.34 + pulse * 0.46);
     }
 
     color += baseColor * min(lightTotal, 1.0) * 0.08;

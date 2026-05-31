@@ -59,8 +59,8 @@ export function TrackMarker({ track }: { track: TrackDef }) {
         Math.sin(t * 0.031 + seed * 4.1) * 0.55;
     }
     if (glow.current) {
-      glow.current.intensity = (selected ? 8 : 4.8) + volume * 3.2 + pulse * 34;
-      glow.current.distance = 12 + volume * 8 + pulse * 12;
+      glow.current.intensity = (selected ? 8 : 4.8) + volume * 3.2 + pulse * 44;
+      glow.current.distance = 12 + volume * 8 + pulse * 16;
     }
     if (ring.current) ring.current.rotation.z += dt * 1.5;
   });
