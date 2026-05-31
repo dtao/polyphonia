@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { MAP_PRESETS, MapPreset } from "../map";
-import { useStore } from "../store";
+import { useStore, viewState } from "../store";
 
 const LABELS: Record<MapPreset, string> = {
   open: "Open",
@@ -12,6 +12,24 @@ export function MapPanel() {
   const map = useStore((s) => s.composition.map);
   const setMap = useStore((s) => s.setMap);
   const [expanded, setExpanded] = useState(false);
+
+  function setPreset(preset: MapPreset) {
+    const next = MAP_PRESETS[preset];
+    setMap({ ...next, start: map.start });
+  }
+
+  function setStartHere() {
+    setMap({
+      start: {
+        position: [viewState.x, viewState.z],
+        direction: [viewState.fx, viewState.fz],
+      },
+    });
+  }
+
+  function goToStart() {
+    setMap({ start: map.start });
+  }
 
   if (!expanded) {
     return (
@@ -33,11 +51,19 @@ export function MapPanel() {
         {(Object.keys(MAP_PRESETS) as MapPreset[]).map((preset) => {
           const active = map.preset === preset;
           return (
-            <button key={preset} style={{ ...presetBtn, ...(active ? presetActive : null) }} onClick={() => setMap(MAP_PRESETS[preset])}>
+            <button key={preset} style={{ ...presetBtn, ...(active ? presetActive : null) }} onClick={() => setPreset(preset)}>
               {LABELS[preset]}
             </button>
           );
         })}
+      </div>
+      <div style={actionRow}>
+        <button style={actionBtn} onClick={setStartHere}>
+          Set start here
+        </button>
+        <button style={actionBtn} onClick={goToStart}>
+          Go to start
+        </button>
       </div>
       <div style={meta}>{map.segments.length ? "Walkable corridors with boundary walls" : "Unbounded empty space"}</div>
     </div>
@@ -113,6 +139,23 @@ const presetActive: React.CSSProperties = {
   border: "1px solid rgba(91,140,255,0.75)",
   background: "rgba(91,140,255,0.24)",
   color: "white",
+};
+
+const actionRow: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 6,
+  marginTop: 10,
+};
+
+const actionBtn: React.CSSProperties = {
+  padding: "8px 10px",
+  borderRadius: 7,
+  border: "1px solid rgba(255,255,255,0.14)",
+  background: "rgba(255,255,255,0.08)",
+  color: "rgba(255,255,255,0.84)",
+  cursor: "pointer",
+  fontSize: 12,
 };
 
 const meta: React.CSSProperties = {

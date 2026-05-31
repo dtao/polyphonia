@@ -2,7 +2,6 @@ import * as THREE from "three";
 import { CompositionMap, WalkableSegment } from "../map";
 
 export function MapScene({ map, editMode }: { map: CompositionMap; editMode: boolean }) {
-  if (!map.segments.length) return null;
   const endpointCounts = new Map<string, number>();
   for (const segment of map.segments) {
     for (const point of [segment.start, segment.end]) {
@@ -12,9 +11,31 @@ export function MapScene({ map, editMode }: { map: CompositionMap; editMode: boo
   }
   return (
     <group>
+      <StartMarker map={map} editMode={editMode} />
       {map.segments.map((segment) => (
         <Segment key={segment.id} segment={segment} height={map.wallHeight} editMode={editMode} endpointCounts={endpointCounts} />
       ))}
+    </group>
+  );
+}
+
+function StartMarker({ map, editMode }: { map: CompositionMap; editMode: boolean }) {
+  const [x, z] = map.start.position;
+  const [fx, fz] = map.start.direction;
+  const angle = -Math.atan2(fz, fx);
+  const opacity = editMode ? 0.9 : 0.45;
+
+  return (
+    <group position={[x, 0.08, z]} rotation={[0, angle, 0]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.65, 1.15, 48]} />
+        <meshBasicMaterial color="#ffffff" transparent opacity={opacity} toneMapped={false} depthWrite={false} />
+      </mesh>
+      <mesh position={[1.45, 0.02, 0]} rotation={[0, 0, -Math.PI / 2]}>
+        <coneGeometry args={[0.38, 0.9, 3]} />
+        <meshBasicMaterial color="#ffffff" transparent opacity={opacity} toneMapped={false} depthWrite={false} />
+      </mesh>
+      <pointLight position={[0, 0.8, 0]} color="#ffffff" intensity={editMode ? 1.2 : 0.5} distance={5} />
     </group>
   );
 }
