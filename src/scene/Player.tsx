@@ -3,6 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { PointerLockControls } from "@react-three/drei";
 import * as THREE from "three";
 import { useStore, viewState } from "../store";
+import { clampToMap } from "../map";
 
 // Explore mode: WASD movement on the ground plane + pointer-lock mouse look.
 // (The AudioListener is driven separately by <ListenerSync>, which works in
@@ -10,6 +11,7 @@ import { useStore, viewState } from "../store";
 export function Player() {
   const { camera } = useThree();
   const entered = useStore((s) => s.entered);
+  const map = useStore((s) => s.composition.map);
   const keys = useRef<Record<string, boolean>>({});
   const forward = useRef(new THREE.Vector3());
   const right = useRef(new THREE.Vector3());
@@ -50,6 +52,9 @@ export function Player() {
     if (keys.current["KeyS"]) camera.position.addScaledVector(forward.current, -speed);
     if (keys.current["KeyD"]) camera.position.addScaledVector(right.current, speed);
     if (keys.current["KeyA"]) camera.position.addScaledVector(right.current, -speed);
+    const [x, z] = clampToMap(map, [camera.position.x, camera.position.z]);
+    camera.position.x = x;
+    camera.position.z = z;
     camera.position.y = 1.7; // keep eye height fixed
 
     // Record position + heading so edit mode (and new stems) stay anchored here.

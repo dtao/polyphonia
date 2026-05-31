@@ -15,6 +15,7 @@ import {
 } from "./persistence";
 import { newId } from "./id";
 import { EnvironmentSettings, defaultEnvironment, normalizeEnvironment } from "./environment";
+import { CompositionMap, defaultMap, normalizeMap } from "./map";
 import { ArtistIdentity } from "./artist";
 import {
   AuthUser,
@@ -87,6 +88,7 @@ interface StoreState {
   auditionLoopSeam: () => void;
   loopProgress: () => { mode: "playing" | "audition"; position: number; duration: number } | null;
   setEnvironment: (environment: Partial<EnvironmentSettings>) => void;
+  setMap: (map: Partial<CompositionMap>) => void;
 
   // Composition library.
   initLibrary: () => Promise<void>;
@@ -273,6 +275,13 @@ export const useStore = create<StoreState>((set, get) => ({
         environment: normalizeEnvironment({ ...s.composition.environment, ...environment }),
       },
     })),
+  setMap: (map) =>
+    set((s) => ({
+      composition: {
+        ...s.composition,
+        map: normalizeMap({ ...s.composition.map, ...map }),
+      },
+    })),
 
   // Load the saved library (or seed/migrate) and resolve the current composition.
   initLibrary: async () => {
@@ -310,6 +319,7 @@ export const useStore = create<StoreState>((set, get) => ({
       artistAvatarEmailHash: get().accountArtist?.artistAvatarEmailHash,
       bpm: meta.bpm || 120,
       environment: get().composition.environment,
+      map: get().composition.map,
       tracks: [],
     };
     const next = upsert(upsert(library, serializeComposition(composition)), serializeComposition(comp));
@@ -362,7 +372,7 @@ export const useStore = create<StoreState>((set, get) => ({
     if (id === composition.id) {
       revokeBlobUrls(composition);
       if (nextLibrary.length === 0) {
-        nextComposition = { id: newId(), title: "Untitled", artist: "Unknown", bpm: 120, environment: defaultEnvironment, tracks: [] };
+        nextComposition = { id: newId(), title: "Untitled", artist: "Unknown", bpm: 120, environment: defaultEnvironment, map: defaultMap, tracks: [] };
         nextLibrary = [serializeComposition(nextComposition)];
       } else {
         nextComposition = await resolveComposition(nextLibrary[0]);

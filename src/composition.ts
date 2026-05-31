@@ -6,6 +6,7 @@
 // A track is one stem (one instrument) placed at a point in 3D space.
 
 import { EnvironmentSettings, defaultEnvironment, normalizeEnvironment } from "./environment";
+import { CompositionMap, defaultMap, normalizeMap } from "./map";
 
 export type StemSource =
   // Procedurally synthesized placeholder — runs with zero audio files.
@@ -58,6 +59,8 @@ export interface Composition {
   loopCrossfade?: number;
   /** Visual/acoustic environment metadata. */
   environment: EnvironmentSettings;
+  /** Authored walkable area and simple boundary geometry. */
+  map: CompositionMap;
   tracks: TrackDef[];
   /** Share id if this composition is currently published (cleared on unpublish). */
   publishedId?: string;
@@ -75,6 +78,7 @@ export const defaultComposition: Composition = {
   bpm: 120,
   bars: 16,
   environment: defaultEnvironment,
+  map: defaultMap,
   tracks: [
     {
       id: "bass",
@@ -124,5 +128,5 @@ export const defaultComposition: Composition = {
 };
 
 export function normalizeComposition(comp: Composition): Composition {
-  return { ...comp, environment: normalizeEnvironment(comp.environment) };
+  return { ...comp, environment: normalizeEnvironment(comp.environment), map: normalizeMap(comp.map) };
 }

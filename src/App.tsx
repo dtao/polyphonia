@@ -7,6 +7,7 @@ import { EntryScreen } from "./ui/EntryScreen";
 import { PublishControl } from "./ui/PublishControl";
 import { LoopPanel } from "./ui/LoopPanel";
 import { EnvironmentPanel } from "./ui/EnvironmentPanel";
+import { MapPanel } from "./ui/MapPanel";
 import { useStore } from "./store";
 import { exportComposition } from "./persistence";
 
@@ -156,6 +157,7 @@ export default function App() {
               </div>
               {mode === "edit" && <AddStem />}
               {mode === "edit" && <EnvironmentPanel />}
+              {mode === "edit" && <MapPanel />}
               {mode === "edit" && <LoopPanel />}
               <PublishControl />
             </>

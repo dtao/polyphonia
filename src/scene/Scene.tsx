@@ -5,15 +5,18 @@ import { EditControls } from "./EditControls";
 import { TrackGizmo } from "./TrackGizmo";
 import { ListenerSync } from "./ListenerSync";
 import { EnvironmentScene } from "./EnvironmentScene";
+import { MapScene } from "./MapScene";
 
 export function Scene() {
   const tracks = useStore((s) => s.composition.tracks);
   const environment = useStore((s) => s.composition.environment);
+  const map = useStore((s) => s.composition.map);
   const mode = useStore((s) => s.mode);
 
   return (
     <>
       <EnvironmentScene environment={environment} editMode={mode === "edit"} />
+      <MapScene map={map} editMode={mode === "edit"} />
 
       {tracks.map((t) => (
         <TrackMarker key={t.id} track={t} />
