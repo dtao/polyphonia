@@ -231,17 +231,16 @@ function PathMaterial({ tracks, editMode }: { tracks: TrackDef[]; editMode: bool
       trackPositions: { value: positions },
       trackColors: { value: colors },
       trackCount: { value: Math.min(tracks.length, MAX_TRACK_LIGHTS) },
-      opacity: { value: editMode ? 0.72 : 0.56 },
-      edgeBoost: { value: editMode ? 0.36 : 0.22 },
+      floorStrength: { value: editMode ? 0.78 : 0.66 },
     };
   }, [tracks, editMode]);
 
   return (
     <shaderMaterial
-      transparent
-      depthWrite={false}
+      transparent={false}
+      depthWrite
       toneMapped={false}
-      blending={THREE.AdditiveBlending}
+      blending={THREE.NormalBlending}
       side={THREE.DoubleSide}
       uniforms={uniforms}
       vertexShader={pathVertexShader}
@@ -352,11 +351,9 @@ function pointKey(point: [number, number]): string {
 }
 
 const pathVertexShader = `
-  varying vec2 vUv;
   varying vec2 vWorld;
 
   void main() {
-    vUv = uv;
     vec4 worldPosition = modelMatrix * vec4(position, 1.0);
     vWorld = worldPosition.xz;
     gl_Position = projectionMatrix * viewMatrix * worldPosition;
@@ -370,15 +367,11 @@ const pathFragmentShader = `
   uniform vec3 trackColors[MAX_TRACK_LIGHTS];
   uniform vec3 trackPositions[MAX_TRACK_LIGHTS];
   uniform int trackCount;
-  uniform float opacity;
-  uniform float edgeBoost;
-  varying vec2 vUv;
+  uniform float floorStrength;
   varying vec2 vWorld;
 
   void main() {
-    float edge = smoothstep(0.5, 0.18, abs(vUv.y - 0.5));
-    float center = smoothstep(0.5, 0.0, abs(vUv.y - 0.5));
-    vec3 color = baseColor * (0.48 + center * 0.42);
+    vec3 color = baseColor * floorStrength;
     float lightTotal = 0.0;
 
     for (int i = 0; i < MAX_TRACK_LIGHTS; i++) {
@@ -391,9 +384,7 @@ const pathFragmentShader = `
       color += trackColors[i] * light * 0.34;
     }
 
-    color += baseColor * edge * edgeBoost;
     color += baseColor * min(lightTotal, 1.0) * 0.08;
-    float alpha = opacity * (0.34 + center * 0.62 + edge * 0.2 + min(lightTotal, 1.0) * 0.2);
-    gl_FragColor = vec4(color, alpha);
+    gl_FragColor = vec4(color, 1.0);
   }
 `;
