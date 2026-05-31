@@ -45,6 +45,7 @@ function StartMarker({ map, editMode }: { map: CompositionMap; editMode: boolean
   const setMap = useStore((s) => s.setMap);
   const selectedStart = useStore((s) => s.selectedStart);
   const selectStart = useStore((s) => s.selectStart);
+  const setStartGizmoMode = useStore((s) => s.setStartGizmoMode);
   const gizmoMode = useStore((s) => s.startGizmoMode);
   const [obj, setObj] = useState<THREE.Group | null>(null);
   const [x, z] = map.start.position;
@@ -75,9 +76,11 @@ function StartMarker({ map, editMode }: { map: CompositionMap; editMode: boolean
         ref={setObj}
         position={[x, 0.08, z]}
         rotation={[0, angle, 0]}
+        // Disc click → move mode. Arrow click (below) → rotate mode.
         onClick={(e) => {
           if (!editMode) return;
           e.stopPropagation();
+          setStartGizmoMode("translate");
           selectStart();
         }}
         onPointerOver={(e) => {
@@ -97,7 +100,18 @@ function StartMarker({ map, editMode }: { map: CompositionMap; editMode: boolean
           <ringGeometry args={[1.1, 1.24, 48]} />
           <meshBasicMaterial color={color} transparent opacity={opacity} toneMapped={false} depthWrite={false} />
         </mesh>
-        <mesh position={[1.75, 0.02, 0]} rotation={[0, 0, -Math.PI / 2]}>
+        {/* Arrow click → rotate mode. stopPropagation prevents the group's
+            translate handler from also firing. */}
+        <mesh
+          position={[1.75, 0.02, 0]}
+          rotation={[0, 0, -Math.PI / 2]}
+          onClick={(e) => {
+            if (!editMode) return;
+            e.stopPropagation();
+            setStartGizmoMode("rotate");
+            selectStart();
+          }}
+        >
           <coneGeometry args={[0.36, 0.85, 3]} />
           <meshBasicMaterial color={color} transparent opacity={opacity} toneMapped={false} depthWrite={false} />
         </mesh>
