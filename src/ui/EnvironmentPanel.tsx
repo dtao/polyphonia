@@ -3,10 +3,12 @@ import { ENVIRONMENT_PRESETS, EnvironmentType } from "../environment";
 import { useStore } from "../store";
 
 const LABELS: Record<EnvironmentType, string> = {
+  void: "Void",
   studio: "Studio",
   cavern: "Cavern",
   forest: "Forest",
   crystal: "Crystal",
+  galaxy: "Galaxy",
 };
 
 export function EnvironmentPanel() {

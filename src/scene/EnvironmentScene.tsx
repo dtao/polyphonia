@@ -1,4 +1,4 @@
-import { Grid, Sparkles } from "@react-three/drei";
+import { Grid, Sparkles, Stars } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import * as THREE from "three";
@@ -33,6 +33,7 @@ export function EnvironmentScene({ environment, editMode }: { environment: Envir
       {environment.type === "cavern" && <Cavern ambience={environment.ambience} />}
       {environment.type === "forest" && <Forest ambience={environment.ambience} />}
       {environment.type === "crystal" && <CrystalHall ambience={environment.ambience} />}
+      {environment.type === "galaxy" && <Galaxy ambience={environment.ambience} />}
       {environment.type === "studio" && <Studio accents={environment.ambience} />}
     </>
   );
@@ -96,6 +97,67 @@ function Studio({ accents }: { accents: number }) {
       <pointLight position={[-10, 4, -10]} color="#6fa0ff" intensity={1.3 + accents * 1.1} distance={24} />
       <pointLight position={[9, 3, 3]} color="#ffd975" intensity={0.9 + accents * 0.9} distance={18} />
       <Sparkles count={Math.round(44 + accents * 58)} scale={[42, 6, 42]} size={1.1} speed={0.08} color="#8fb0ff" opacity={0.24} />
+    </>
+  );
+}
+
+function Galaxy({ ambience }: { ambience: number }) {
+  const asteroids = useMemo(() => scatterProps(28, 14, 42), []);
+  const planets = useMemo(
+    () => [
+      { position: [-17, 9, -28] as [number, number, number], scale: 3.2, color: "#4868c8", glow: "#2440a0" },
+      { position: [18, 6.5, -22] as [number, number, number], scale: 2.1, color: "#c05c94", glow: "#74335d" },
+      { position: [5, 13, -38] as [number, number, number], scale: 5.2, color: "#2e264d", glow: "#6842c8" },
+    ],
+    [],
+  );
+
+  return (
+    <>
+      <Stars radius={120} depth={60} count={1800} factor={4.5} saturation={0.2} fade speed={0.18} />
+      <mesh rotation={[-Math.PI / 2, 0, -0.12]} position={[0, -0.08, -4]}>
+        <circleGeometry args={[62, 96]} />
+        <FloorMaterial base="#03040a" accent="#111632" density={0.5} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0.16]} position={[0, 0.02, -8]}>
+        <ringGeometry args={[6, 24, 128]} />
+        <meshBasicMaterial color="#7c5cff" transparent opacity={0.12 + ambience * 0.08} side={THREE.DoubleSide} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </mesh>
+      <mesh position={[-7, 5.8, -25]} rotation={[0.15, -0.3, 0.45]} scale={[20, 7, 1]}>
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial color="#8f4dff" transparent opacity={0.08 + ambience * 0.07} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </mesh>
+      <mesh position={[9, 4.8, -20]} rotation={[-0.2, 0.45, -0.25]} scale={[16, 5, 1]}>
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial color="#39d6ff" transparent opacity={0.06 + ambience * 0.05} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </mesh>
+      {planets.map((planet, i) => (
+        <group key={`galaxy-planet-${i}`} position={planet.position}>
+          <mesh scale={[planet.scale, planet.scale, planet.scale]}>
+            <sphereGeometry args={[1, 40, 24]} />
+            <meshStandardMaterial color={planet.color} emissive={planet.glow} emissiveIntensity={0.22 + ambience * 0.16} roughness={0.72} />
+          </mesh>
+          <mesh scale={[planet.scale * 1.55, planet.scale * 1.55, planet.scale * 1.55]}>
+            <sphereGeometry args={[1, 32, 16]} />
+            <meshBasicMaterial color={planet.glow} transparent opacity={0.08 + ambience * 0.04} depthWrite={false} blending={THREE.AdditiveBlending} />
+          </mesh>
+          {i === 0 && (
+            <mesh rotation={[Math.PI / 2.8, 0.2, 0.1]} scale={[planet.scale * 1.75, planet.scale * 1.75, planet.scale * 0.18]}>
+              <ringGeometry args={[0.72, 1.05, 80]} />
+              <meshBasicMaterial color="#d4c8ff" transparent opacity={0.32} side={THREE.DoubleSide} depthWrite={false} />
+            </mesh>
+          )}
+        </group>
+      ))}
+      {asteroids.map((p, i) => (
+        <mesh key={`galaxy-asteroid-${i}`} position={[p.position[0], 1.6 + (i % 7) * 0.55, p.position[2]]} scale={[p.scale[0] * 0.45, p.scale[1] * 0.32, p.scale[2] * 0.42]} rotation={[0.2 * i, p.rotation?.[1] ?? 0, 0.13 * i]}>
+          <dodecahedronGeometry args={[1, 0]} />
+          <meshStandardMaterial color={i % 2 ? "#2a2d42" : "#3b3349"} emissive={i % 5 === 0 ? "#24143f" : "#070812"} emissiveIntensity={0.15 + ambience * 0.12} roughness={0.9} />
+        </mesh>
+      ))}
+      <pointLight position={[0, 5, -10]} color="#8a74ff" intensity={2.4 + ambience * 2.5} distance={54} />
+      <pointLight position={[-15, 8, -24]} color="#6fb6ff" intensity={1.8 + ambience * 1.8} distance={48} />
+      <Sparkles count={Math.round(80 + ambience * 90)} scale={[58, 18, 58]} size={1.15} speed={0.04} color="#dbe8ff" opacity={0.34} />
     </>
   );
 }
@@ -639,6 +701,19 @@ function scatterProps(count: number, clearRadius: number, spread: number): PropS
 }
 
 const TONES = {
+  void: {
+    background: "#05060a",
+    fogNear: 28,
+    fogFar: 68,
+    ambient: 0.2,
+    sky: "#151b2d",
+    ground: "#05060a",
+    hemi: 0.28,
+    sun: 0.28,
+    sunColor: "#d8e4ff",
+    gridCell: "#131a2e",
+    gridSection: "#27324f",
+  },
   studio: {
     background: "#05060a",
     fogNear: 18,
@@ -690,5 +765,18 @@ const TONES = {
     sunColor: "#c6f8ff",
     gridCell: "#10283c",
     gridSection: "#245979",
+  },
+  galaxy: {
+    background: "#02030a",
+    fogNear: 42,
+    fogFar: 115,
+    ambient: 0.18,
+    sky: "#1b2258",
+    ground: "#02030a",
+    hemi: 0.45,
+    sun: 0.38,
+    sunColor: "#b9c9ff",
+    gridCell: "#151c3a",
+    gridSection: "#2d3770",
   },
 } satisfies Record<EnvironmentSettings["type"], Record<string, string | number>>;

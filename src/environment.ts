@@ -1,4 +1,4 @@
-export type EnvironmentType = "studio" | "cavern" | "forest" | "crystal";
+export type EnvironmentType = "void" | "studio" | "cavern" | "forest" | "crystal" | "galaxy";
 export type EnvironmentMaterial = "neutral" | "stone" | "foliage" | "glass";
 export type SpaceTiling = "none" | "square" | "hex";
 
@@ -14,10 +14,12 @@ export interface EnvironmentSettings {
 }
 
 export const ENVIRONMENT_PRESETS: Record<EnvironmentType, Omit<EnvironmentSettings, "tiling">> = {
+  void: { type: "void", material: "neutral", ambience: 0.05 },
   studio: { type: "studio", material: "neutral", ambience: 0.2 },
   cavern: { type: "cavern", material: "stone", ambience: 0.65 },
   forest: { type: "forest", material: "foliage", ambience: 0.45 },
   crystal: { type: "crystal", material: "glass", ambience: 0.75 },
+  galaxy: { type: "galaxy", material: "glass", ambience: 0.8 },
 };
 
 export const defaultEnvironment: EnvironmentSettings = {
@@ -42,7 +44,7 @@ export function normalizeEnvironment(value: Partial<EnvironmentSettings> | undef
 }
 
 function isEnvironmentType(value: unknown): value is EnvironmentType {
-  return value === "studio" || value === "cavern" || value === "forest" || value === "crystal";
+  return value === "void" || value === "studio" || value === "cavern" || value === "forest" || value === "crystal" || value === "galaxy";
 }
 
 function isEnvironmentMaterial(value: unknown): value is EnvironmentMaterial {
