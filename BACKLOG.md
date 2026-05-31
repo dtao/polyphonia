@@ -74,5 +74,8 @@ depends only on earlier ones.
 - [x] **Choppy mouse-look** — replaced event-immediate pointer-lock rotation with frame-smoothed look targets, with raw pointer movement requested when available.
 - [x] **Mode cleanup on Exit** — after exiting to the start screen, the mouse still controls the camera. More generally, be consistent about which "mode" we're in and when clicks / mouse movement should take effect.
 - [ ] **Turn in Edit mode** — you can move (pan) in edit mode but not turn/rotate the view. Add the ability to turn while keeping the elevated perspective.
+- [ ] **Duplicate stems** — allow composers to duplicate an existing stem, preserving audio, color, volume, falloff, and spatial settings while giving the copy a new id/name and an editable position.
+- [ ] **Undo / redo** — support reversing and reapplying the most recent editing action, with clear behavior for stem add/delete/move, property changes, environment edits, loop edits, and composition metadata changes.
+- [ ] **Stem timing offset** — let each stem shift earlier or later by musical intervals such as 1/16, 1/8, 1/4, and 1/2 notes, while keeping all stems synchronized to the shared audio clock and saved in the composition manifest.
 
-**Cross-cutting** (interleave opportunistically): mobile / touch controls, undo / redo, loading & error states.
+**Cross-cutting** (interleave opportunistically): mobile / touch controls, loading & error states.
