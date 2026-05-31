@@ -141,7 +141,7 @@ export function MapPanel() {
           />
         </label>
       </div>
-      <div style={meta}>{map.segments.length ? "Walkable corridors with boundary walls" : "Unbounded empty space"}</div>
+      <div style={meta}>{map.segments.length ? "Lighted walkable path" : "Unbounded empty space"}</div>
     </div>
   );
 }
