@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useStore } from "../store";
 import { isSharingConfigured } from "../cloud";
 import { Account } from "./Account";
+import { compositionRevision } from "../composition";
 
 // Publish / re-publish / unpublish the current composition. Published state lives
 // on the composition (publishedId), so it stays consistent with the library list.
@@ -17,6 +18,7 @@ export function PublishControl() {
 
   const empty = comp.tracks.length === 0;
   const published = Boolean(comp.publishedId);
+  const hasUnpublishedChanges = Boolean(comp.publishedId && comp.publishedRevision !== compositionRevision(comp));
   const link = comp.publishedId ? `${location.origin}/c/${comp.publishedId}` : "";
 
   async function run(label: string, fn: () => Promise<void>) {
@@ -58,7 +60,9 @@ export function PublishControl() {
   } else if (published) {
     body = (
       <>
-        <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>● Published (read-only link):</div>
+        <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>
+          {hasUnpublishedChanges ? "● Published with local changes:" : "● Published (read-only link):"}
+        </div>
         <div style={{ display: "flex", gap: 6 }}>
           <input style={linkInput} readOnly value={link} onFocus={(e) => e.target.select()} />
           <button style={btn} onClick={copy}>
@@ -67,7 +71,7 @@ export function PublishControl() {
         </div>
         <div style={{ display: "flex", gap: 14, marginTop: 8 }}>
           <button style={link2} disabled={!!busy} onClick={() => run("Updating…", publishCurrent)}>
-            {busy === "Updating…" ? "Updating…" : "Update"}
+            {busy === "Updating…" ? "Updating…" : hasUnpublishedChanges ? "Publish changes" : "Update"}
           </button>
           <button style={{ ...link2, color: "#ff9b8f" }} disabled={!!busy} onClick={() => run("Unpublishing…", () => unpublishComposition(comp.id))}>
             Unpublish

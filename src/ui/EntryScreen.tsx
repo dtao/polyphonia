@@ -3,8 +3,9 @@ import { Link } from "react-router-dom";
 import { useStore } from "../store";
 import { Account } from "./Account";
 import { isSharingConfigured } from "../cloud";
+import { compositionRevision } from "../composition";
 
-type SortMode = "library" | "title" | "artist" | "tracks";
+type SortMode = "updated" | "library" | "title" | "artist" | "tracks";
 
 // The start screen: pick a composition from the library to enter, start a fresh
 // one, or export/import a portable bundle.
@@ -38,14 +39,15 @@ export function EntryScreen({
   const [busy, setBusy] = useState<null | string>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [sortMode, setSortMode] = useState<SortMode>("library");
+  const [sortMode, setSortMode] = useState<SortMode>("updated");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const visibleLibrary = useMemo(() => {
     const q = query.trim().toLowerCase();
     const filtered = q
       ? library.filter((c) => {
-          const haystack = [c.title, c.artist, c.publishedId ? "shared published" : "", `${c.tracks.length} tracks`]
+          const hasUnpublishedChanges = Boolean(c.publishedId && c.publishedRevision !== compositionRevision(c));
+          const haystack = [c.title, c.artist, c.publishedId ? "shared published" : "", hasUnpublishedChanges ? "changes unpublished local" : "", `${c.tracks.length} tracks`]
             .join(" ")
             .toLowerCase();
           return haystack.includes(q);
@@ -56,6 +58,7 @@ export function EntryScreen({
       if (sortMode === "title") return a.title.localeCompare(b.title);
       if (sortMode === "artist") return a.artist.localeCompare(b.artist) || a.title.localeCompare(b.title);
       if (sortMode === "tracks") return b.tracks.length - a.tracks.length || a.title.localeCompare(b.title);
+      if (sortMode === "updated") return timestamp(b.updatedAt) - timestamp(a.updatedAt) || a.title.localeCompare(b.title);
       return library.findIndex((c) => c.id === a.id) - library.findIndex((c) => c.id === b.id);
     });
   }, [library, query, sortMode]);
@@ -139,6 +142,7 @@ export function EntryScreen({
               <label style={sortLabel}>
                 <span style={{ opacity: 0.62 }}>Sort</span>
                 <select style={selectInput} value={sortMode} onChange={(e) => setSortMode(e.target.value as SortMode)}>
+                  <option value="updated">Recently updated</option>
                   <option value="library">Library order</option>
                   <option value="title">Title</option>
                   <option value="artist">Artist</option>
@@ -154,6 +158,7 @@ export function EntryScreen({
             <div style={grid}>
               {visibleLibrary.map((c) => {
                 const isCurrent = c.id === currentId;
+                const hasUnpublishedChanges = Boolean(c.publishedId && c.publishedRevision !== compositionRevision(c));
                 return (
                   <div
                     key={c.id}
@@ -165,10 +170,12 @@ export function EntryScreen({
                         {isCurrent ? "● " : ""}
                         {c.title}
                         {c.publishedId && <span style={pubPill}>shared</span>}
+                        {hasUnpublishedChanges && <span style={draftPill}>changes</span>}
                       </div>
                       <div style={cardSub}>
                         {c.artist} · {c.tracks.length} {c.tracks.length === 1 ? "track" : "tracks"}
                       </div>
+                      <div style={dateLine}>Updated {formatUpdated(c.updatedAt)}</div>
                       {c.publishedId && (
                         <div style={pubLine} onClick={(e) => e.stopPropagation()}>
                           <button
@@ -280,6 +287,26 @@ export function EntryScreen({
       )}
     </div>
   );
+}
+
+function timestamp(value: string | undefined): number {
+  const time = value ? Date.parse(value) : 0;
+  return Number.isFinite(time) ? time : 0;
+}
+
+function formatUpdated(value: string | undefined): string {
+  const time = timestamp(value);
+  if (!time) return "recently";
+  const date = new Date(time);
+  const now = Date.now();
+  const diff = now - time;
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  if (diff >= 0 && diff < minute) return "just now";
+  if (diff >= 0 && diff < hour) return `${Math.max(1, Math.floor(diff / minute))}m ago`;
+  if (diff >= 0 && diff < day) return `${Math.floor(diff / hour)}h ago`;
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: date.getFullYear() === new Date(now).getFullYear() ? undefined : "numeric" });
 }
 
 const overlay: React.CSSProperties = {
@@ -428,6 +455,12 @@ const cardSub: React.CSSProperties = {
   textOverflow: "ellipsis",
 };
 
+const dateLine: React.CSSProperties = {
+  marginTop: 4,
+  fontSize: 11,
+  color: "rgba(255,255,255,0.42)",
+};
+
 const cardActions: React.CSSProperties = {
   display: "flex",
   gap: 4,
@@ -455,6 +488,12 @@ const pubPill: React.CSSProperties = {
   borderRadius: 999,
   padding: "1px 6px",
   verticalAlign: "middle",
+};
+
+const draftPill: React.CSSProperties = {
+  ...pubPill,
+  color: "#ffdca8",
+  border: "1px solid rgba(255,220,168,0.45)",
 };
 
 const pubLine: React.CSSProperties = { display: "flex", gap: 12, marginTop: 4 };

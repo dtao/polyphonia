@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import * as THREE from "three";
-import { Composition, TrackDef, defaultComposition, normalizeComposition } from "./composition";
+import { Composition, TrackDef, compositionRevision, defaultComposition, normalizeComposition, touchComposition } from "./composition";
 import { AudioEngine } from "./audio/AudioEngine";
 import {
   SerializedComposition,
@@ -127,7 +127,7 @@ const stripExt = (name: string) => name.replace(/\.[^.]+$/, "");
 
 // Immutably patch one track in the current composition.
 function patchTrack(comp: Composition, id: string, patch: Partial<TrackDef>): Composition {
-  return { ...comp, tracks: comp.tracks.map((t) => (t.id === id ? { ...t, ...patch } : t)) };
+  return touchComposition({ ...comp, tracks: comp.tracks.map((t) => (t.id === id ? { ...t, ...patch } : t)) });
 }
 
 function mapPointExists(segment: { start: [number, number]; end: [number, number] }, key: string): boolean {
@@ -184,6 +184,7 @@ export const useStore = create<StoreState>((set, get) => ({
 
   publishCurrent: async () => {
     const published = await publishComposition(get().composition);
+    const publishedAt = new Date().toISOString();
     const composition = {
       ...get().composition,
       artist: published.artist,
@@ -193,6 +194,8 @@ export const useStore = create<StoreState>((set, get) => ({
       artistAvatarEmailHash: published.artistAvatarEmailHash,
       publishedId: published.id,
     };
+    composition.publishedRevision = compositionRevision(composition);
+    composition.publishedAt = publishedAt;
     const library = upsert(get().library, serializeComposition(composition));
     set({ composition, library });
     persistLibrary(library, composition.id);
@@ -202,8 +205,11 @@ export const useStore = create<StoreState>((set, get) => ({
     const s = get();
     const entry = compId === s.composition.id ? serializeComposition(s.composition) : s.library.find((c) => c.id === compId);
     if (entry?.publishedId) await cloudUnpublish(entry.publishedId);
-    const composition = s.composition.id === compId ? { ...s.composition, publishedId: undefined } : s.composition;
-    const library = s.library.map((c) => (c.id === compId ? { ...c, publishedId: undefined } : c));
+    const composition =
+      s.composition.id === compId
+        ? { ...s.composition, publishedId: undefined, publishedRevision: undefined, publishedAt: undefined }
+        : s.composition;
+    const library = s.library.map((c) => (c.id === compId ? { ...c, publishedId: undefined, publishedRevision: undefined, publishedAt: undefined } : c));
     set({ composition, library });
     persistLibrary(library, composition.id);
   },
@@ -261,7 +267,7 @@ export const useStore = create<StoreState>((set, get) => ({
     get().engine?.removeTrack(id);
     markerObjects.delete(id);
     set((s) => ({
-      composition: { ...s.composition, tracks: s.composition.tracks.filter((t) => t.id !== id) },
+      composition: touchComposition({ ...s.composition, tracks: s.composition.tracks.filter((t) => t.id !== id) }),
       selectedId: s.selectedId === id ? null : s.selectedId,
     }));
   },
@@ -288,7 +294,7 @@ export const useStore = create<StoreState>((set, get) => ({
     };
     engine.addLiveTrack(def, buffer);
     set((s) => ({
-      composition: { ...s.composition, tracks: [...s.composition.tracks, def] },
+      composition: touchComposition({ ...s.composition, tracks: [...s.composition.tracks, def] }),
       selectedId: id,
       mode: "edit",
     }));
@@ -296,7 +302,7 @@ export const useStore = create<StoreState>((set, get) => ({
 
   setLoopSettings: (settings) => {
     set((s) => {
-      const composition = { ...s.composition, ...settings };
+      const composition = touchComposition({ ...s.composition, ...settings });
       s.engine?.updateLoopSettings(composition);
       return { composition };
     });
@@ -306,7 +312,7 @@ export const useStore = create<StoreState>((set, get) => ({
   setEnvironment: (environment) =>
     set((s) => ({
       composition: {
-        ...s.composition,
+        ...touchComposition(s.composition),
         environment: normalizeEnvironment({ ...s.composition.environment, ...environment }),
       },
     })),
@@ -319,7 +325,7 @@ export const useStore = create<StoreState>((set, get) => ({
       if (options?.moveViewToStart) moveViewToMapStart(nextMap);
       return {
         composition: {
-          ...s.composition,
+          ...touchComposition(s.composition),
           map: nextMap,
         },
         selectedMapPointKey:
@@ -364,6 +370,7 @@ export const useStore = create<StoreState>((set, get) => ({
   // Start a fresh empty composition, keeping the current one in the library.
   newComposition: (meta) => {
     const { composition, library } = get();
+    const now = new Date().toISOString();
     revokeBlobUrls(composition);
     const comp: Composition = {
       id: newId(),
@@ -377,6 +384,8 @@ export const useStore = create<StoreState>((set, get) => ({
       environment: get().composition.environment,
       map: get().composition.map,
       tracks: [],
+      createdAt: now,
+      updatedAt: now,
     };
     const next = upsert(upsert(library, serializeComposition(composition)), serializeComposition(comp));
     moveViewToMapStart(comp.map);
@@ -397,10 +406,10 @@ export const useStore = create<StoreState>((set, get) => ({
 
   renameComposition: (id, title) => {
     const t = title.trim() || "Untitled";
-    const library = get().library.map((c) => (c.id === id ? { ...c, title: t } : c));
+    const library = get().library.map((c) => (c.id === id ? touchComposition({ ...c, title: t }) : c));
     set((s) => ({
       library,
-      composition: s.composition.id === id ? { ...s.composition, title: t } : s.composition,
+      composition: s.composition.id === id ? touchComposition({ ...s.composition, title: t }) : s.composition,
     }));
     persistLibrary(library, get().composition.id);
   },
@@ -430,7 +439,8 @@ export const useStore = create<StoreState>((set, get) => ({
     if (id === composition.id) {
       revokeBlobUrls(composition);
       if (nextLibrary.length === 0) {
-        nextComposition = { id: newId(), title: "Untitled", artist: "Unknown", bpm: 120, environment: defaultEnvironment, map: defaultMap, tracks: [] };
+        const now = new Date().toISOString();
+        nextComposition = { id: newId(), title: "Untitled", artist: "Unknown", bpm: 120, environment: defaultEnvironment, map: defaultMap, tracks: [], createdAt: now, updatedAt: now };
         nextLibrary = [serializeComposition(nextComposition)];
       } else {
         nextComposition = await resolveComposition(nextLibrary[0]);

@@ -76,15 +76,15 @@ export async function resolveComposition(saved: SerializedComposition): Promise<
 
 const LIB_KEY = "polyphonia:library";
 const OLD_KEY = "polyphonia:composition"; // pre-library single-slot format
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 export function loadLibrary(): { library: SerializedComposition[]; currentId: string } {
   const raw = localStorage.getItem(LIB_KEY);
   if (raw) {
     try {
       const p = JSON.parse(raw);
-      if (p?.version === SCHEMA_VERSION && Array.isArray(p.library) && p.library.length) {
-        return { library: p.library, currentId: p.currentId ?? p.library[0].id };
+      if ((p?.version === 2 || p?.version === SCHEMA_VERSION) && Array.isArray(p.library) && p.library.length) {
+        return { library: p.library.map(normalizeComposition), currentId: p.currentId ?? p.library[0].id };
       }
     } catch (err) {
       console.error("Failed to read library", err);
@@ -95,7 +95,7 @@ export function loadLibrary(): { library: SerializedComposition[]; currentId: st
   if (old) {
     try {
       const p = JSON.parse(old);
-      if (p?.composition) return { library: [p.composition], currentId: p.composition.id };
+      if (p?.composition) return { library: [normalizeComposition(p.composition)], currentId: p.composition.id };
     } catch {
       /* ignore */
     }
@@ -116,6 +116,7 @@ export function persistLibrary(library: SerializedComposition[], currentId: stri
 // Copy a manifest under fresh ids, duplicating any stored stems in IndexedDB so
 // the copy is fully independent of the original.
 export async function copyComposition(s: SerializedComposition): Promise<SerializedComposition> {
+  const now = new Date().toISOString();
   const tracks: SerializedTrack[] = [];
   for (const t of s.tracks) {
     const id = newId();
@@ -127,7 +128,17 @@ export async function copyComposition(s: SerializedComposition): Promise<Seriali
       tracks.push({ ...t, id });
     }
   }
-  return { ...s, id: newId(), title: `${s.title} (copy)`, tracks };
+  return {
+    ...s,
+    id: newId(),
+    title: `${s.title} (copy)`,
+    tracks,
+    publishedId: undefined,
+    publishedRevision: undefined,
+    publishedAt: undefined,
+    createdAt: now,
+    updatedAt: now,
+  };
 }
 
 // ===== Export / import: a single self-contained .polyphonia.json bundle =====
@@ -197,5 +208,6 @@ export async function importComposition(file: File): Promise<Composition> {
       tracks.push({ ...t, source: t.source });
     }
   }
-  return { ...saved, id: newId(), tracks };
+  const now = new Date().toISOString();
+  return { ...saved, id: newId(), tracks, publishedId: undefined, publishedRevision: undefined, publishedAt: undefined, createdAt: now, updatedAt: now };
 }
