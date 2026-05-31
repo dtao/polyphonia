@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { TrackDef } from "../composition";
 import { markerObjects, useStore } from "../store";
 
-// A glowing pillar that marks where a stem lives in space and pulses with its
+// A glowing orb that marks where a stem lives in space and pulses with its
 // audio level — a visual anchor for the sound you hear from that direction.
 // In edit mode it can be clicked to select; the selected track wears a ring.
 export function TrackMarker({ track }: { track: TrackDef }) {
@@ -13,19 +13,30 @@ export function TrackMarker({ track }: { track: TrackDef }) {
   const mode = useStore((s) => s.mode);
   const selected = useStore((s) => s.selectedId === track.id);
   const core = useRef<THREE.Mesh>(null);
+  const aura = useRef<THREE.Mesh>(null);
   const glow = useRef<THREE.PointLight>(null);
   const ring = useRef<THREE.Mesh>(null);
+  const smoothedLevel = useRef(0);
   const [x, , z] = track.position;
   const volume = track.volume ?? 1;
-  const pillarHeight = 1.1 + volume * 2.2;
-  const pillarRadius = 0.18 + volume * 0.16;
-  const markerTop = pillarHeight + 0.6;
+  const orbRadius = 0.42 + volume * 0.32;
+  const markerTop = 1.1 + orbRadius * 0.9;
 
   useFrame((_, dt) => {
     const level = engine?.level(track.id) ?? 0;
-    const s = 1 + level * 1.4;
-    if (core.current) core.current.scale.setScalar(s);
-    if (glow.current) glow.current.intensity = (selected ? 8 : 4) + level * 30;
+    smoothedLevel.current = THREE.MathUtils.damp(smoothedLevel.current, level, 14, dt);
+    const pulse = smoothedLevel.current;
+    const breath = 1 + Math.sin(performance.now() * 0.003 + x * 0.2 + z * 0.13) * 0.035;
+    if (core.current) core.current.scale.setScalar(breath + pulse * 0.85);
+    if (aura.current) {
+      aura.current.scale.setScalar(1.35 + pulse * 1.45);
+      const material = aura.current.material;
+      if (material instanceof THREE.MeshBasicMaterial) material.opacity = 0.16 + pulse * 0.26;
+    }
+    if (glow.current) {
+      glow.current.intensity = (selected ? 8 : 4.8) + volume * 3.2 + pulse * 34;
+      glow.current.distance = 12 + volume * 8 + pulse * 12;
+    }
     if (ring.current) ring.current.rotation.z += dt * 1.5;
   });
 
@@ -58,18 +69,20 @@ export function TrackMarker({ track }: { track: TrackDef }) {
       onPointerOut={() => setCursor("auto")}
     >
       {mode === "edit" && selected && <FalloffMap track={track} />}
-      {/* base column */}
-      <mesh position={[0, pillarHeight / 2, 0]}>
-        <cylinderGeometry args={[pillarRadius * 0.7, pillarRadius, pillarHeight, 24]} />
-        <meshStandardMaterial color={track.color} emissive={track.color} emissiveIntensity={0.6} />
+      <mesh position={[0, 0.08, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[orbRadius * 0.95, orbRadius * 1.55, 48]} />
+        <meshBasicMaterial color={track.color} transparent opacity={0.28} toneMapped={false} depthWrite={false} />
       </mesh>
-      {/* pulsing orb */}
+      <mesh ref={aura} position={[0, markerTop, 0]}>
+        <sphereGeometry args={[orbRadius, 24, 16]} />
+        <meshBasicMaterial color={track.color} transparent opacity={0.18} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </mesh>
       <mesh ref={core} position={[0, markerTop, 0]}>
-        <icosahedronGeometry args={[0.5, 2]} />
+        <sphereGeometry args={[orbRadius, 32, 20]} />
         <meshStandardMaterial
           color={track.color}
           emissive={track.color}
-          emissiveIntensity={selected ? 2.6 : 1.6}
+          emissiveIntensity={selected ? 3.2 : 2.1}
           toneMapped={false}
         />
       </mesh>
@@ -82,8 +95,8 @@ export function TrackMarker({ track }: { track: TrackDef }) {
       )}
       <pointLight ref={glow} position={[0, markerTop, 0]} color={track.color} intensity={6} distance={18} />
       {/* Billboard keeps the label facing the camera so it's always readable,
-          even when you walk behind the pillar. */}
-      <Billboard position={[0, markerTop + 1.2, 0]}>
+          even when you walk behind the marker. */}
+      <Billboard position={[0, markerTop + orbRadius + 0.75, 0]}>
         <Text fontSize={0.5} color="white" anchorX="center">
           {track.name}
         </Text>
