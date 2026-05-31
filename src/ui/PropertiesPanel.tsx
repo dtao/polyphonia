@@ -5,12 +5,14 @@ import { useStore } from "../store";
 export function PropertiesPanel() {
   const mode = useStore((s) => s.mode);
   const track = useStore((s) => s.composition.tracks.find((t) => t.id === s.selectedId));
-  const { renameTrack, setTrackColor, setTrackVolume, setTrackFalloff, deleteTrack } = useStore.getState();
+  const { renameTrack, setTrackColor, setTrackVolume, setTrackMinVolume, setTrackFalloff, deleteTrack } = useStore.getState();
 
   if (mode !== "edit" || !track) return null;
 
   const near = track.refDistance ?? 4;
   const far = Math.max(track.maxDistance ?? 40, near + 1);
+  const maxVolume = track.volume ?? 1;
+  const minVolume = Math.min(track.minVolume ?? 0, maxVolume);
 
   return (
     <div style={panel}>
@@ -29,13 +31,25 @@ export function PropertiesPanel() {
       </div>
 
       <Slider
-        label="Volume"
-        help="Overall loudness for this stem, before distance is applied."
-        value={track.volume ?? 1}
+        label="Max volume"
+        help="Loudness while you are inside the Near radius."
+        value={maxVolume}
         min={0}
         max={1.5}
         step={0.01}
-        onChange={(v) => setTrackVolume(track.id, v)}
+        onChange={(v) => {
+          setTrackVolume(track.id, v);
+          if (minVolume > v) setTrackMinVolume(track.id, v);
+        }}
+      />
+      <Slider
+        label="Min volume"
+        help="Loudness once you reach the Far radius; 0 makes the stem silent outside it."
+        value={minVolume}
+        min={0}
+        max={maxVolume}
+        step={0.01}
+        onChange={(v) => setTrackMinVolume(track.id, v)}
       />
       <Slider
         label="Near (full)"
@@ -47,8 +61,8 @@ export function PropertiesPanel() {
         onChange={(v) => setTrackFalloff(track.id, { refDistance: v, maxDistance: far <= v ? v + 1 : far })}
       />
       <Slider
-        label="Far (silent)"
-        help="Beyond this distance, moving farther away stops changing the level."
+        label="Far (min)"
+        help="At and beyond this distance, the stem plays at Min volume."
         value={far}
         min={near + 1}
         max={80}

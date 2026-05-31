@@ -79,6 +79,7 @@ interface StoreState {
   // Track edits. Those that affect audio also push the change to the engine,
   // so a playing composition responds live without ever restarting.
   setTrackVolume: (id: string, volume: number) => void;
+  setTrackMinVolume: (id: string, minVolume: number) => void;
   setTrackPosition: (id: string, position: [number, number, number]) => void;
   setTrackFalloff: (id: string, falloff: Partial<Falloff>) => void;
   renameTrack: (id: string, name: string) => void;
@@ -209,6 +210,11 @@ export const useStore = create<StoreState>((set, get) => ({
   setTrackVolume: (id, volume) => {
     set((s) => ({ composition: patchTrack(s.composition, id, { volume }) }));
     get().engine?.setVolume(id, volume);
+  },
+
+  setTrackMinVolume: (id, minVolume) => {
+    set((s) => ({ composition: patchTrack(s.composition, id, { minVolume }) }));
+    get().engine?.setMinVolume(id, minVolume);
   },
 
   setTrackPosition: (id, position) => {

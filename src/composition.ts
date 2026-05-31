@@ -20,8 +20,10 @@ export interface TrackDef {
   name: string;
   color: string;
   position: [number, number, number];
-  /** Linear gain, 0..1+. Defaults to 1. */
+  /** Maximum linear gain when the listener is inside refDistance. Defaults to 1. */
   volume?: number;
+  /** Minimum linear gain once the listener reaches maxDistance. Defaults to 0. */
+  minVolume?: number;
   source: StemSource;
   /** Distance at which volume starts falling off. */
   refDistance?: number;

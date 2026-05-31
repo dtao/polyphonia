@@ -8,6 +8,7 @@ interface LiveTrack {
   buffer: AudioBuffer;
   panner: PannerNode;
   gain: GainNode;
+  distanceGain: GainNode;
   analyser: AnalyserNode;
   source?: AudioBufferSourceNode;
   levelData: Uint8Array<ArrayBuffer>;
@@ -31,6 +32,8 @@ export class AudioEngine {
   private auditionTimer: ReturnType<typeof setTimeout> | undefined;
   private auditionStartTime: number | null = null;
   private auditionDuration = 0;
+  private listenerPosition = new THREE.Vector3();
+  private trackPosition = new THREE.Vector3();
 
   constructor() {
     this.ctx = new AudioContext();
@@ -133,26 +136,32 @@ export class AudioEngine {
   }
 
   // Build the node graph for one track (no source yet). source -> gain ->
-  // panner -> master; the analyser taps the gain for visual reactivity.
+  // distanceGain -> panner -> master; the analyser taps the authored gain for
+  // visual reactivity, independent of where the listener is standing.
   private buildTrack(def: TrackDef, originalBuffer: AudioBuffer, buffer = originalBuffer): LiveTrack {
     const panner = this.ctx.createPanner();
     panner.panningModel = "HRTF";
     panner.distanceModel = "inverse";
     panner.refDistance = def.refDistance ?? 4;
     panner.maxDistance = def.maxDistance ?? 40;
-    panner.rolloffFactor = def.rolloff ?? 1;
+    panner.rolloffFactor = 0;
     this.setPannerPosition(panner, def.position);
 
     const gain = this.ctx.createGain();
     gain.gain.value = def.volume ?? 1;
+    const distanceGain = this.ctx.createGain();
+    distanceGain.gain.value = 1;
     const analyser = this.ctx.createAnalyser();
     analyser.fftSize = 256;
 
-    gain.connect(panner);
+    gain.connect(distanceGain);
     gain.connect(analyser);
+    distanceGain.connect(panner);
     panner.connect(this.master);
 
-    return { def, originalBuffer, buffer, panner, gain, analyser, levelData: new Uint8Array(new ArrayBuffer(analyser.fftSize)) };
+    const track = { def, originalBuffer, buffer, panner, gain, distanceGain, analyser, levelData: new Uint8Array(new ArrayBuffer(analyser.fftSize)) };
+    this.updateDistanceGain(track, this.ctx.currentTime);
+    return track;
   }
 
   // (Re)create and start a track's looping source. `phase` is how far into the
@@ -297,6 +306,7 @@ export class AudioEngine {
   updateListener(position: THREE.Vector3, forward: THREE.Vector3, up: THREE.Vector3): void {
     const l = this.ctx.listener;
     const at = this.ctx.currentTime;
+    this.listenerPosition.copy(position);
     if (l.positionX) {
       l.positionX.setValueAtTime(position.x, at);
       l.positionY.setValueAtTime(position.y, at);
@@ -312,27 +322,42 @@ export class AudioEngine {
       (l as any).setPosition(position.x, position.y, position.z);
       (l as any).setOrientation(forward.x, forward.y, forward.z, up.x, up.y, up.z);
     }
+    for (const t of this.tracks) this.updateDistanceGain(t, at);
   }
 
   // --- Live edits: mutate a playing track without restarting anything. ---
 
   setVolume(id: string, volume: number): void {
     const t = this.find(id);
+    if (!t) return;
+    t.def = { ...t.def, volume };
     // Ramp to avoid clicks.
-    if (t) t.gain.gain.setTargetAtTime(volume, this.ctx.currentTime, 0.02);
+    t.gain.gain.setTargetAtTime(volume, this.ctx.currentTime, 0.02);
+    this.updateDistanceGain(t, this.ctx.currentTime);
+  }
+
+  setMinVolume(id: string, minVolume: number): void {
+    const t = this.find(id);
+    if (!t) return;
+    t.def = { ...t.def, minVolume };
+    this.updateDistanceGain(t, this.ctx.currentTime);
   }
 
   setPosition(id: string, position: [number, number, number]): void {
     const t = this.find(id);
-    if (t) this.setPannerPosition(t.panner, position);
+    if (!t) return;
+    t.def = { ...t.def, position };
+    this.setPannerPosition(t.panner, position);
+    this.updateDistanceGain(t, this.ctx.currentTime);
   }
 
   setFalloff(id: string, f: { refDistance?: number; maxDistance?: number; rolloff?: number }): void {
     const t = this.find(id);
     if (!t) return;
+    t.def = { ...t.def, ...f };
     if (f.refDistance !== undefined) t.panner.refDistance = f.refDistance;
     if (f.maxDistance !== undefined) t.panner.maxDistance = f.maxDistance;
-    if (f.rolloff !== undefined) t.panner.rolloffFactor = f.rolloff;
+    this.updateDistanceGain(t, this.ctx.currentTime);
   }
 
   // Stop everything and release the audio context. The engine is dead after.
@@ -347,6 +372,7 @@ export class AudioEngine {
       }
       t.source?.disconnect();
       t.gain.disconnect();
+      t.distanceGain.disconnect();
       t.panner.disconnect();
       t.analyser.disconnect();
     }
@@ -368,6 +394,7 @@ export class AudioEngine {
     }
     t.source?.disconnect();
     t.gain.disconnect();
+    t.distanceGain.disconnect();
     t.panner.disconnect();
     t.analyser.disconnect();
     this.tracks.splice(i, 1);
@@ -388,6 +415,28 @@ export class AudioEngine {
 
   private find(id: string): LiveTrack | undefined {
     return this.tracks.find((x) => x.def.id === id);
+  }
+
+  private updateDistanceGain(t: LiveTrack, at: number): void {
+    const maxVolume = Math.max(0, t.def.volume ?? 1);
+    const minVolume = Math.min(Math.max(0, t.def.minVolume ?? 0), maxVolume);
+    const level = this.distanceLevel(t.def, minVolume, maxVolume);
+    const ratio = maxVolume > 0 ? level / maxVolume : 0;
+    t.distanceGain.gain.setValueAtTime(ratio, at);
+  }
+
+  private distanceLevel(def: TrackDef, minVolume: number, maxVolume: number): number {
+    const near = def.refDistance ?? 4;
+    const far = Math.max(def.maxDistance ?? 40, near + 0.001);
+    const [x, y, z] = def.position;
+    const distance = this.listenerPosition.distanceTo(this.trackPosition.set(x, y, z));
+    if (distance <= near) return maxVolume;
+    if (distance >= far) return minVolume;
+
+    const t = (distance - near) / (far - near);
+    const k = Math.max(def.rolloff ?? 1, 0.001) * 2.5;
+    const shaped = (1 - Math.exp(-t * k)) / (1 - Math.exp(-k));
+    return THREE.MathUtils.lerp(maxVolume, minVolume, shaped);
   }
 
   private setPannerPosition(p: PannerNode, [x, y, z]: [number, number, number]) {
