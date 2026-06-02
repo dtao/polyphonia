@@ -3,7 +3,7 @@ import { TransformControls } from "@react-three/drei";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
-import { canExtendTerminalPoint, clampToMap, CompositionMap, MapRoom, roomAttachedToPoint, ROOM_WALL_THICKNESS, WalkableSegment } from "../map";
+import { canAddBranchAtPoint, clampToMap, CompositionMap, MapRoom, roomAttachedToPoint, ROOM_WALL_THICKNESS, WalkableSegment } from "../map";
 import { useStore } from "../store";
 import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 
@@ -335,7 +335,7 @@ function BranchPlacementLayer({ map }: { map: CompositionMap }) {
   const startPoint = branchStartPointKey ? findPoint(map, branchStartPointKey) : null;
   const averageWidth = map.segments.length ? map.segments.reduce((sum, s) => sum + s.width, 0) / map.segments.length : 7.5;
 
-  if (!branchStartPointKey || !startPoint || !canExtendTerminalPoint(map, branchStartPointKey)) return null;
+  if (!branchStartPointKey || !startPoint || !canAddBranchAtPoint(map, branchStartPointKey)) return null;
 
   return (
     <group>

@@ -1,4 +1,4 @@
-import { canExtendTerminalPoint, endpointCount, roomAttachedToPoint } from "../map";
+import { canAddBranchAtPoint, canAddRoomAtPoint, endpointCount, roomAttachedToPoint } from "../map";
 import { useStore } from "../store";
 
 // Bottom-left panel shown when a path point is selected in edit mode. Grow the
@@ -16,33 +16,35 @@ export function MapPointPanel() {
 
   const count = endpointCount(map, selectedMapPointKey);
   const attachedRoom = roomAttachedToPoint(map, selectedMapPointKey);
-  const canExtend = canExtendTerminalPoint(map, selectedMapPointKey);
+  const canAddBranch = canAddBranchAtPoint(map, selectedMapPointKey);
+  const canAddRoom = canAddRoomAtPoint(map, selectedMapPointKey);
   const state = attachedRoom ? "Room" : count > 1 ? "Joint" : "Terminal";
-  const disabledTitle = attachedRoom ? "This terminal already leads into a room" : "Branches and rooms can only be added to terminal points";
+  const branchTitle = attachedRoom ? "This terminal already leads into a room" : "Grow the path (B); drag the new point to place it";
+  const roomTitle = attachedRoom ? "This terminal already leads into a room" : "Rooms can only be added to terminal points";
 
   return (
     <div style={panel} data-inspector>
       <div style={title}>Path point · {state}</div>
       <button
-        style={{ ...btn, ...(!canExtend ? disabledBtn : null) }}
-        onClick={() => canExtend && addBranchAtPoint(selectedMapPointKey)}
-        disabled={!canExtend}
-        title={canExtend ? "Grow the path (B); drag the new point to place it" : disabledTitle}
+        style={{ ...btn, ...(!canAddBranch ? disabledBtn : null) }}
+        onClick={() => canAddBranch && addBranchAtPoint(selectedMapPointKey)}
+        disabled={!canAddBranch}
+        title={branchTitle}
       >
         ↳ Add branch
       </button>
       <button
-        style={{ ...btn, ...(!canExtend ? disabledBtn : null) }}
-        onClick={() => canExtend && addRoomAtPoint(selectedMapPointKey)}
-        disabled={!canExtend}
-        title={canExtend ? "Attach a room with its doorway here" : disabledTitle}
+        style={{ ...btn, ...(!canAddRoom ? disabledBtn : null) }}
+        onClick={() => canAddRoom && addRoomAtPoint(selectedMapPointKey)}
+        disabled={!canAddRoom}
+        title={canAddRoom ? "Attach a room with its doorway here" : roomTitle}
       >
         ⬚ Add room here
       </button>
       <button style={deleteBtn} onClick={() => deleteMapPoint(selectedMapPointKey)} title="Delete selected point (Delete)">
         Delete point
       </button>
-      <div style={hint}>Terminal points can become either a joint or a room. A room stays attached to its endpoint and follows it when the path moves.</div>
+      <div style={hint}>Joints can keep growing new branches. Only terminal points can become rooms, and rooms stay attached to their endpoint.</div>
     </div>
   );
 }

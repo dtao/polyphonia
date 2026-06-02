@@ -182,8 +182,12 @@ export function roomAttachedToPoint(map: Pick<CompositionMap, "segments" | "room
   }) ?? null;
 }
 
-export function canExtendTerminalPoint(map: Pick<CompositionMap, "segments" | "rooms">, key: string): boolean {
+export function canAddRoomAtPoint(map: Pick<CompositionMap, "segments" | "rooms">, key: string): boolean {
   return isTerminalMapPoint(map, key) && !roomAttachedToPoint(map, key);
+}
+
+export function canAddBranchAtPoint(map: Pick<CompositionMap, "segments" | "rooms">, key: string): boolean {
+  return endpointCount(map, key) > 0 && !roomAttachedToPoint(map, key);
 }
 
 export function roomAttachmentPoint(map: Pick<CompositionMap, "segments">, room: MapRoom): [number, number] | null {

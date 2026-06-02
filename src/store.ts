@@ -15,7 +15,7 @@ import {
 } from "./persistence";
 import { newId } from "./id";
 import { EnvironmentSettings, defaultEnvironment, normalizeEnvironment } from "./environment";
-import { attachmentForPoint, canExtendTerminalPoint, CompositionMap, MapRoom, defaultMap, mapPointKey, normalizeMap } from "./map";
+import { attachmentForPoint, canAddBranchAtPoint, canAddRoomAtPoint, CompositionMap, MapRoom, defaultMap, mapPointKey, normalizeMap } from "./map";
 import { ArtistIdentity } from "./artist";
 import {
   AuthUser,
@@ -367,7 +367,7 @@ export const useStore = create<StoreState>((set, get) => ({
   // so the incoming path runs perpendicular to (straight into) the entrance wall.
   addRoomAtPoint: (pointKey) => {
     const map = get().composition.map;
-    if (!canExtendTerminalPoint(map, pointKey)) return;
+    if (!canAddRoomAtPoint(map, pointKey)) return;
     const attachment = attachmentForPoint(map, pointKey);
     if (!attachment) return;
 
@@ -404,7 +404,7 @@ export const useStore = create<StoreState>((set, get) => ({
   // new endpoint so it can be dragged into place.
   addBranchAtPoint: (pointKey) => {
     const map = get().composition.map;
-    if (!canExtendTerminalPoint(map, pointKey)) return;
+    if (!canAddBranchAtPoint(map, pointKey)) return;
     let point: [number, number] | null = null;
     let dir: [number, number] = [0, -1];
     let width = map.segments.length ? map.segments.reduce((sum, s) => sum + s.width, 0) / map.segments.length : 7.5;
