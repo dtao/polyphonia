@@ -163,6 +163,14 @@ export function roomContains(room: MapRoom, point: [number, number]): boolean {
   return roomRegionRects(room).some((rect) => pointInRect(local, rect));
 }
 
+export function roomInteriorContains(room: MapRoom, point: [number, number]): boolean {
+  return pointInRect(toRoomLocal(room, point), interiorRect(room));
+}
+
+export function containingRoom(map: Pick<CompositionMap, "rooms">, point: [number, number]): MapRoom | null {
+  return map.rooms.find((room) => roomInteriorContains(room, point)) ?? null;
+}
+
 export function roomWallObstructionCount(map: Pick<CompositionMap, "rooms">, from: [number, number], to: [number, number]): number {
   let count = 0;
   for (const room of map.rooms) {

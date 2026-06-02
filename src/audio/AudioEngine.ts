@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { Composition, TrackDef } from "../composition";
-import { CompositionMap, roomWallObstructionCount } from "../map";
+import { CompositionMap, MapRoom, containingRoom, roomWallObstructionCount } from "../map";
 import { createPlaceholderStems } from "./synth";
 
 interface LiveTrack {
@@ -23,6 +23,13 @@ interface LiveTrack {
 export class AudioEngine {
   readonly ctx: AudioContext;
   private master: GainNode;
+  private dryBus: GainNode;
+  private roomReverbSend: GainNode;
+  private roomConvolver: ConvolverNode;
+  private roomReverbWet: GainNode;
+  private roomEchoDelay: DelayNode;
+  private roomEchoFeedback: GainNode;
+  private roomEchoWet: GainNode;
   private tracks: LiveTrack[] = [];
   started = false;
   private loopStartTime = 0; // absolute ctx time the composition loop began
@@ -38,11 +45,36 @@ export class AudioEngine {
   private listenerPosition = new THREE.Vector3();
   private trackPosition = new THREE.Vector3();
   private map: CompositionMap | null = null;
+  private activeRoomAcousticsKey: string | null = null;
 
   constructor() {
     this.ctx = new AudioContext();
     this.master = this.ctx.createGain();
+    this.dryBus = this.ctx.createGain();
+    this.roomReverbSend = this.ctx.createGain();
+    this.roomConvolver = this.ctx.createConvolver();
+    this.roomReverbWet = this.ctx.createGain();
+    this.roomEchoDelay = this.ctx.createDelay(0.8);
+    this.roomEchoFeedback = this.ctx.createGain();
+    this.roomEchoWet = this.ctx.createGain();
+
     this.master.gain.value = 0.85;
+    this.roomReverbSend.gain.value = 0;
+    this.roomReverbWet.gain.value = 0.45;
+    this.roomEchoDelay.delayTime.value = 0.12;
+    this.roomEchoFeedback.gain.value = 0;
+    this.roomEchoWet.gain.value = 0;
+
+    this.dryBus.connect(this.master);
+    this.dryBus.connect(this.roomReverbSend);
+    this.roomReverbSend.connect(this.roomConvolver);
+    this.roomConvolver.connect(this.roomReverbWet);
+    this.roomReverbWet.connect(this.master);
+    this.dryBus.connect(this.roomEchoDelay);
+    this.roomEchoDelay.connect(this.roomEchoWet);
+    this.roomEchoWet.connect(this.master);
+    this.roomEchoDelay.connect(this.roomEchoFeedback);
+    this.roomEchoFeedback.connect(this.roomEchoDelay);
     this.master.connect(this.ctx.destination);
   }
 
@@ -169,7 +201,7 @@ export class AudioEngine {
     distanceGain.connect(occlusionFilter);
     occlusionFilter.connect(occlusionGain);
     occlusionGain.connect(panner);
-    panner.connect(this.master);
+    panner.connect(this.dryBus);
 
     const track = { def, originalBuffer, buffer, panner, gain, distanceGain, occlusionGain, occlusionFilter, analyser, levelData: new Uint8Array(new ArrayBuffer(analyser.fftSize)) };
     this.updateTrackAcoustics(track, this.ctx.currentTime);
@@ -362,6 +394,7 @@ export class AudioEngine {
       (l as any).setOrientation(forward.x, forward.y, forward.z, up.x, up.y, up.z);
     }
     for (const t of this.tracks) this.updateTrackAcoustics(t, at);
+    this.updateRoomAcoustics(at);
   }
 
   // --- Live edits: mutate a playing track without restarting anything. ---
@@ -404,6 +437,13 @@ export class AudioEngine {
     clearTimeout(this.auditionTimer);
     this.auditionStartTime = null;
     this.stopAndDisconnectTracks();
+    this.dryBus.disconnect();
+    this.roomReverbSend.disconnect();
+    this.roomConvolver.disconnect();
+    this.roomReverbWet.disconnect();
+    this.roomEchoDelay.disconnect();
+    this.roomEchoFeedback.disconnect();
+    this.roomEchoWet.disconnect();
     this.master.disconnect();
     this.started = false;
     void this.ctx.close();
@@ -482,6 +522,64 @@ export class AudioEngine {
     const frequency = THREE.MathUtils.lerp(22000, 420, strength);
     t.occlusionGain.gain.setTargetAtTime(gain, at, 0.12);
     t.occlusionFilter.frequency.setTargetAtTime(frequency, at, 0.12);
+  }
+
+  private updateRoomAcoustics(at: number): void {
+    const room = this.map ? containingRoom(this.map, [this.listenerPosition.x, this.listenerPosition.z]) : null;
+    if (!room) {
+      this.activeRoomAcousticsKey = null;
+      this.roomReverbSend.gain.setTargetAtTime(0, at, 0.18);
+      this.roomEchoWet.gain.setTargetAtTime(0, at, 0.18);
+      this.roomEchoFeedback.gain.setTargetAtTime(0, at, 0.18);
+      return;
+    }
+
+    const profile = this.roomAcousticProfile(room);
+    const key = `${room.id}:${room.width.toFixed(2)}:${room.depth.toFixed(2)}:${room.height.toFixed(2)}`;
+    if (this.activeRoomAcousticsKey !== key) {
+      this.activeRoomAcousticsKey = key;
+      this.roomConvolver.buffer = this.roomImpulse(profile.decay);
+    }
+
+    this.roomReverbSend.gain.setTargetAtTime(profile.reverbSend, at, 0.18);
+    this.roomEchoDelay.delayTime.setTargetAtTime(profile.echoDelay, at, 0.18);
+    this.roomEchoWet.gain.setTargetAtTime(profile.echoWet, at, 0.18);
+    this.roomEchoFeedback.gain.setTargetAtTime(profile.echoFeedback, at, 0.18);
+  }
+
+  private roomAcousticProfile(room: MapRoom): { decay: number; reverbSend: number; echoDelay: number; echoWet: number; echoFeedback: number } {
+    const volume = room.width * room.depth * room.height;
+    const span = Math.max(room.width, room.depth);
+    return {
+      decay: THREE.MathUtils.clamp(0.28 + volume / 850, 0.35, 3.2),
+      reverbSend: THREE.MathUtils.clamp(0.16 + volume / 2600, 0.18, 0.58),
+      echoDelay: THREE.MathUtils.clamp(span / 88, 0.09, 0.56),
+      echoWet: span > 18 ? THREE.MathUtils.clamp((span - 18) / 70, 0, 0.26) : 0,
+      echoFeedback: span > 18 ? THREE.MathUtils.clamp((span - 18) / 95, 0, 0.34) : 0,
+    };
+  }
+
+  private roomImpulse(decay: number): AudioBuffer {
+    const duration = Math.max(0.2, decay);
+    const length = Math.max(1, Math.floor(this.ctx.sampleRate * duration));
+    const impulse = this.ctx.createBuffer(2, length, this.ctx.sampleRate);
+    for (let ch = 0; ch < impulse.numberOfChannels; ch++) {
+      const data = impulse.getChannelData(ch);
+      for (let i = 0; i < length; i++) {
+        const t = i / length;
+        const tail = Math.pow(1 - t, 2.1);
+        data[i] = (Math.random() * 2 - 1) * tail;
+      }
+      for (const [ms, gain] of [
+        [32, 0.6],
+        [61, 0.42],
+        [109, 0.26],
+      ] as Array<[number, number]>) {
+        const index = Math.floor((ms / 1000) * this.ctx.sampleRate);
+        if (index < data.length) data[index] += (ch === 0 ? 1 : -1) * gain;
+      }
+    }
+    return impulse;
   }
 
   private distanceLevel(def: TrackDef, minVolume: number, maxVolume: number): number {
