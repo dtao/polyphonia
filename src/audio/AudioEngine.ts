@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { Composition, TrackDef } from "../composition";
+import { CompositionMap, roomWallObstructionCount } from "../map";
 import { createPlaceholderStems } from "./synth";
 
 interface LiveTrack {
@@ -9,6 +10,8 @@ interface LiveTrack {
   panner: PannerNode;
   gain: GainNode;
   distanceGain: GainNode;
+  occlusionGain: GainNode;
+  occlusionFilter: BiquadFilterNode;
   analyser: AnalyserNode;
   source?: AudioBufferSourceNode;
   levelData: Uint8Array<ArrayBuffer>;
@@ -34,6 +37,7 @@ export class AudioEngine {
   private auditionDuration = 0;
   private listenerPosition = new THREE.Vector3();
   private trackPosition = new THREE.Vector3();
+  private map: CompositionMap | null = null;
 
   constructor() {
     this.ctx = new AudioContext();
@@ -151,16 +155,24 @@ export class AudioEngine {
     gain.gain.value = def.volume ?? 1;
     const distanceGain = this.ctx.createGain();
     distanceGain.gain.value = 1;
+    const occlusionGain = this.ctx.createGain();
+    occlusionGain.gain.value = 1;
+    const occlusionFilter = this.ctx.createBiquadFilter();
+    occlusionFilter.type = "lowpass";
+    occlusionFilter.frequency.value = 22000;
+    occlusionFilter.Q.value = 0.4;
     const analyser = this.ctx.createAnalyser();
     analyser.fftSize = 256;
 
     gain.connect(distanceGain);
     gain.connect(analyser);
-    distanceGain.connect(panner);
+    distanceGain.connect(occlusionFilter);
+    occlusionFilter.connect(occlusionGain);
+    occlusionGain.connect(panner);
     panner.connect(this.master);
 
-    const track = { def, originalBuffer, buffer, panner, gain, distanceGain, analyser, levelData: new Uint8Array(new ArrayBuffer(analyser.fftSize)) };
-    this.updateDistanceGain(track, this.ctx.currentTime);
+    const track = { def, originalBuffer, buffer, panner, gain, distanceGain, occlusionGain, occlusionFilter, analyser, levelData: new Uint8Array(new ArrayBuffer(analyser.fftSize)) };
+    this.updateTrackAcoustics(track, this.ctx.currentTime);
     return track;
   }
 
@@ -329,9 +341,10 @@ export class AudioEngine {
   }
 
   // Called every frame from the camera. Drives the 3D spatialization.
-  updateListener(position: THREE.Vector3, forward: THREE.Vector3, up: THREE.Vector3): void {
+  updateListener(position: THREE.Vector3, forward: THREE.Vector3, up: THREE.Vector3, map?: CompositionMap): void {
     const l = this.ctx.listener;
     const at = this.ctx.currentTime;
+    this.map = map ?? this.map;
     this.listenerPosition.copy(position);
     if (l.positionX) {
       l.positionX.setValueAtTime(position.x, at);
@@ -348,7 +361,7 @@ export class AudioEngine {
       (l as any).setPosition(position.x, position.y, position.z);
       (l as any).setOrientation(forward.x, forward.y, forward.z, up.x, up.y, up.z);
     }
-    for (const t of this.tracks) this.updateDistanceGain(t, at);
+    for (const t of this.tracks) this.updateTrackAcoustics(t, at);
   }
 
   // --- Live edits: mutate a playing track without restarting anything. ---
@@ -359,14 +372,14 @@ export class AudioEngine {
     t.def = { ...t.def, volume };
     // Ramp to avoid clicks.
     t.gain.gain.setTargetAtTime(volume, this.ctx.currentTime, 0.02);
-    this.updateDistanceGain(t, this.ctx.currentTime);
+    this.updateTrackAcoustics(t, this.ctx.currentTime);
   }
 
   setMinVolume(id: string, minVolume: number): void {
     const t = this.find(id);
     if (!t) return;
     t.def = { ...t.def, minVolume };
-    this.updateDistanceGain(t, this.ctx.currentTime);
+    this.updateTrackAcoustics(t, this.ctx.currentTime);
   }
 
   setPosition(id: string, position: [number, number, number]): void {
@@ -374,7 +387,7 @@ export class AudioEngine {
     if (!t) return;
     t.def = { ...t.def, position };
     this.setPannerPosition(t.panner, position);
-    this.updateDistanceGain(t, this.ctx.currentTime);
+    this.updateTrackAcoustics(t, this.ctx.currentTime);
   }
 
   setFalloff(id: string, f: { refDistance?: number; maxDistance?: number; rolloff?: number }): void {
@@ -383,7 +396,7 @@ export class AudioEngine {
     t.def = { ...t.def, ...f };
     if (f.refDistance !== undefined) t.panner.refDistance = f.refDistance;
     if (f.maxDistance !== undefined) t.panner.maxDistance = f.maxDistance;
-    this.updateDistanceGain(t, this.ctx.currentTime);
+    this.updateTrackAcoustics(t, this.ctx.currentTime);
   }
 
   // Stop everything and release the audio context. The engine is dead after.
@@ -409,6 +422,8 @@ export class AudioEngine {
     t.source?.disconnect();
     t.gain.disconnect();
     t.distanceGain.disconnect();
+    t.occlusionFilter.disconnect();
+    t.occlusionGain.disconnect();
     t.panner.disconnect();
     t.analyser.disconnect();
     this.tracks.splice(i, 1);
@@ -441,18 +456,32 @@ export class AudioEngine {
       t.source?.disconnect();
       t.gain.disconnect();
       t.distanceGain.disconnect();
+      t.occlusionFilter.disconnect();
+      t.occlusionGain.disconnect();
       t.panner.disconnect();
       t.analyser.disconnect();
     }
     this.tracks = [];
   }
 
-  private updateDistanceGain(t: LiveTrack, at: number): void {
+  private updateTrackAcoustics(t: LiveTrack, at: number): void {
     const maxVolume = Math.max(0, t.def.volume ?? 1);
     const minVolume = Math.min(Math.max(0, t.def.minVolume ?? 0), maxVolume);
     const level = this.distanceLevel(t.def, minVolume, maxVolume);
     const ratio = maxVolume > 0 ? level / maxVolume : 0;
     t.distanceGain.gain.setValueAtTime(ratio, at);
+    this.updateOcclusion(t, at);
+  }
+
+  private updateOcclusion(t: LiveTrack, at: number): void {
+    const obstructions = this.map
+      ? roomWallObstructionCount(this.map, [this.listenerPosition.x, this.listenerPosition.z], [t.def.position[0], t.def.position[2]])
+      : 0;
+    const strength = Math.min(1, obstructions);
+    const gain = THREE.MathUtils.lerp(1, 0.18, strength);
+    const frequency = THREE.MathUtils.lerp(22000, 420, strength);
+    t.occlusionGain.gain.setTargetAtTime(gain, at, 0.12);
+    t.occlusionFilter.frequency.setTargetAtTime(frequency, at, 0.12);
   }
 
   private distanceLevel(def: TrackDef, minVolume: number, maxVolume: number): number {

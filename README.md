@@ -11,7 +11,8 @@ these spatial compositions.
 
 - **Explore** — first-person movement (WASD + mouse) through a composition;
   realistic 3D audio via the Web Audio API (HRTF panning + distance falloff),
-  with every stem kept sample-locked in sync.
+  room-wall occlusion for muffled obstructed stems, and every stem kept
+  sample-locked in sync.
 - **Immersive spaces** — compositions carry environment metadata and can render
   procedural spaces such as a studio void, cavern, forest clearing, or crystal
   hall.

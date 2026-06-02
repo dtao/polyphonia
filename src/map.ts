@@ -163,6 +163,19 @@ export function roomContains(room: MapRoom, point: [number, number]): boolean {
   return roomRegionRects(room).some((rect) => pointInRect(local, rect));
 }
 
+export function roomWallObstructionCount(map: Pick<CompositionMap, "rooms">, from: [number, number], to: [number, number]): number {
+  let count = 0;
+  for (const room of map.rooms) {
+    const a = toRoomLocal(room, from);
+    const b = toRoomLocal(room, to);
+    const aInside = pointInRect(a, interiorRect(room));
+    const bInside = pointInRect(b, interiorRect(room));
+    if (aInside === bInside) continue;
+    if (lineHitsSolidRoomWall(room, a, b)) count++;
+  }
+  return count;
+}
+
 export function mapPointKey(point: [number, number]): string {
   return `${point[0].toFixed(3)},${point[1].toFixed(3)}`;
 }
@@ -240,6 +253,44 @@ function fromRoomLocal(room: MapRoom, point: [number, number]): [number, number]
   const c = Math.cos(room.rotation);
   const s = Math.sin(room.rotation);
   return [room.center[0] + point[0] * c + point[1] * s, room.center[1] - point[0] * s + point[1] * c];
+}
+
+function lineHitsSolidRoomWall(room: MapRoom, from: [number, number], to: [number, number]): boolean {
+  const r = interiorRect(room);
+  const walls: Array<[[number, number], [number, number]]> = [];
+  for (const [s, e] of splitWall(r.maxX, room.entranceSide === "north", room.entranceWidth, room.entranceOffset)) walls.push([[s, r.minZ], [e, r.minZ]]);
+  for (const [s, e] of splitWall(r.maxX, room.entranceSide === "south", room.entranceWidth, room.entranceOffset)) walls.push([[s, r.maxZ], [e, r.maxZ]]);
+  for (const [s, e] of splitWall(r.maxZ, room.entranceSide === "west", room.entranceWidth, room.entranceOffset)) walls.push([[r.minX, s], [r.minX, e]]);
+  for (const [s, e] of splitWall(r.maxZ, room.entranceSide === "east", room.entranceWidth, room.entranceOffset)) walls.push([[r.maxX, s], [r.maxX, e]]);
+  return walls.some(([a, b]) => lineSegmentsIntersect(from, to, a, b));
+}
+
+function splitWall(half: number, isEntrance: boolean, entranceWidth: number, offset: number): Array<[number, number]> {
+  if (!isEntrance) return [[-half, half]];
+  const a = offset - entranceWidth / 2;
+  const b = offset + entranceWidth / 2;
+  const parts: Array<[number, number]> = [];
+  if (a > -half + 0.05) parts.push([-half, a]);
+  if (b < half - 0.05) parts.push([b, half]);
+  return parts;
+}
+
+function lineSegmentsIntersect(a: [number, number], b: [number, number], c: [number, number], d: [number, number]): boolean {
+  const abx = b[0] - a[0];
+  const abz = b[1] - a[1];
+  const acx = c[0] - a[0];
+  const acz = c[1] - a[1];
+  const cdx = d[0] - c[0];
+  const cdz = d[1] - c[1];
+  const denom = cross(abx, abz, cdx, cdz);
+  if (Math.abs(denom) < 0.000001) return false;
+  const t = cross(acx, acz, cdx, cdz) / denom;
+  const u = cross(acx, acz, abx, abz) / denom;
+  return t > 0.0001 && t < 0.9999 && u > 0.0001 && u < 0.9999;
+}
+
+function cross(ax: number, az: number, bx: number, bz: number): number {
+  return ax * bz - az * bx;
 }
 
 function pointInRect(p: [number, number], r: Rect): boolean {
