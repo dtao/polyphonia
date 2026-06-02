@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Scene } from "./scene/Scene";
 import { PropertiesPanel } from "./ui/PropertiesPanel";
+import { MapPointPanel } from "./ui/MapPointPanel";
+import { RoomPanel } from "./ui/RoomPanel";
 import { AddStem } from "./ui/AddStem";
 import { EntryScreen } from "./ui/EntryScreen";
 import { PublishControl } from "./ui/PublishControl";
@@ -27,13 +29,6 @@ function deleteSelectedMapPoint(): void {
   });
   s.selectMapPoint(null);
   s.setBranchStartPoint(null);
-}
-
-function toggleBranchPlacementFromSelection(): void {
-  const s = useStore.getState();
-  const key = s.selectedMapPointKey;
-  if (!key) return;
-  s.setBranchStartPoint(s.branchStartPointKey === key ? null : key);
 }
 
 function modKey(): string {
@@ -206,8 +201,7 @@ export default function App() {
       if (s.mode === "edit" && e.code === "KeyB" && !modifier && !e.altKey) {
         if (s.selectedMapPointKey) {
           e.preventDefault();
-          setOpenEditPanel("map");
-          toggleBranchPlacementFromSelection();
+          s.addBranchAtPoint(s.selectedMapPointKey);
           return;
         }
       }
@@ -249,7 +243,7 @@ export default function App() {
       // Canvas clicks are handled by R3F: empty space clears via onPointerMissed,
       // while clicking the selected marker keeps the inspector open.
       if (target instanceof HTMLCanvasElement) return;
-      if (!target.closest("[data-stem-panel]")) useStore.getState().select(null);
+      if (!target.closest("[data-stem-panel],[data-inspector]")) useStore.getState().select(null);
     };
     window.addEventListener("pointerdown", onPointerDown, true);
     return () => window.removeEventListener("pointerdown", onPointerDown, true);
@@ -372,6 +366,8 @@ export default function App() {
           )}
 
           <PropertiesPanel />
+          <MapPointPanel />
+          <RoomPanel />
 
           {/* Empty composition: prompt the user to add their first stem. */}
           {comp.tracks.length === 0 && !locked && (

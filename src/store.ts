@@ -15,7 +15,7 @@ import {
 } from "./persistence";
 import { newId } from "./id";
 import { EnvironmentSettings, defaultEnvironment, normalizeEnvironment } from "./environment";
-import { CompositionMap, MapRoom, defaultMap, normalizeMap } from "./map";
+import { CompositionMap, MapRoom, RoomSide, defaultMap, normalizeMap } from "./map";
 import { ArtistIdentity } from "./artist";
 import {
   AuthUser,
@@ -92,8 +92,11 @@ interface StoreState {
   // Rooms (enclosed spaces on the map).
   selectRoom: (id: string | null) => void;
   addRoom: () => void;
+  addRoomAtPoint: (pointKey: string) => void;
+  addBranchAtPoint: (pointKey: string) => void;
   updateRoom: (id: string, patch: Partial<MapRoom>) => void;
   deleteRoom: (id: string) => void;
+  deleteMapPoint: (pointKey: string) => void;
 
   // Track edits. Those that affect audio also push the change to the engine,
   // so a playing composition responds live without ever restarting.
@@ -168,6 +171,11 @@ function withHistory(s: StoreState, key: string): Pick<StoreState, "undoStack" |
 
 function pushRedo(redoStack: Composition[], comp: Composition): Composition[] {
   return [...redoStack, cloneComposition(comp)].slice(-HISTORY_LIMIT);
+}
+
+function unitDir(v: [number, number]): [number, number] {
+  const length = Math.hypot(v[0], v[1]);
+  return length > 0 ? [v[0] / length, v[1] / length] : [0, -1];
 }
 
 function pruneSelection(
@@ -356,6 +364,90 @@ export const useStore = create<StoreState>((set, get) => ({
     const map = get().composition.map;
     get().setMap({ rooms: map.rooms.filter((room) => room.id !== id) });
     if (get().selectedRoomId === id) set({ selectedRoomId: null });
+  },
+
+  // Create a room whose doorway is centered on the given path point and aligned
+  // so the incoming path runs perpendicular to (straight into) the entrance wall.
+  addRoomAtPoint: (pointKey) => {
+    const map = get().composition.map;
+    const keyOf = (p: [number, number]) => `${p[0].toFixed(3)},${p[1].toFixed(3)}`;
+    let point: [number, number] | null = null;
+    let dir: [number, number] = [0, -1]; // direction the path travels arriving at the point
+    for (const seg of map.segments) {
+      if (keyOf(seg.start) === pointKey) {
+        point = seg.start;
+        dir = unitDir([seg.start[0] - seg.end[0], seg.start[1] - seg.end[1]]);
+        break;
+      }
+      if (keyOf(seg.end) === pointKey) {
+        point = seg.end;
+        dir = unitDir([seg.end[0] - seg.start[0], seg.end[1] - seg.start[1]]);
+        break;
+      }
+    }
+    if (!point) return;
+
+    // The room extends away from the path along the dominant axis of `dir`; the
+    // entrance wall sits at the point, facing back toward the path.
+    const width = 14;
+    const depth = 12;
+    let entranceSide: RoomSide;
+    let center: [number, number];
+    if (Math.abs(dir[0]) >= Math.abs(dir[1])) {
+      if (dir[0] >= 0) {
+        entranceSide = "west";
+        center = [point[0] + width / 2, point[1]];
+      } else {
+        entranceSide = "east";
+        center = [point[0] - width / 2, point[1]];
+      }
+    } else if (dir[1] >= 0) {
+      entranceSide = "north";
+      center = [point[0], point[1] + depth / 2];
+    } else {
+      entranceSide = "south";
+      center = [point[0], point[1] - depth / 2];
+    }
+
+    const room: MapRoom = { id: newId(), center, width, depth, height: 3.4, entranceSide, entranceWidth: 5, entranceOffset: 0 };
+    get().setMap({ rooms: [...map.rooms, room] });
+    set({ selectedRoomId: room.id, selectedMapPointKey: null, selectedMapSegmentId: null, selectedId: null, selectedStart: false, branchStartPointKey: null });
+  },
+
+  deleteMapPoint: (pointKey) => {
+    const map = get().composition.map;
+    const keyOf = (p: [number, number]) => `${p[0].toFixed(3)},${p[1].toFixed(3)}`;
+    get().setMap({ preset: "custom", segments: map.segments.filter((s) => keyOf(s.start) !== pointKey && keyOf(s.end) !== pointKey) });
+    set({ selectedMapPointKey: null, branchStartPointKey: null });
+  },
+
+  // Grow the path: add a new segment extending from the point, and select the
+  // new endpoint so it can be dragged into place.
+  addBranchAtPoint: (pointKey) => {
+    const map = get().composition.map;
+    const keyOf = (p: [number, number]) => `${p[0].toFixed(3)},${p[1].toFixed(3)}`;
+    let point: [number, number] | null = null;
+    let dir: [number, number] = [0, -1];
+    let width = map.segments.length ? map.segments.reduce((sum, s) => sum + s.width, 0) / map.segments.length : 7.5;
+    for (const seg of map.segments) {
+      if (keyOf(seg.start) === pointKey) {
+        point = seg.start;
+        dir = unitDir([seg.start[0] - seg.end[0], seg.start[1] - seg.end[1]]);
+        width = seg.width;
+        break;
+      }
+      if (keyOf(seg.end) === pointKey) {
+        point = seg.end;
+        dir = unitDir([seg.end[0] - seg.start[0], seg.end[1] - seg.start[1]]);
+        width = seg.width;
+        break;
+      }
+    }
+    if (!point) return;
+    const end: [number, number] = [point[0] + dir[0] * 12, point[1] + dir[1] * 12];
+    const segment = { id: newId(), start: point, end, width };
+    get().setMap({ preset: "custom", segments: [...map.segments, segment] });
+    set({ selectedMapPointKey: keyOf(end), selectedRoomId: null, selectedId: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false });
   },
 
   setTrackVolume: (id, volume) => {
