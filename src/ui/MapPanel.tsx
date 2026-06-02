@@ -76,14 +76,14 @@ export function MapPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () 
 
   if (!open) {
     return (
-      <button style={collapsed} onClick={onOpen} title="Edit walkable map">
+      <button style={collapsed} onClick={onOpen} title="Edit walkable map" data-edit-drawer>
         Map: {LABELS[map.preset]}
       </button>
     );
   }
 
   return (
-    <div style={panel}>
+    <div style={panel} data-edit-drawer>
       <div style={head}>
         <strong style={{ fontSize: 13 }}>Map</strong>
         <button style={closeBtn} onClick={onClose} title="Collapse map controls">

@@ -83,6 +83,18 @@ export default function App() {
   // history when focus is not inside a native text field.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && useStore.getState().mode === "edit") {
+        if (openEditPanel) {
+          e.preventDefault();
+          setOpenEditPanel(null);
+          return;
+        }
+        if (useStore.getState().selectedId) {
+          e.preventDefault();
+          useStore.getState().select(null);
+          return;
+        }
+      }
       const el = document.activeElement;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return;
       const modifier = e.metaKey || e.ctrlKey;
@@ -104,7 +116,24 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [handleToggleMode]);
+  }, [handleToggleMode, openEditPanel]);
+
+  useEffect(() => {
+    const onPointerDown = (e: PointerEvent) => {
+      if (useStore.getState().mode !== "edit") return;
+      const target = e.target;
+      if (!(target instanceof Element)) return;
+
+      if (openEditPanel && !target.closest("[data-edit-drawer]")) setOpenEditPanel(null);
+
+      // Canvas clicks are handled by R3F: empty space clears via onPointerMissed,
+      // while clicking the selected marker keeps the inspector open.
+      if (target instanceof HTMLCanvasElement) return;
+      if (!target.closest("[data-stem-panel]")) useStore.getState().select(null);
+    };
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => window.removeEventListener("pointerdown", onPointerDown, true);
+  }, [openEditPanel]);
 
   // Release the pointer lock when entering edit mode; reset cursor.
   useEffect(() => {

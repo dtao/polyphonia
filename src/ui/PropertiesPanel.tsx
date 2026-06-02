@@ -15,7 +15,7 @@ export function PropertiesPanel() {
   const minVolume = Math.min(track.minVolume ?? 0, maxVolume);
 
   return (
-    <div style={panel}>
+    <div style={panel} data-stem-panel>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
         <input
           type="color"

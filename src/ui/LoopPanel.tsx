@@ -28,14 +28,14 @@ export function LoopPanel({ open, onOpen, onClose }: { open: boolean; onOpen: ()
 
   if (!open) {
     return (
-      <button style={collapsed} onClick={onOpen} title="Adjust loop seam">
+      <button style={collapsed} onClick={onOpen} title="Adjust loop seam" data-edit-drawer>
         Loop {enabled ? "on" : "off"}
       </button>
     );
   }
 
   return (
-    <div style={panel}>
+    <div style={panel} data-edit-drawer>
       <div style={head}>
         <label style={toggle}>
           <input

@@ -16,14 +16,14 @@ export function EnvironmentPanel({ open, onOpen, onClose }: { open: boolean; onO
 
   if (!open) {
     return (
-      <button style={collapsed} onClick={onOpen} title="Choose environment">
+      <button style={collapsed} onClick={onOpen} title="Choose environment" data-edit-drawer>
         Environment: {LABELS[environment.type]}
       </button>
     );
   }
 
   return (
-    <div style={panel}>
+    <div style={panel} data-edit-drawer>
       <div style={head}>
         <strong style={{ fontSize: 13 }}>Environment</strong>
         <button style={closeBtn} onClick={onClose} title="Collapse environment controls">
