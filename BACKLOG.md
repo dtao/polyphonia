@@ -87,7 +87,7 @@ depends only on earlier ones.
 - [x] Add keyboard shortcuts for common actions: add/delete stem, duplicate stem, add/delete bridge point
 - [x] Too difficult to select branch point that's already connected to 2 segments: often one of the segments gets selected instead.
 - [x] Rooms attach to terminal branch points instead of acting as independently movable path objects.
-- [x] Room interiors add size-based reverb and echo while preserving stem sync.
+- [x] Room interiors add size-based reverb while preserving stem sync.
 - [x] Map button and panel are always over Environment panel - only one should be open at a time.
 - [x] Vertical margin is inconsistent between "Add stem", "Environment", and "Map" buttons.
 
