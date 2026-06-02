@@ -82,5 +82,10 @@ depends only on earlier ones.
 - [ ] Stem names should not be visible in Explore mode (only in Edit mode).
 - [ ] Lights stop pulsing (until browser refresh) after switching to Edit mode.
 - [ ] Locations of light points do not update (until browser refresh) after moving stems in Edit mode.
+- [ ] Extending one segment into another should "connect" them (unified bridge point).
+- [ ] Add keyboard shortcuts for common actions: add/delete stem, duplicate stem, add/delete bridge point
+- [ ] Too difficult to select branch point that's already connected to 2 segments: often one of the segments gets selected instead.
+- [ ] Map button and panel are always over Environment panel - only one should be open at a time.
+- [ ] Vertical margin is inconsistent between "Add stem", "Environment", and "Map" buttons.
 
 **Cross-cutting** (interleave opportunistically): mobile / touch controls, loading & error states.
