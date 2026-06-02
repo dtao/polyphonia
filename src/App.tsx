@@ -56,13 +56,13 @@ function hudShortcutHint({
   selectedStart: boolean;
 }): string {
   const mod = modKey();
-  if (mode === "explore") return "WASD + mouse to move · click to look · Esc for cursor · Tab to edit";
+  if (mode === "explore") return "WASD + mouse to move · click scene for mouse look · Esc releases cursor · Tab to edit · F fullscreen";
   if (selectedId) return `drag to move stem · Delete removes · ${mod}+D duplicates · Esc clears`;
   if (branchStartPointKey) return "click floor to place branch · B cancels · Delete removes point · Esc clears";
   if (selectedMapPointKey) return "drag point to reshape · B places branch · Delete removes point · Esc clears";
   if (selectedMapSegmentId) return "adjust width in Map · click point to edit branches · Esc clears";
   if (selectedStart) return "drag start marker · choose Move/Rotate in Map · Esc clears";
-  return `WASD to move · drag to orbit · click a track or map point · ${mod}+O adds stem · ${mod}+Z undo`;
+  return `WASD to move · drag to orbit · click a track or map point · ${mod}+O adds stem · ${mod}+Z undo · F fullscreen`;
 }
 
 export default function App() {
@@ -80,6 +80,7 @@ export default function App() {
   const canUndo = useStore((s) => s.undoStack.length > 0);
   const canRedo = useStore((s) => s.redoStack.length > 0);
   const [openEditPanel, setOpenEditPanel] = useState<EditPanel>(null);
+  const [fullscreen, setFullscreen] = useState(false);
   const hudHint = hudShortcutHint({
     mode,
     selectedId,
@@ -109,6 +110,18 @@ export default function App() {
   const handleToggleMode = useCallback(() => {
     if (useStore.getState().mode === "explore") document.exitPointerLock?.();
     useStore.getState().toggleMode();
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    const next = document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+    next.catch((err) => console.error("Failed to toggle fullscreen", err));
+  }, []);
+
+  useEffect(() => {
+    const onChange = () => setFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onChange);
+    onChange();
+    return () => document.removeEventListener("fullscreenchange", onChange);
   }, []);
 
   // The entry click does two gesture-gated things at once: drei's
@@ -148,6 +161,15 @@ export default function App() {
   // history when focus is not inside a native text field.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.code === "KeyF") {
+        const el = document.activeElement;
+        if (!el || (el.tagName !== "INPUT" && el.tagName !== "TEXTAREA")) {
+          e.preventDefault();
+          toggleFullscreen();
+          return;
+        }
+      }
+      if (e.key === "Escape" && document.fullscreenElement) return;
       if (e.key === "Escape" && useStore.getState().mode === "edit") {
         if (openEditPanel) {
           e.preventDefault();
@@ -209,7 +231,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [handleToggleMode, openEditPanel]);
+  }, [handleToggleMode, openEditPanel, toggleFullscreen]);
 
   useEffect(() => {
     const onPointerDown = (e: PointerEvent) => {
@@ -292,6 +314,9 @@ export default function App() {
               <div style={toolbar}>
                 <button style={exitBtn} onClick={exit} title="Stop and return to the start screen">
                   ⏏ Exit
+                </button>
+                <button style={iconBtn} onClick={toggleFullscreen} title={fullscreen ? "Exit fullscreen (F)" : "Enter fullscreen (F)"}>
+                  {fullscreen ? "⤢" : "⛶"}
                 </button>
                 {mode === "edit" && (
                   <div style={historyGroup}>
@@ -395,6 +420,18 @@ const historyGroup: React.CSSProperties = {
   borderRadius: 999,
   border: "1px solid rgba(255,255,255,0.14)",
   background: "rgba(255,255,255,0.06)",
+};
+
+const iconBtn: React.CSSProperties = {
+  width: 36,
+  height: 36,
+  borderRadius: 999,
+  border: "1px solid rgba(255,255,255,0.18)",
+  background: "rgba(255,255,255,0.08)",
+  color: "rgba(255,255,255,0.88)",
+  cursor: "pointer",
+  fontSize: 17,
+  lineHeight: 1,
 };
 
 const historyBtn: React.CSSProperties = {
