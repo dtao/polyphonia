@@ -255,6 +255,16 @@ export class AudioEngine {
     }
   }
 
+  async replaceComposition(comp: Composition): Promise<void> {
+    const wasStarted = this.started;
+    clearTimeout(this.auditionTimer);
+    this.auditionStartTime = null;
+    this.stopAndDisconnectTracks();
+    this.started = false;
+    await this.load(comp);
+    if (wasStarted) this.start();
+  }
+
   auditionSeam(): void {
     if (!this.started || !this.loopEnabled || !this.tracks.length) return;
     clearTimeout(this.auditionTimer);
@@ -380,19 +390,7 @@ export class AudioEngine {
   dispose(): void {
     clearTimeout(this.auditionTimer);
     this.auditionStartTime = null;
-    for (const t of this.tracks) {
-      try {
-        t.source?.stop();
-      } catch {
-        /* already stopped */
-      }
-      t.source?.disconnect();
-      t.gain.disconnect();
-      t.distanceGain.disconnect();
-      t.panner.disconnect();
-      t.analyser.disconnect();
-    }
-    this.tracks = [];
+    this.stopAndDisconnectTracks();
     this.master.disconnect();
     this.started = false;
     void this.ctx.close();
@@ -431,6 +429,22 @@ export class AudioEngine {
 
   private find(id: string): LiveTrack | undefined {
     return this.tracks.find((x) => x.def.id === id);
+  }
+
+  private stopAndDisconnectTracks(): void {
+    for (const t of this.tracks) {
+      try {
+        t.source?.stop();
+      } catch {
+        /* already stopped */
+      }
+      t.source?.disconnect();
+      t.gain.disconnect();
+      t.distanceGain.disconnect();
+      t.panner.disconnect();
+      t.analyser.disconnect();
+    }
+    this.tracks = [];
   }
 
   private updateDistanceGain(t: LiveTrack, at: number): void {

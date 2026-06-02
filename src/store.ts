@@ -49,6 +49,8 @@ interface StoreState {
   /** All saved compositions (manifests; the current one is also a live copy). */
   library: SerializedComposition[];
   engine: AudioEngine | null;
+  undoStack: Composition[];
+  redoStack: Composition[];
 
   mode: Mode;
   selectedId: string | null;
@@ -102,6 +104,8 @@ interface StoreState {
   loopProgress: () => { mode: "playing" | "audition"; position: number; duration: number } | null;
   setEnvironment: (environment: Partial<EnvironmentSettings>) => void;
   setMap: (map: Partial<CompositionMap>, options?: { moveViewToStart?: boolean }) => void;
+  undo: () => Promise<void>;
+  redo: () => Promise<void>;
 
   // Composition library.
   initLibrary: () => Promise<void>;
@@ -129,6 +133,54 @@ function upsert(library: SerializedComposition[], s: SerializedComposition): Ser
 const PALETTE = ["#5b8cff", "#ff7a6b", "#ffd166", "#b96bff", "#56e0c0", "#f78fb3", "#7ee081", "#ffa057"];
 const randomColor = () => PALETTE[Math.floor(Math.random() * PALETTE.length)];
 const stripExt = (name: string) => name.replace(/\.[^.]+$/, "");
+const HISTORY_LIMIT = 60;
+const HISTORY_COALESCE_MS = 700;
+let lastHistoryKey: string | null = null;
+let lastHistoryAt = 0;
+
+function cloneComposition(comp: Composition): Composition {
+  const clone = typeof structuredClone === "function" ? structuredClone(comp) : JSON.parse(JSON.stringify(comp));
+  return normalizeComposition(clone);
+}
+
+function clearHistoryMarkers(): void {
+  lastHistoryKey = null;
+  lastHistoryAt = 0;
+}
+
+function withHistory(s: StoreState, key: string): Pick<StoreState, "undoStack" | "redoStack"> {
+  const now = Date.now();
+  const coalesced = lastHistoryKey === key && now - lastHistoryAt < HISTORY_COALESCE_MS;
+  lastHistoryKey = key;
+  lastHistoryAt = now;
+  return {
+    undoStack: coalesced ? s.undoStack : [...s.undoStack, cloneComposition(s.composition)].slice(-HISTORY_LIMIT),
+    redoStack: [],
+  };
+}
+
+function pushRedo(redoStack: Composition[], comp: Composition): Composition[] {
+  return [...redoStack, cloneComposition(comp)].slice(-HISTORY_LIMIT);
+}
+
+function pruneSelection(s: StoreState, composition: Composition): Pick<StoreState, "selectedId" | "selectedMapPointKey" | "selectedMapSegmentId" | "branchStartPointKey" | "selectedStart"> {
+  return {
+    selectedId: s.selectedId && composition.tracks.some((t) => t.id === s.selectedId) ? s.selectedId : null,
+    selectedMapPointKey:
+      s.selectedMapPointKey && composition.map.segments.some((segment) => mapPointExists(segment, s.selectedMapPointKey!))
+        ? s.selectedMapPointKey
+        : null,
+    selectedMapSegmentId:
+      s.selectedMapSegmentId && composition.map.segments.some((segment) => segment.id === s.selectedMapSegmentId)
+        ? s.selectedMapSegmentId
+        : null,
+    branchStartPointKey:
+      s.branchStartPointKey && composition.map.segments.some((segment) => mapPointExists(segment, s.branchStartPointKey!))
+        ? s.branchStartPointKey
+        : null,
+    selectedStart: s.selectedStart,
+  };
+}
 
 function copyName(name: string, tracks: TrackDef[]): string {
   const base = `${name} copy`;
@@ -169,6 +221,8 @@ export const useStore = create<StoreState>((set, get) => ({
   composition: defaultComposition,
   library: [],
   engine: null,
+  undoStack: [],
+  redoStack: [],
   mode: "explore",
   selectedId: null,
   selectedMapPointKey: null,
@@ -258,39 +312,38 @@ export const useStore = create<StoreState>((set, get) => ({
   setStartGizmoMode: (startGizmoMode) => set({ startGizmoMode }),
 
   setTrackVolume: (id, volume) => {
-    set((s) => ({ composition: patchTrack(s.composition, id, { volume }) }));
+    set((s) => ({ ...withHistory(s, `track:${id}:volume`), composition: patchTrack(s.composition, id, { volume }) }));
     get().engine?.setVolume(id, volume);
   },
 
   setTrackMinVolume: (id, minVolume) => {
-    set((s) => ({ composition: patchTrack(s.composition, id, { minVolume }) }));
+    set((s) => ({ ...withHistory(s, `track:${id}:minVolume`), composition: patchTrack(s.composition, id, { minVolume }) }));
     get().engine?.setMinVolume(id, minVolume);
   },
 
   setTrackPosition: (id, position) => {
-    set((s) => ({ composition: patchTrack(s.composition, id, { position }) }));
+    set((s) => ({ ...withHistory(s, `track:${id}:position`), composition: patchTrack(s.composition, id, { position }) }));
     get().engine?.setPosition(id, position);
   },
 
   setTrackFalloff: (id, falloff) => {
-    set((s) => ({ composition: patchTrack(s.composition, id, falloff) }));
+    set((s) => ({ ...withHistory(s, `track:${id}:falloff`), composition: patchTrack(s.composition, id, falloff) }));
     get().engine?.setFalloff(id, falloff);
   },
 
   // Name and color are presentation-only — no audio side effects.
-  renameTrack: (id, name) => set((s) => ({ composition: patchTrack(s.composition, id, { name }) })),
-  setTrackColor: (id, color) => set((s) => ({ composition: patchTrack(s.composition, id, { color }) })),
+  renameTrack: (id, name) => set((s) => ({ ...withHistory(s, `track:${id}:name`), composition: patchTrack(s.composition, id, { name }) })),
+  setTrackColor: (id, color) => set((s) => ({ ...withHistory(s, `track:${id}:color`), composition: patchTrack(s.composition, id, { color }) })),
 
   deleteTrack: (id) => {
     const track = get().composition.tracks.find((t) => t.id === id);
-    // Free the object URL and stored audio for an uploaded stem.
-    if (track?.source.kind === "file" && track.source.url.startsWith("blob:")) {
-      URL.revokeObjectURL(track.source.url);
-      stemDelete(id);
-    }
+    // Keep uploaded blob URLs/stored audio alive for the undo stack. Composition
+    // deletion still removes persisted stems.
+    if (!track) return;
     get().engine?.removeTrack(id);
     markerObjects.delete(id);
     set((s) => ({
+      ...withHistory(s, `track:${id}:delete`),
       composition: touchComposition({ ...s.composition, tracks: s.composition.tracks.filter((t) => t.id !== id) }),
       selectedId: s.selectedId === id ? null : s.selectedId,
     }));
@@ -320,6 +373,7 @@ export const useStore = create<StoreState>((set, get) => ({
 
     engine?.duplicateLiveTrack(source.id, def);
     set((s) => ({
+      ...withHistory(s, `track:${id}:duplicate`),
       composition: touchComposition({ ...s.composition, tracks: [...s.composition.tracks, def] }),
       selectedId: copyId,
       selectedMapPointKey: null,
@@ -352,6 +406,7 @@ export const useStore = create<StoreState>((set, get) => ({
     };
     engine.addLiveTrack(def, buffer);
     set((s) => ({
+      ...withHistory(s, `track:${id}:add`),
       composition: touchComposition({ ...s.composition, tracks: [...s.composition.tracks, def] }),
       selectedId: id,
       mode: "edit",
@@ -362,13 +417,14 @@ export const useStore = create<StoreState>((set, get) => ({
     set((s) => {
       const composition = touchComposition({ ...s.composition, ...settings });
       s.engine?.updateLoopSettings(composition);
-      return { composition };
+      return { ...withHistory(s, `loop:${Object.keys(settings).sort().join(",")}`), composition };
     });
   },
   auditionLoopSeam: () => get().engine?.auditionSeam(),
   loopProgress: () => get().engine?.loopProgress() ?? null,
   setEnvironment: (environment) =>
     set((s) => ({
+      ...withHistory(s, `environment:${Object.keys(environment).sort().join(",")}`),
       composition: {
         ...touchComposition(s.composition),
         environment: normalizeEnvironment({ ...s.composition.environment, ...environment }),
@@ -382,6 +438,7 @@ export const useStore = create<StoreState>((set, get) => ({
       const branchStartPointKey = s.branchStartPointKey;
       if (options?.moveViewToStart) moveViewToMapStart(nextMap);
       return {
+        ...withHistory(s, `map:${Object.keys(map).sort().join(",")}`),
         composition: {
           ...touchComposition(s.composition),
           map: nextMap,
@@ -401,13 +458,44 @@ export const useStore = create<StoreState>((set, get) => ({
       };
     }),
 
+  undo: async () => {
+    const s = get();
+    const previous = s.undoStack[s.undoStack.length - 1];
+    if (!previous) return;
+    clearHistoryMarkers();
+    const composition = touchComposition(cloneComposition(previous));
+    set({
+      composition,
+      undoStack: s.undoStack.slice(0, -1),
+      redoStack: pushRedo(s.redoStack, s.composition),
+      ...pruneSelection(s, composition),
+    });
+    await get().engine?.replaceComposition(composition);
+  },
+
+  redo: async () => {
+    const s = get();
+    const next = s.redoStack[s.redoStack.length - 1];
+    if (!next) return;
+    clearHistoryMarkers();
+    const composition = touchComposition(cloneComposition(next));
+    set({
+      composition,
+      undoStack: [...s.undoStack, cloneComposition(s.composition)].slice(-HISTORY_LIMIT),
+      redoStack: s.redoStack.slice(0, -1),
+      ...pruneSelection(s, composition),
+    });
+    await get().engine?.replaceComposition(composition);
+  },
+
   // Load the saved library (or seed/migrate) and resolve the current composition.
   initLibrary: async () => {
     const { library, currentId } = loadLibrary();
     const current = library.find((c) => c.id === currentId) ?? library[0];
     const composition = current ? await resolveComposition(current) : get().composition;
     moveViewToMapStart(composition.map);
-    set({ library, composition });
+    clearHistoryMarkers();
+    set({ library, composition, undoStack: [], redoStack: [] });
   },
 
   // Switch the current composition. The outgoing one is flushed back into the
@@ -421,7 +509,8 @@ export const useStore = create<StoreState>((set, get) => ({
     if (!target) return;
     const resolved = await resolveComposition(target);
     moveViewToMapStart(resolved.map);
-    set({ library: flushed, composition: resolved, selectedId: null });
+    clearHistoryMarkers();
+    set({ library: flushed, composition: resolved, selectedId: null, undoStack: [], redoStack: [] });
     persistLibrary(flushed, id);
   },
 
@@ -447,7 +536,8 @@ export const useStore = create<StoreState>((set, get) => ({
     };
     const next = upsert(upsert(library, serializeComposition(composition)), serializeComposition(comp));
     moveViewToMapStart(comp.map);
-    set({ composition: comp, selectedId: null, library: next });
+    clearHistoryMarkers();
+    set({ composition: comp, selectedId: null, library: next, undoStack: [], redoStack: [] });
     persistLibrary(next, comp.id);
   },
 
@@ -458,7 +548,8 @@ export const useStore = create<StoreState>((set, get) => ({
     revokeBlobUrls(composition);
     const next = upsert(upsert(library, serializeComposition(composition)), serializeComposition(comp));
     moveViewToMapStart(comp.map);
-    set({ composition: comp, selectedId: null, library: next });
+    clearHistoryMarkers();
+    set({ composition: comp, selectedId: null, library: next, undoStack: [], redoStack: [] });
     persistLibrary(next, comp.id);
   },
 
@@ -466,6 +557,7 @@ export const useStore = create<StoreState>((set, get) => ({
     const t = title.trim() || "Untitled";
     const library = get().library.map((c) => (c.id === id ? touchComposition({ ...c, title: t }) : c));
     set((s) => ({
+      ...(s.composition.id === id ? withHistory(s, `composition:${id}:title`) : null),
       library,
       composition: s.composition.id === id ? touchComposition({ ...s.composition, title: t }) : s.composition,
     }));
@@ -505,7 +597,8 @@ export const useStore = create<StoreState>((set, get) => ({
       }
     }
     moveViewToMapStart(nextComposition.map);
-    set({ library: nextLibrary, composition: nextComposition, selectedId: null });
+    clearHistoryMarkers();
+    set({ library: nextLibrary, composition: nextComposition, selectedId: null, undoStack: [], redoStack: [] });
     persistLibrary(nextLibrary, nextComposition.id);
   },
 }));

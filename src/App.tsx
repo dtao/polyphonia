@@ -18,6 +18,8 @@ export default function App() {
   const comp = useStore((s) => s.composition);
   const mode = useStore((s) => s.mode);
   const select = useStore((s) => s.select);
+  const canUndo = useStore((s) => s.undoStack.length > 0);
+  const canRedo = useStore((s) => s.redoStack.length > 0);
 
   // Load the saved composition library + auth session on launch.
   useEffect(() => {
@@ -74,11 +76,24 @@ export default function App() {
     setEngine(null);
   }
 
-  // Tab toggles Explore/Edit.
+  // Tab toggles Explore/Edit. Cmd/Ctrl+Z and Shift+Cmd/Ctrl+Z handle edit
+  // history when focus is not inside a native text field.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = document.activeElement;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return;
+      const modifier = e.metaKey || e.ctrlKey;
+      if (modifier && e.key.toLowerCase() === "z" && useStore.getState().entered) {
+        e.preventDefault();
+        if (e.shiftKey) void useStore.getState().redo();
+        else void useStore.getState().undo();
+        return;
+      }
+      if (modifier && e.key.toLowerCase() === "y" && useStore.getState().entered) {
+        e.preventDefault();
+        void useStore.getState().redo();
+        return;
+      }
       if (e.code === "Tab" && useStore.getState().engine) {
         e.preventDefault();
         handleToggleMode();
@@ -153,6 +168,26 @@ export default function App() {
                 <button style={exitBtn} onClick={exit} title="Stop and return to the start screen">
                   ⏏ Exit
                 </button>
+                {mode === "edit" && (
+                  <div style={historyGroup}>
+                    <button
+                      style={{ ...historyBtn, ...(canUndo ? null : disabledBtn) }}
+                      onClick={() => void useStore.getState().undo()}
+                      disabled={!canUndo}
+                      title="Undo"
+                    >
+                      ↶
+                    </button>
+                    <button
+                      style={{ ...historyBtn, ...(canRedo ? null : disabledBtn) }}
+                      onClick={() => void useStore.getState().redo()}
+                      disabled={!canRedo}
+                      title="Redo"
+                    >
+                      ↷
+                    </button>
+                  </div>
+                )}
                 <button style={modeBtn} onClick={handleToggleMode} title="Toggle with Tab">
                   {mode === "explore" ? "✎ Edit" : "✦ Explore"}
                 </button>
@@ -210,6 +245,32 @@ const modeBtn: React.CSSProperties = {
   background: "rgba(91,140,255,0.22)",
   color: "white",
   cursor: "pointer",
+};
+
+const historyGroup: React.CSSProperties = {
+  display: "flex",
+  gap: 4,
+  padding: 4,
+  borderRadius: 999,
+  border: "1px solid rgba(255,255,255,0.14)",
+  background: "rgba(255,255,255,0.06)",
+};
+
+const historyBtn: React.CSSProperties = {
+  width: 30,
+  height: 30,
+  borderRadius: 999,
+  border: "1px solid rgba(255,255,255,0.14)",
+  background: "rgba(255,255,255,0.08)",
+  color: "rgba(255,255,255,0.88)",
+  cursor: "pointer",
+  fontSize: 18,
+  lineHeight: 1,
+};
+
+const disabledBtn: React.CSSProperties = {
+  opacity: 0.35,
+  cursor: "default",
 };
 
 const exitBtn: React.CSSProperties = {
