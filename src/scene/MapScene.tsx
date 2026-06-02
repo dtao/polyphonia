@@ -20,12 +20,12 @@ export function MapScene({ map, tracks, editMode }: { map: CompositionMap; track
   return (
     <group>
       <StartMarker map={map} editMode={editMode} />
+      <WalkableFloor segments={map.segments} tracks={tracks} editMode={editMode} />
       {map.segments.map((segment) => (
         <Segment
           key={segment.id}
           segment={segment}
           segments={map.segments}
-          tracks={tracks}
           editMode={editMode}
           endpointCounts={endpointCounts}
           selected={selectedMapSegmentId === segment.id}
@@ -137,14 +137,12 @@ function StartMarker({ map, editMode }: { map: CompositionMap; editMode: boolean
 function Segment({
   segment,
   segments,
-  tracks,
   editMode,
   endpointCounts,
   selected,
 }: {
   segment: WalkableSegment;
   segments: WalkableSegment[];
-  tracks: TrackDef[];
   editMode: boolean;
   endpointCounts: Map<string, number>;
   selected: boolean;
@@ -159,7 +157,7 @@ function Segment({
   return (
     <group>
       <mesh
-        position={[mid[0], 0.026, mid[2]]}
+        position={[mid[0], 0.04, mid[2]]}
         rotation={[-Math.PI / 2, 0, angle]}
         onClick={(e) => {
           if (!editMode) return;
@@ -168,7 +166,7 @@ function Segment({
         }}
       >
         <planeGeometry args={[length, segment.width]} />
-        <PathMaterial tracks={tracks} editMode={editMode} selected={selected} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
       </mesh>
       {([-1, 1] as const).map((side) => (
         <BorderRail
@@ -197,6 +195,25 @@ function Segment({
         </group>
       ))}
     </group>
+  );
+}
+
+function WalkableFloor({
+  segments,
+  tracks,
+  editMode,
+}: {
+  segments: WalkableSegment[];
+  tracks: TrackDef[];
+  editMode: boolean;
+}) {
+  const geometry = useMemo(() => walkableFloorGeometry(segments), [segments]);
+  if (!geometry) return null;
+
+  return (
+    <mesh geometry={geometry} position={[0, 0.026, 0]}>
+      <PathMaterial tracks={tracks} editMode={editMode} selected={false} />
+    </mesh>
   );
 }
 
@@ -350,6 +367,102 @@ function intersectOffsetRays(
   const delta: [number, number] = [bPoint[0] - aPoint[0], bPoint[1] - aPoint[1]];
   const t = (delta[0] * b.dir[1] - delta[1] * b.dir[0]) / cross;
   return [aPoint[0] + a.dir[0] * t, aPoint[1] + a.dir[1] * t];
+}
+
+function walkableFloorGeometry(segments: WalkableSegment[]): THREE.BufferGeometry | null {
+  if (!segments.length) return null;
+  const geometry = new THREE.BufferGeometry();
+  const vertices: number[] = [];
+  const indices: number[] = [];
+
+  for (const segment of segments) {
+    addFloorPolygon(
+      [
+        borderPoint(segment, segments, "start", -1),
+        borderPoint(segment, segments, "end", -1),
+        borderPoint(segment, segments, "end", 1),
+        borderPoint(segment, segments, "start", 1),
+      ],
+      vertices,
+      indices,
+    );
+  }
+
+  for (const { point, segments: jointSegments } of sharedJoints(segments)) {
+    const points: [number, number][] = [];
+    for (const segment of jointSegments) {
+      const end = pointKey(segment.start) === pointKey(point) ? "start" : "end";
+      points.push(borderPoint(segment, segments, end, -1));
+      points.push(borderPoint(segment, segments, end, 1));
+    }
+    addFloorPolygon(convexHull(uniquePoints(points)), vertices, indices);
+  }
+
+  if (!vertices.length || !indices.length) return null;
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function sharedJoints(segments: WalkableSegment[]): Array<{ point: [number, number]; segments: WalkableSegment[] }> {
+  const endpoints = new Map<string, { point: [number, number]; segments: WalkableSegment[] }>();
+  for (const segment of segments) {
+    for (const point of [segment.start, segment.end]) {
+      const key = pointKey(point);
+      const existing = endpoints.get(key);
+      if (existing) existing.segments.push(segment);
+      else endpoints.set(key, { point, segments: [segment] });
+    }
+  }
+  return Array.from(endpoints.values()).filter((joint) => joint.segments.length > 1);
+}
+
+function addFloorPolygon(points: [number, number][], vertices: number[], indices: number[]): void {
+  const polygon = uniquePoints(points);
+  if (polygon.length < 3) return;
+  const base = vertices.length / 3;
+  for (const point of polygon) vertices.push(point[0], 0, point[1]);
+  const triangles = THREE.ShapeUtils.triangulateShape(
+    polygon.map((point) => new THREE.Vector2(point[0], point[1])),
+    [],
+  );
+  for (const triangle of triangles) indices.push(base + triangle[0], base + triangle[1], base + triangle[2]);
+}
+
+function uniquePoints(points: [number, number][]): [number, number][] {
+  const seen = new Set<string>();
+  const unique: [number, number][] = [];
+  for (const point of points) {
+    const key = pointKey(point);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(point);
+  }
+  return unique;
+}
+
+function convexHull(points: [number, number][]): [number, number][] {
+  const sorted = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (sorted.length <= 3) return sorted;
+  const lower: [number, number][] = [];
+  for (const point of sorted) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) lower.pop();
+    lower.push(point);
+  }
+  const upper: [number, number][] = [];
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const point = sorted[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) upper.pop();
+    upper.push(point);
+  }
+  lower.pop();
+  upper.pop();
+  return [...lower, ...upper];
+}
+
+function cross(a: [number, number], b: [number, number], c: [number, number]): number {
+  return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
 }
 
 function PathMaterial({ tracks, editMode, selected }: { tracks: TrackDef[]; editMode: boolean; selected: boolean }) {
