@@ -76,6 +76,11 @@ add a test framework unless asked.
 
 - TypeScript throughout; functional components; inline `React.CSSProperties`
   style objects (no CSS framework).
+- Commit messages should follow the house style in recent history (e.g.
+  `9d23d5b`): imperative subject line, one concise explanatory paragraph, then
+  focused bullets for user-visible behavior, key implementation points, and
+  fixes/edge cases when useful. Include "Co-Authored-By" line specifying model
+  (e.g. Opus 4.8, GPT 5.5) where appropriate.
 - Keep the runtime composition model clean: persistence/cloud do their own
   (de)serialization (e.g. `{kind:"stored"}` markers, `publishedId`, `hash`) —
   don't leak storage concerns into the engine/scene.
