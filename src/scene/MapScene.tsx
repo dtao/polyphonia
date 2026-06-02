@@ -7,6 +7,8 @@ import { clampToMap, CompositionMap, WalkableSegment } from "../map";
 import { useStore } from "../store";
 
 const MAX_TRACK_LIGHTS = 12;
+const PATH_HEIGHT = 0.0;
+const UNDERFLOOR_HEIGHT = -2.15;
 
 export function MapScene({ map, tracks, editMode }: { map: CompositionMap; tracks: TrackDef[]; editMode: boolean }) {
   const selectedMapSegmentId = useStore((s) => s.selectedMapSegmentId);
@@ -20,7 +22,9 @@ export function MapScene({ map, tracks, editMode }: { map: CompositionMap; track
   return (
     <group>
       {editMode && <StartMarker map={map} editMode={editMode} />}
+      <ReflectiveUnderfloor segments={map.segments} tracks={tracks} />
       <WalkableFloor segments={map.segments} tracks={tracks} editMode={editMode} />
+      <PathDropSkirt segments={map.segments} />
       {map.segments.map((segment) => (
         <Segment
           key={segment.id}
@@ -34,6 +38,28 @@ export function MapScene({ map, tracks, editMode }: { map: CompositionMap; track
       {editMode && <BranchPlacementLayer map={map} />}
       {editMode && <EndpointEditor map={map} endpointCounts={endpointCounts} />}
     </group>
+  );
+}
+
+function ReflectiveUnderfloor({ segments, tracks }: { segments: WalkableSegment[]; tracks: TrackDef[] }) {
+  const bounds = useMemo(() => mapBounds(segments, tracks), [segments, tracks]);
+  if (!bounds) return null;
+
+  return (
+    <mesh position={[bounds.center[0], UNDERFLOOR_HEIGHT, bounds.center[1]]} rotation={[-Math.PI / 2, 0, 0]}>
+      <planeGeometry args={[bounds.size, bounds.size, 96, 96]} />
+      <ReflectiveUnderfloorMaterial tracks={tracks} />
+    </mesh>
+  );
+}
+
+function PathDropSkirt({ segments }: { segments: WalkableSegment[] }) {
+  const geometry = useMemo(() => pathSkirtGeometry(segments), [segments]);
+  if (!geometry) return null;
+  return (
+    <mesh geometry={geometry}>
+      <meshBasicMaterial color="#182033" transparent opacity={0.7} toneMapped={false} side={THREE.DoubleSide} />
+    </mesh>
   );
 }
 
@@ -211,7 +237,7 @@ function WalkableFloor({
   if (!geometry) return null;
 
   return (
-    <mesh geometry={geometry} position={[0, 0.026, 0]}>
+    <mesh geometry={geometry} position={[0, PATH_HEIGHT, 0]}>
       <PathMaterial tracks={tracks} editMode={editMode} selected={false} />
     </mesh>
   );
@@ -405,6 +431,30 @@ function walkableFloorGeometry(segments: WalkableSegment[]): THREE.BufferGeometr
   return geometry;
 }
 
+function pathSkirtGeometry(segments: WalkableSegment[]): THREE.BufferGeometry | null {
+  if (!segments.length) return null;
+  const geometry = new THREE.BufferGeometry();
+  const vertices: number[] = [];
+  const indices: number[] = [];
+
+  for (const segment of segments) {
+    addSkirtEdge(borderPoint(segment, segments, "start", -1), borderPoint(segment, segments, "end", -1), vertices, indices);
+    addSkirtEdge(borderPoint(segment, segments, "end", 1), borderPoint(segment, segments, "start", 1), vertices, indices);
+  }
+
+  if (!vertices.length || !indices.length) return null;
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function addSkirtEdge(a: [number, number], b: [number, number], vertices: number[], indices: number[]): void {
+  const base = vertices.length / 3;
+  vertices.push(a[0], PATH_HEIGHT, a[1], b[0], PATH_HEIGHT, b[1], b[0], UNDERFLOOR_HEIGHT, b[1], a[0], UNDERFLOOR_HEIGHT, a[1]);
+  indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+}
+
 function sharedJoints(segments: WalkableSegment[]): Array<{ point: [number, number]; segments: WalkableSegment[] }> {
   const endpoints = new Map<string, { point: [number, number]; segments: WalkableSegment[] }>();
   for (const segment of segments) {
@@ -465,6 +515,23 @@ function cross(a: [number, number], b: [number, number], c: [number, number]): n
   return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
 }
 
+function mapBounds(segments: WalkableSegment[], tracks: TrackDef[]): { center: [number, number]; size: number } | null {
+  if (!segments.length) return null;
+  const points: [number, number][] = [];
+  for (const segment of segments) points.push(segment.start, segment.end);
+  for (const track of tracks) points.push([track.position[0], track.position[2]]);
+
+  const xs = points.map((p) => p[0]);
+  const zs = points.map((p) => p[1]);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minZ = Math.min(...zs);
+  const maxZ = Math.max(...zs);
+  const center: [number, number] = [(minX + maxX) / 2, (minZ + maxZ) / 2];
+  const span = Math.max(maxX - minX, maxZ - minZ);
+  return { center, size: Math.max(90, span + 70) };
+}
+
 function PathMaterial({ tracks, editMode, selected }: { tracks: TrackDef[]; editMode: boolean; selected: boolean }) {
   const material = useRef<THREE.ShaderMaterial>(null);
   const engine = useStore((s) => s.engine);
@@ -512,6 +579,57 @@ function PathMaterial({ tracks, editMode, selected }: { tracks: TrackDef[]; edit
       uniforms={uniforms}
       vertexShader={pathVertexShader}
       fragmentShader={pathFragmentShader}
+    />
+  );
+}
+
+function ReflectiveUnderfloorMaterial({ tracks }: { tracks: TrackDef[] }) {
+  const material = useRef<THREE.ShaderMaterial>(null);
+  const engine = useStore((s) => s.engine);
+  const smoothedLevels = useRef(new Float32Array(MAX_TRACK_LIGHTS));
+  const uniforms = useMemo(() => {
+    const positions = Array.from({ length: MAX_TRACK_LIGHTS }, () => new THREE.Vector3(0, 0, 0));
+    const colors = Array.from({ length: MAX_TRACK_LIGHTS }, () => new THREE.Color("#000000"));
+    const levels = new Float32Array(MAX_TRACK_LIGHTS);
+    tracks.slice(0, MAX_TRACK_LIGHTS).forEach((track, i) => {
+      const volume = track.volume ?? 1;
+      const refDistance = track.refDistance ?? 4;
+      const maxDistance = track.maxDistance ?? 40;
+      positions[i].set(track.position[0], track.position[2], Math.max(10, Math.min(36, refDistance + maxDistance * 0.34 + volume * 6)));
+      colors[i].set(track.color);
+    });
+    return {
+      trackPositions: { value: positions },
+      trackColors: { value: colors },
+      trackLevels: { value: levels },
+      trackCount: { value: Math.min(tracks.length, MAX_TRACK_LIGHTS) },
+      time: { value: 0 },
+    };
+  }, [tracks]);
+
+  useFrame(({ clock }, dt) => {
+    if (!material.current) return;
+    material.current.uniforms.time.value = clock.elapsedTime;
+    const levels = material.current.uniforms.trackLevels.value as Float32Array;
+    for (let i = 0; i < MAX_TRACK_LIGHTS; i++) {
+      const track = tracks[i];
+      const target = track ? engine?.level(track.id) ?? 0 : 0;
+      smoothedLevels.current[i] = THREE.MathUtils.damp(smoothedLevels.current[i], target, 9, dt);
+      levels[i] = smoothedLevels.current[i];
+    }
+  });
+
+  return (
+    <shaderMaterial
+      ref={material}
+      transparent
+      depthWrite={false}
+      toneMapped={false}
+      blending={THREE.NormalBlending}
+      side={THREE.DoubleSide}
+      uniforms={uniforms}
+      vertexShader={reflectiveFloorVertexShader}
+      fragmentShader={reflectiveFloorFragmentShader}
     />
   );
 }
@@ -718,5 +836,70 @@ const pathFragmentShader = `
 
     color += baseColor * min(lightTotal, 1.0) * 0.08;
     gl_FragColor = vec4(color, 1.0);
+  }
+`;
+
+const reflectiveFloorVertexShader = `
+  varying vec2 vWorld;
+  varying vec2 vUv;
+
+  void main() {
+    vUv = uv;
+    vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+    vWorld = worldPosition.xz;
+    gl_Position = projectionMatrix * viewMatrix * worldPosition;
+  }
+`;
+
+const reflectiveFloorFragmentShader = `
+  #define MAX_TRACK_LIGHTS ${MAX_TRACK_LIGHTS}
+
+  uniform vec3 trackColors[MAX_TRACK_LIGHTS];
+  uniform vec3 trackPositions[MAX_TRACK_LIGHTS];
+  uniform float trackLevels[MAX_TRACK_LIGHTS];
+  uniform int trackCount;
+  uniform float time;
+  varying vec2 vWorld;
+  varying vec2 vUv;
+
+  float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  }
+
+  float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(
+      mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+      mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x),
+      u.y
+    );
+  }
+
+  void main() {
+    vec2 centeredUv = vUv - 0.5;
+    float edgeFade = smoothstep(0.72, 0.18, length(centeredUv));
+    float grain = noise(vWorld * 0.07 + time * 0.015);
+    float brushed = pow(0.5 + 0.5 * sin((vWorld.x + vWorld.y) * 0.16 + grain * 2.4), 2.0);
+    vec3 color = mix(vec3(0.012, 0.015, 0.024), vec3(0.035, 0.045, 0.062), brushed * 0.45);
+    float glowTotal = 0.0;
+
+    for (int i = 0; i < MAX_TRACK_LIGHTS; i++) {
+      if (i >= trackCount) break;
+      float radius = trackPositions[i].z;
+      float d = distance(vWorld, trackPositions[i].xy);
+      float pulse = trackLevels[i];
+      float glow = pow(smoothstep(radius * (1.0 + pulse * 0.22), 0.0, d), 2.05) * (0.38 + pulse * 1.25);
+      float streak = exp(-abs(vWorld.x - trackPositions[i].x) / (radius * 0.18)) * smoothstep(radius, 0.0, abs(vWorld.y - trackPositions[i].y));
+      glowTotal += glow;
+      color += trackColors[i] * glow * (0.28 + pulse * 0.4);
+      color += trackColors[i] * streak * (0.035 + pulse * 0.11);
+    }
+
+    vec3 sheen = vec3(0.12, 0.16, 0.19) * (0.08 + brushed * 0.18 + min(glowTotal, 1.0) * 0.15);
+    color += sheen;
+    float alpha = edgeFade * (0.72 + min(glowTotal, 1.0) * 0.22);
+    gl_FragColor = vec4(color, alpha);
   }
 `;
