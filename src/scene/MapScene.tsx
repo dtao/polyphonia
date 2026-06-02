@@ -19,7 +19,7 @@ export function MapScene({ map, tracks, editMode }: { map: CompositionMap; track
   }
   return (
     <group>
-      <StartMarker map={map} editMode={editMode} />
+      {editMode && <StartMarker map={map} editMode={editMode} />}
       <WalkableFloor segments={map.segments} tracks={tracks} editMode={editMode} />
       {map.segments.map((segment) => (
         <Segment

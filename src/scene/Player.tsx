@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { useStore, viewState } from "../store";
@@ -20,7 +20,8 @@ export function Player() {
 
   // Drop in at the shared ground position and facing direction (both preserved
   // across mode switches), at eye height and horizontal.
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!entered) return;
     camera.position.set(viewState.x, 1.7, viewState.z);
     camera.lookAt(viewState.x + viewState.fx, 1.7, viewState.z + viewState.fz);
     euler.current.setFromQuaternion(camera.quaternion, "YXZ");
@@ -28,7 +29,7 @@ export function Player() {
     look.current.yaw = euler.current.y;
     look.current.targetPitch = euler.current.x;
     look.current.targetYaw = euler.current.y;
-  }, [camera]);
+  }, [camera, entered]);
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {

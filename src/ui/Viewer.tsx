@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Canvas } from "@react-three/fiber";
 import { Scene } from "../scene/Scene";
-import { useStore } from "../store";
+import { moveViewToMapStart, useStore } from "../store";
 import { fetchPublishedComposition, isSharingConfigured } from "../cloud";
 import { ArtistAvatar, artistPath } from "./galleryStyles";
 
@@ -31,6 +31,7 @@ export function Viewer() {
       .then((c) => {
         if (cancelled) return;
         if (!c) return setStatus("notfound");
+        moveViewToMapStart(c.map);
         useStore.setState({ composition: c });
         setStatus("ready");
       })
@@ -48,6 +49,7 @@ export function Viewer() {
 
   function enter() {
     if (useStore.getState().engine) return;
+    useStore.getState().resetViewToMapStart();
     useStore.getState().setEntered(true);
     useStore.getState().startAudio();
   }
