@@ -535,36 +535,41 @@ function PathMaterial({ tracks, editMode, selected }: { tracks: TrackDef[]; edit
   const material = useRef<THREE.ShaderMaterial>(null);
   const engine = useStore((s) => s.engine);
   const smoothedLevels = useRef(new Float32Array(MAX_TRACK_LIGHTS));
-  const uniforms = useMemo(() => {
-    const positions = Array.from({ length: MAX_TRACK_LIGHTS }, () => new THREE.Vector3(0, 0, 0));
-    const colors = Array.from({ length: MAX_TRACK_LIGHTS }, () => new THREE.Color("#000000"));
-    const levels = new Float32Array(MAX_TRACK_LIGHTS);
-    tracks.slice(0, MAX_TRACK_LIGHTS).forEach((track, i) => {
-      const volume = track.volume ?? 1;
-      const refDistance = track.refDistance ?? 4;
-      const maxDistance = track.maxDistance ?? 40;
-      positions[i].set(track.position[0], track.position[2], Math.max(7, Math.min(24, refDistance + maxDistance * 0.22 + volume * 4)));
-      colors[i].set(track.color);
-    });
-    return {
-      baseColor: { value: new THREE.Color(selected ? "#8fffe8" : "#c8d2df") },
-      trackPositions: { value: positions },
-      trackColors: { value: colors },
-      trackLevels: { value: levels },
-      trackCount: { value: Math.min(tracks.length, MAX_TRACK_LIGHTS) },
-      floorStrength: { value: selected ? 0.92 : editMode ? 0.78 : 0.66 },
-    };
-  }, [tracks, editMode, selected]);
+  // Stable uniforms object — created ONCE. Recreating it on prop changes (e.g.
+  // when `tracks` mutates on the first edit) hands a new object to
+  // <shaderMaterial>, which desyncs the live material from what this useFrame
+  // writes and freezes the shader. So we mutate values in place every frame.
+  const uniforms = useMemo(
+    () => ({
+      baseColor: { value: new THREE.Color("#c8d2df") },
+      trackPositions: { value: Array.from({ length: MAX_TRACK_LIGHTS }, () => new THREE.Vector3(0, 0, 0)) },
+      trackColors: { value: Array.from({ length: MAX_TRACK_LIGHTS }, () => new THREE.Color("#000000")) },
+      trackLevels: { value: new Float32Array(MAX_TRACK_LIGHTS) },
+      trackCount: { value: 0 },
+      floorStrength: { value: 0.66 },
+    }),
+    [],
+  );
 
   useFrame((_, dt) => {
     if (!material.current) return;
-    const levels = material.current.uniforms.trackLevels.value as Float32Array;
+    const u = material.current.uniforms;
+    u.trackCount.value = Math.min(tracks.length, MAX_TRACK_LIGHTS);
     for (let i = 0; i < MAX_TRACK_LIGHTS; i++) {
       const track = tracks[i];
+      if (track) {
+        const volume = track.volume ?? 1;
+        const refDistance = track.refDistance ?? 4;
+        const maxDistance = track.maxDistance ?? 40;
+        u.trackPositions.value[i].set(track.position[0], track.position[2], Math.max(7, Math.min(24, refDistance + maxDistance * 0.22 + volume * 4)));
+        u.trackColors.value[i].set(track.color);
+      }
       const target = track ? engine?.level(track.id) ?? 0 : 0;
       smoothedLevels.current[i] = THREE.MathUtils.damp(smoothedLevels.current[i], target, 12, dt);
-      levels[i] = smoothedLevels.current[i];
+      u.trackLevels.value[i] = smoothedLevels.current[i];
     }
+    u.baseColor.value.set(selected ? "#8fffe8" : "#c8d2df");
+    u.floorStrength.value = selected ? 0.92 : editMode ? 0.78 : 0.66;
   });
 
   return (
