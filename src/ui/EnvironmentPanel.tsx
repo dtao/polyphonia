@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { ENVIRONMENT_PRESETS, EnvironmentType } from "../environment";
 import { useStore } from "../store";
 
@@ -11,14 +10,13 @@ const LABELS: Record<EnvironmentType, string> = {
   galaxy: "Galaxy",
 };
 
-export function EnvironmentPanel() {
+export function EnvironmentPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () => void; onClose: () => void }) {
   const environment = useStore((s) => s.composition.environment);
   const setEnvironment = useStore((s) => s.setEnvironment);
-  const [expanded, setExpanded] = useState(false);
 
-  if (!expanded) {
+  if (!open) {
     return (
-      <button style={collapsed} onClick={() => setExpanded(true)} title="Choose environment">
+      <button style={collapsed} onClick={onOpen} title="Choose environment">
         Environment: {LABELS[environment.type]}
       </button>
     );
@@ -28,7 +26,7 @@ export function EnvironmentPanel() {
     <div style={panel}>
       <div style={head}>
         <strong style={{ fontSize: 13 }}>Environment</strong>
-        <button style={closeBtn} onClick={() => setExpanded(false)} title="Collapse environment controls">
+        <button style={closeBtn} onClick={onClose} title="Collapse environment controls">
           ×
         </button>
       </div>
@@ -73,8 +71,9 @@ export function EnvironmentPanel() {
 
 const collapsed: React.CSSProperties = {
   position: "absolute",
-  top: 84,
+  top: 86,
   left: 14,
+  zIndex: 10,
   padding: "8px 14px",
   fontSize: 13,
   borderRadius: 999,
@@ -88,8 +87,9 @@ const collapsed: React.CSSProperties = {
 
 const panel: React.CSSProperties = {
   position: "absolute",
-  top: 84,
+  top: 86,
   left: 14,
+  zIndex: 30,
   width: 250,
   boxSizing: "border-box",
   padding: 12,

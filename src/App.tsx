@@ -11,6 +11,8 @@ import { MapPanel } from "./ui/MapPanel";
 import { useStore } from "./store";
 import { exportComposition } from "./persistence";
 
+type EditPanel = "environment" | "map" | "loop" | null;
+
 export default function App() {
   const engine = useStore((s) => s.engine);
   const setEngine = useStore((s) => s.setEngine);
@@ -20,6 +22,7 @@ export default function App() {
   const select = useStore((s) => s.select);
   const canUndo = useStore((s) => s.undoStack.length > 0);
   const canRedo = useStore((s) => s.redoStack.length > 0);
+  const [openEditPanel, setOpenEditPanel] = useState<EditPanel>(null);
 
   // Load the saved composition library + auth session on launch.
   useEffect(() => {
@@ -109,6 +112,7 @@ export default function App() {
       document.exitPointerLock?.();
     } else {
       document.body.style.cursor = "auto";
+      setOpenEditPanel(null);
     }
   }, [mode]);
 
@@ -193,9 +197,25 @@ export default function App() {
                 </button>
               </div>
               {mode === "edit" && <AddStem />}
-              {mode === "edit" && <EnvironmentPanel />}
-              {mode === "edit" && <MapPanel />}
-              {mode === "edit" && <LoopPanel />}
+              {mode === "edit" && (
+                <>
+                  <EnvironmentPanel
+                    open={openEditPanel === "environment"}
+                    onOpen={() => setOpenEditPanel("environment")}
+                    onClose={() => setOpenEditPanel(null)}
+                  />
+                  <MapPanel
+                    open={openEditPanel === "map"}
+                    onOpen={() => setOpenEditPanel("map")}
+                    onClose={() => setOpenEditPanel(null)}
+                  />
+                  <LoopPanel
+                    open={openEditPanel === "loop"}
+                    onOpen={() => setOpenEditPanel("loop")}
+                    onClose={() => setOpenEditPanel(null)}
+                  />
+                </>
+              )}
               <PublishControl />
             </>
           )}

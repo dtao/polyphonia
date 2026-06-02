@@ -94,6 +94,7 @@ const addBtn: React.CSSProperties = {
   position: "absolute",
   top: 44,
   left: 14,
+  zIndex: 10,
   padding: "8px 14px",
   fontSize: 13,
   borderRadius: 999,

@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { clampToMap, CompositionMap, isPointInsideMap, MAP_PRESETS, MapPreset, WalkableSegment } from "../map";
 import { useStore } from "../store";
 
@@ -9,7 +8,7 @@ const LABELS: Record<MapPreset, string> = {
   custom: "Custom",
 };
 
-export function MapPanel() {
+export function MapPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () => void; onClose: () => void }) {
   const map = useStore((s) => s.composition.map);
   const tracks = useStore((s) => s.composition.tracks);
   const selectedMapPointKey = useStore((s) => s.selectedMapPointKey);
@@ -22,7 +21,6 @@ export function MapPanel() {
   const resetViewToMapStart = useStore((s) => s.resetViewToMapStart);
   const startGizmoMode = useStore((s) => s.startGizmoMode);
   const setStartGizmoMode = useStore((s) => s.setStartGizmoMode);
-  const [expanded, setExpanded] = useState(false);
   const selectedPoint = selectedMapPointKey ? findPoint(map, selectedMapPointKey) : null;
   const selectedSegment = selectedMapSegmentId ? map.segments.find((segment) => segment.id === selectedMapSegmentId) ?? null : null;
   const averageWidth = map.segments.length ? map.segments.reduce((sum, s) => sum + s.width, 0) / map.segments.length : 7.5;
@@ -76,9 +74,9 @@ export function MapPanel() {
     }
   }
 
-  if (!expanded) {
+  if (!open) {
     return (
-      <button style={collapsed} onClick={() => setExpanded(true)} title="Edit walkable map">
+      <button style={collapsed} onClick={onOpen} title="Edit walkable map">
         Map: {LABELS[map.preset]}
       </button>
     );
@@ -88,7 +86,7 @@ export function MapPanel() {
     <div style={panel}>
       <div style={head}>
         <strong style={{ fontSize: 13 }}>Map</strong>
-        <button style={closeBtn} onClick={() => setExpanded(false)} title="Collapse map controls">
+        <button style={closeBtn} onClick={onClose} title="Collapse map controls">
           ×
         </button>
       </div>
@@ -238,6 +236,7 @@ const collapsed: React.CSSProperties = {
   position: "absolute",
   top: 128,
   left: 14,
+  zIndex: 10,
   padding: "8px 14px",
   fontSize: 13,
   borderRadius: 999,
@@ -253,6 +252,7 @@ const panel: React.CSSProperties = {
   position: "absolute",
   top: 128,
   left: 14,
+  zIndex: 30,
   width: 250,
   boxSizing: "border-box",
   padding: 12,
