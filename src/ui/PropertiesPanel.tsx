@@ -83,10 +83,11 @@ export function PropertiesPanel() {
         <button
           style={duplicateBtn}
           onClick={() => duplicateTrack(track.id).catch((err) => console.error("Failed to duplicate track", err))}
+          title="Duplicate track (Cmd/Ctrl+D)"
         >
           Duplicate
         </button>
-        <button style={deleteBtn} onClick={() => deleteTrack(track.id)}>
+        <button style={deleteBtn} onClick={() => deleteTrack(track.id)} title="Delete track (Delete)">
           Delete
         </button>
       </div>

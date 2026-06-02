@@ -13,6 +13,29 @@ import { exportComposition } from "./persistence";
 
 type EditPanel = "environment" | "map" | "loop" | null;
 
+function pointKey(point: [number, number]): string {
+  return `${point[0].toFixed(3)},${point[1].toFixed(3)}`;
+}
+
+function deleteSelectedMapPoint(): void {
+  const s = useStore.getState();
+  const key = s.selectedMapPointKey;
+  if (!key) return;
+  s.setMap({
+    preset: "custom",
+    segments: s.composition.map.segments.filter((segment) => pointKey(segment.start) !== key && pointKey(segment.end) !== key),
+  });
+  s.selectMapPoint(null);
+  s.setBranchStartPoint(null);
+}
+
+function toggleBranchPlacementFromSelection(): void {
+  const s = useStore.getState();
+  const key = s.selectedMapPointKey;
+  if (!key) return;
+  s.setBranchStartPoint(s.branchStartPointKey === key ? null : key);
+}
+
 export default function App() {
   const engine = useStore((s) => s.engine);
   const setEngine = useStore((s) => s.setEngine);
@@ -98,6 +121,34 @@ export default function App() {
       const el = document.activeElement;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return;
       const modifier = e.metaKey || e.ctrlKey;
+      const s = useStore.getState();
+      if (s.mode === "edit" && (e.code === "Delete" || e.code === "Backspace")) {
+        if (s.selectedId) {
+          e.preventDefault();
+          s.deleteTrack(s.selectedId);
+          return;
+        }
+        if (s.selectedMapPointKey) {
+          e.preventDefault();
+          deleteSelectedMapPoint();
+          return;
+        }
+      }
+      if (s.mode === "edit" && e.code === "KeyB" && !modifier && !e.altKey) {
+        if (s.selectedMapPointKey) {
+          e.preventDefault();
+          setOpenEditPanel("map");
+          toggleBranchPlacementFromSelection();
+          return;
+        }
+      }
+      if (s.mode === "edit" && modifier && e.code === "KeyD") {
+        if (s.selectedId) {
+          e.preventDefault();
+          void s.duplicateTrack(s.selectedId);
+          return;
+        }
+      }
       if (modifier && e.key.toLowerCase() === "z" && useStore.getState().entered) {
         e.preventDefault();
         if (e.shiftKey) void useStore.getState().redo();

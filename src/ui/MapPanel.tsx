@@ -131,10 +131,20 @@ export function MapPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () 
               : "Select a corridor or handle"}
         </div>
         <div style={actionRow}>
-          <button style={{ ...actionBtn, opacity: selectedPoint ? 1 : 0.45 }} onClick={toggleBranchPlacement} disabled={!selectedPoint}>
+          <button
+            style={{ ...actionBtn, opacity: selectedPoint ? 1 : 0.45 }}
+            onClick={toggleBranchPlacement}
+            disabled={!selectedPoint}
+            title="Place branch from selected point (B)"
+          >
             {branchStartPointKey ? "Cancel branch" : "Place branch"}
           </button>
-          <button style={{ ...dangerBtn, opacity: selectedPoint ? 1 : 0.45 }} onClick={deletePoint} disabled={!selectedPoint}>
+          <button
+            style={{ ...dangerBtn, opacity: selectedPoint ? 1 : 0.45 }}
+            onClick={deletePoint}
+            disabled={!selectedPoint}
+            title="Delete selected point (Delete)"
+          >
             Delete point
           </button>
         </div>
