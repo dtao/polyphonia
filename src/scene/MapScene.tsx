@@ -591,35 +591,36 @@ function ReflectiveUnderfloorMaterial({ tracks }: { tracks: TrackDef[] }) {
   const material = useRef<THREE.ShaderMaterial>(null);
   const engine = useStore((s) => s.engine);
   const smoothedLevels = useRef(new Float32Array(MAX_TRACK_LIGHTS));
-  const uniforms = useMemo(() => {
-    const positions = Array.from({ length: MAX_TRACK_LIGHTS }, () => new THREE.Vector3(0, 0, 0));
-    const colors = Array.from({ length: MAX_TRACK_LIGHTS }, () => new THREE.Color("#000000"));
-    const levels = new Float32Array(MAX_TRACK_LIGHTS);
-    tracks.slice(0, MAX_TRACK_LIGHTS).forEach((track, i) => {
-      const volume = track.volume ?? 1;
-      const refDistance = track.refDistance ?? 4;
-      const maxDistance = track.maxDistance ?? 40;
-      positions[i].set(track.position[0], track.position[2], Math.max(10, Math.min(36, refDistance + maxDistance * 0.34 + volume * 6)));
-      colors[i].set(track.color);
-    });
-    return {
-      trackPositions: { value: positions },
-      trackColors: { value: colors },
-      trackLevels: { value: levels },
-      trackCount: { value: Math.min(tracks.length, MAX_TRACK_LIGHTS) },
+  // Stable uniforms object (see PathMaterial): recreating it on `tracks` change
+  // would freeze this shader after the first edit. Mutate values in place.
+  const uniforms = useMemo(
+    () => ({
+      trackPositions: { value: Array.from({ length: MAX_TRACK_LIGHTS }, () => new THREE.Vector3(0, 0, 0)) },
+      trackColors: { value: Array.from({ length: MAX_TRACK_LIGHTS }, () => new THREE.Color("#000000")) },
+      trackLevels: { value: new Float32Array(MAX_TRACK_LIGHTS) },
+      trackCount: { value: 0 },
       time: { value: 0 },
-    };
-  }, [tracks]);
+    }),
+    [],
+  );
 
   useFrame(({ clock }, dt) => {
     if (!material.current) return;
-    material.current.uniforms.time.value = clock.elapsedTime;
-    const levels = material.current.uniforms.trackLevels.value as Float32Array;
+    const u = material.current.uniforms;
+    u.time.value = clock.elapsedTime;
+    u.trackCount.value = Math.min(tracks.length, MAX_TRACK_LIGHTS);
     for (let i = 0; i < MAX_TRACK_LIGHTS; i++) {
       const track = tracks[i];
+      if (track) {
+        const volume = track.volume ?? 1;
+        const refDistance = track.refDistance ?? 4;
+        const maxDistance = track.maxDistance ?? 40;
+        u.trackPositions.value[i].set(track.position[0], track.position[2], Math.max(10, Math.min(36, refDistance + maxDistance * 0.34 + volume * 6)));
+        u.trackColors.value[i].set(track.color);
+      }
       const target = track ? engine?.level(track.id) ?? 0 : 0;
       smoothedLevels.current[i] = THREE.MathUtils.damp(smoothedLevels.current[i], target, 9, dt);
-      levels[i] = smoothedLevels.current[i];
+      u.trackLevels.value[i] = smoothedLevels.current[i];
     }
   });
 

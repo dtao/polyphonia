@@ -80,8 +80,8 @@ depends only on earlier ones.
 - [ ] **Stem direction** — similar to real-world speakers, it should be possible for stems to be unidirectional (current behavior) or to be "pointed" in a direction, with the ability for the user to configure the width and dispersion of the sound.
 - [x] Paths have "gaps" at bridge points where floor isn't filled in.
 - [x] Stem names should not be visible in Explore mode (only in Edit mode).
-- [ ] Lights stop pulsing (until browser refresh) after switching to Edit mode.
-- [ ] Locations of light points do not update (until browser refresh) after moving stems in Edit mode.
+- [x] Lights stop pulsing (until browser refresh) after switching to Edit mode.
+- [x] Locations of light points do not update (until browser refresh) after moving stems in Edit mode.
 - [ ] Extending one segment into another should "connect" them (unified bridge point).
 - [x] Add keyboard shortcuts for common actions: add/delete stem, duplicate stem, add/delete bridge point
 - [x] Too difficult to select branch point that's already connected to 2 segments: often one of the segments gets selected instead.
