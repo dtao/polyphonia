@@ -3,7 +3,9 @@ import { useFrame, ThreeEvent } from "@react-three/fiber";
 import { Billboard, Text } from "@react-three/drei";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
+import { isPointInsideMap } from "../map";
 import { markerObjects, useStore } from "../store";
+import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 
 // A glowing orb that marks where a stem lives in space and pulses with its
 // audio level — a visual anchor for the sound you hear from that direction.
@@ -12,6 +14,7 @@ export function TrackMarker({ track }: { track: TrackDef }) {
   const engine = useStore((s) => s.engine);
   const mode = useStore((s) => s.mode);
   const selected = useStore((s) => s.selectedId === track.id);
+  const map = useStore((s) => s.composition.map);
   const core = useRef<THREE.Mesh>(null);
   const aura = useRef<THREE.Mesh>(null);
   const outerAura = useRef<THREE.Mesh>(null);
@@ -23,6 +26,8 @@ export function TrackMarker({ track }: { track: TrackDef }) {
   const smoothedLevel = useRef(0);
   const seed = useMemo(() => trackSeed(track.id), [track.id]);
   const [x, , z] = track.position;
+  const onWalkablePath = !map.segments.length || isPointInsideMap(map, [x, z]);
+  const footprintHeight = (onWalkablePath ? PATH_HEIGHT : UNDERFLOOR_HEIGHT) + 0.08;
   const volume = track.volume ?? 1;
   const orbRadius = 0.42 + volume * 0.32;
   const markerTop = 1.1 + orbRadius * 0.9;
@@ -94,7 +99,7 @@ export function TrackMarker({ track }: { track: TrackDef }) {
       onPointerOut={() => setCursor("auto")}
     >
       {mode === "edit" && selected && <FalloffMap track={track} />}
-      <mesh position={[0, 0.08, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh position={[0, footprintHeight, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[orbRadius * 0.95, orbRadius * 1.55, 48]} />
         <meshBasicMaterial color={track.color} transparent opacity={0.28} toneMapped={false} depthWrite={false} />
       </mesh>

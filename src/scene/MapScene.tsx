@@ -5,10 +5,9 @@ import * as THREE from "three";
 import { TrackDef } from "../composition";
 import { clampToMap, CompositionMap, WalkableSegment } from "../map";
 import { useStore } from "../store";
+import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 
 const MAX_TRACK_LIGHTS = 12;
-const PATH_HEIGHT = 0.0;
-const UNDERFLOOR_HEIGHT = -2.15;
 
 export function MapScene({ map, tracks, editMode }: { map: CompositionMap; tracks: TrackDef[]; editMode: boolean }) {
   const selectedMapSegmentId = useStore((s) => s.selectedMapSegmentId);
