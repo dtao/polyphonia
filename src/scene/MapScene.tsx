@@ -59,8 +59,9 @@ function Room({ room, editMode, selected }: { room: MapRoom; editMode: boolean; 
   const [cx, cz] = room.center;
   const h = room.height;
   const boxes = roomWallBoxes(room);
-  const wallOpacity = editMode ? 0.3 : 0.94;
+  const wallOpacity = editMode ? 0.3 : 1;
   const wallColor = selected ? "#8fffe8" : "#9aa6bd";
+  const wallTransparent = editMode;
 
   return (
     <>
@@ -87,12 +88,12 @@ function Room({ room, editMode, selected }: { room: MapRoom; editMode: boolean; 
         </mesh>
         <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, h, 0]}>
           <planeGeometry args={[room.width, room.depth]} />
-          <meshStandardMaterial color={wallColor} roughness={0.85} metalness={0.05} transparent opacity={wallOpacity} depthWrite={!editMode} side={THREE.DoubleSide} />
+          <meshStandardMaterial color={wallColor} roughness={0.85} metalness={0.05} transparent={wallTransparent} opacity={wallOpacity} depthWrite={!editMode} side={THREE.DoubleSide} />
         </mesh>
         {boxes.map((b, i) => (
           <mesh key={i} position={[b.pos[0], h / 2, b.pos[1]]}>
             <boxGeometry args={[b.size[0], h, b.size[1]]} />
-            <meshStandardMaterial color={wallColor} roughness={0.85} metalness={0.05} transparent opacity={wallOpacity} depthWrite={!editMode} side={THREE.DoubleSide} />
+            <meshStandardMaterial color={wallColor} roughness={0.85} metalness={0.05} transparent={wallTransparent} opacity={wallOpacity} depthWrite={!editMode} side={THREE.DoubleSide} />
           </mesh>
         ))}
       </group>
