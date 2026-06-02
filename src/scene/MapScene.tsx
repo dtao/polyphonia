@@ -795,7 +795,13 @@ function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpoint
   }
 
   return (
-    <group onPointerMove={moveEndpoint} onPointerUp={endDrag} onPointerCancel={endDrag} onPointerLeave={endDrag}>
+    <group onPointerUp={endDrag} onPointerCancel={endDrag}>
+      {drag.current && (
+        <mesh position={[0, 0.64, 0]} rotation={[-Math.PI / 2, 0, 0]} onPointerMove={moveEndpoint} onPointerUp={endDrag} onPointerCancel={endDrag}>
+          <planeGeometry args={[240, 240]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
+        </mesh>
+      )}
       {endpoints.map(({ id, key, point, shared, hasRoom }) => {
         const active = activeId === id;
         const selected = selectedMapPointKey === key;
