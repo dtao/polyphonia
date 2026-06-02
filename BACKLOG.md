@@ -86,6 +86,6 @@ depends only on earlier ones.
 - [ ] Add keyboard shortcuts for common actions: add/delete stem, duplicate stem, add/delete bridge point
 - [ ] Too difficult to select branch point that's already connected to 2 segments: often one of the segments gets selected instead.
 - [x] Map button and panel are always over Environment panel - only one should be open at a time.
-- [ ] Vertical margin is inconsistent between "Add stem", "Environment", and "Map" buttons.
+- [x] Vertical margin is inconsistent between "Add stem", "Environment", and "Map" buttons.
 
 **Cross-cutting** (interleave opportunistically): mobile / touch controls, loading & error states.

@@ -71,11 +71,14 @@ export function EnvironmentPanel({ open, onOpen, onClose }: { open: boolean; onO
 
 const collapsed: React.CSSProperties = {
   position: "absolute",
-  top: 86,
+  top: 92,
   left: 14,
   zIndex: 10,
-  padding: "8px 14px",
+  height: 36,
+  boxSizing: "border-box",
+  padding: "0 14px",
   fontSize: 13,
+  lineHeight: "34px",
   borderRadius: 999,
   border: "1px solid rgba(255,255,255,0.18)",
   background: "rgba(12,15,28,0.72)",
@@ -87,7 +90,7 @@ const collapsed: React.CSSProperties = {
 
 const panel: React.CSSProperties = {
   position: "absolute",
-  top: 86,
+  top: 92,
   left: 14,
   zIndex: 30,
   width: 250,
