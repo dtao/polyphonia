@@ -11,6 +11,7 @@ export function RoomPanel() {
   if (mode !== "edit" || !room) return null;
 
   const wallSpan = room.entranceSide === "north" || room.entranceSide === "south" ? room.width : room.depth;
+  const attached = !!room.attachment;
 
   return (
     <div style={panel} data-inspector>
@@ -28,25 +29,29 @@ export function RoomPanel() {
         onChange={(v) => updateRoom(room.id, { entranceWidth: v })}
       />
 
-      <div style={{ ...sliderHead, marginTop: 8 }}>
-        <span>Entrance side</span>
-      </div>
-      <div style={sideGrid}>
-        {(["north", "south", "east", "west"] as RoomSide[]).map((side) => (
-          <button
-            key={side}
-            style={{ ...sideBtn, ...(room.entranceSide === side ? sideActive : null) }}
-            onClick={() => updateRoom(room.id, { entranceSide: side, entranceOffset: 0 })}
-          >
-            {side[0].toUpperCase() + side.slice(1)}
-          </button>
-        ))}
-      </div>
+      {!attached && (
+        <>
+          <div style={{ ...sliderHead, marginTop: 8 }}>
+            <span>Entrance side</span>
+          </div>
+          <div style={sideGrid}>
+            {(["north", "south", "east", "west"] as RoomSide[]).map((side) => (
+              <button
+                key={side}
+                style={{ ...sideBtn, ...(room.entranceSide === side ? sideActive : null) }}
+                onClick={() => updateRoom(room.id, { entranceSide: side, entranceOffset: 0 })}
+              >
+                {side[0].toUpperCase() + side.slice(1)}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
       <button style={deleteBtn} onClick={() => deleteRoom(room.id)} title="Delete selected room (Delete)">
         Delete room
       </button>
-      <div style={hint}>Drag the room to move it; keep the doorway against a path so it stays connected.</div>
+      <div style={hint}>{attached ? "This room is attached to a terminal path point. Move the path point to move the room." : "Legacy room: place its doorway against a path so it stays connected."}</div>
     </div>
   );
 }

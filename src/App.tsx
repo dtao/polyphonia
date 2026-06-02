@@ -15,20 +15,11 @@ import { exportComposition } from "./persistence";
 
 type EditPanel = "environment" | "map" | "loop" | null;
 
-function pointKey(point: [number, number]): string {
-  return `${point[0].toFixed(3)},${point[1].toFixed(3)}`;
-}
-
 function deleteSelectedMapPoint(): void {
   const s = useStore.getState();
   const key = s.selectedMapPointKey;
   if (!key) return;
-  s.setMap({
-    preset: "custom",
-    segments: s.composition.map.segments.filter((segment) => pointKey(segment.start) !== key && pointKey(segment.end) !== key),
-  });
-  s.selectMapPoint(null);
-  s.setBranchStartPoint(null);
+  s.deleteMapPoint(key);
 }
 
 function modKey(): string {
@@ -54,7 +45,7 @@ function hudShortcutHint({
   if (mode === "explore") return "WASD + mouse to move · click scene for mouse look · Esc releases cursor · Tab to edit · F fullscreen";
   if (selectedId) return `drag to move stem · Delete removes · ${mod}+D duplicates · Esc clears`;
   if (branchStartPointKey) return "click floor to place branch · B cancels · Delete removes point · Esc clears";
-  if (selectedMapPointKey) return "drag point to reshape · B places branch · Delete removes point · Esc clears";
+  if (selectedMapPointKey) return "drag point to reshape · terminal points can branch or become rooms · Delete removes point · Esc clears";
   if (selectedMapSegmentId) return "adjust width in Map · click point to edit branches · Esc clears";
   if (selectedStart) return "drag start marker · choose Move/Rotate in Map · Esc clears";
   return `WASD to move · drag to orbit · click a track or map point · ${mod}+O adds stem · ${mod}+Z undo · F fullscreen`;

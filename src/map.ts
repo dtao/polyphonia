@@ -8,19 +8,27 @@ export interface WalkableSegment {
 }
 
 export type RoomSide = "north" | "south" | "east" | "west";
+export type SegmentEnd = "start" | "end";
+
+export interface RoomAttachment {
+  segmentId: string;
+  end: SegmentEnd;
+}
 
 // An enclosed rectangular space (walls + ceiling) with one doorway that opens
-// onto the rest of the walkable map. Axis-aligned for now. (Sonic character —
-// reverb/echo from wall reflections — is intended for a later change.)
+// onto the rest of the walkable map. (Sonic character — reverb/echo from wall
+// reflections — is intended for a later change.)
 export interface MapRoom {
   id: string;
   center: [number, number]; // x, z of the interior center
+  rotation: number; // radians around y; room geometry is defined in local x/z
   width: number; // interior extent along x
   depth: number; // interior extent along z
   height: number; // wall / ceiling height
   entranceSide: RoomSide; // which wall has the doorway
   entranceWidth: number; // doorway opening width
   entranceOffset: number; // doorway center offset along the entrance wall (0 = centered)
+  attachment?: RoomAttachment; // rooms created from path endpoints stay attached to that branch point
 }
 
 export interface CompositionMap {
@@ -72,7 +80,7 @@ export function normalizeMap(value: Partial<CompositionMap> | undefined): Compos
   const rooms = Array.isArray(value?.rooms) ? value.rooms.filter(isMapRoom).map(normalizeRoom) : fallback.rooms;
   const startPosition = isPoint(value?.start?.position) ? value.start.position : fallback.start.position;
   const startDirection = normalizeDirection(isPoint(value?.start?.direction) ? value.start.direction : fallback.start.direction);
-  const map = {
+  const map = alignAttachedRooms({
     preset,
     segments,
     rooms,
@@ -81,7 +89,7 @@ export function normalizeMap(value: Partial<CompositionMap> | undefined): Compos
       position: startPosition,
       direction: startDirection,
     },
-  };
+  });
   return {
     ...map,
     start: {
@@ -108,7 +116,7 @@ export function clampToMap(map: CompositionMap, point: [number, number]): [numbe
     }
   };
   for (const segment of map.segments) consider(closestPointInSegment(point, segment));
-  for (const room of map.rooms) for (const rect of roomRegions(room)) consider(closestInRect(point, rect));
+  for (const room of map.rooms) for (const rect of roomRegionRects(room)) consider(fromRoomLocal(room, closestInRect(toRoomLocal(room, point), rect)));
   return best;
 }
 
@@ -122,7 +130,7 @@ export function isPointInsideMap(map: CompositionMap, point: [number, number]): 
 export function interiorRect(room: MapRoom): Rect {
   const hw = room.width / 2;
   const hd = room.depth / 2;
-  return { minX: room.center[0] - hw, maxX: room.center[0] + hw, minZ: room.center[1] - hd, maxZ: room.center[1] + hd };
+  return { minX: -hw, maxX: hw, minZ: -hd, maxZ: hd };
 }
 
 // The walkable doorway threshold: a strip the entrance width wide that bridges
@@ -130,10 +138,10 @@ export function interiorRect(room: MapRoom): Rect {
 function doorwayRect(room: MapRoom): Rect {
   const r = interiorRect(room);
   const ew = Math.max(0.5, room.entranceWidth);
-  const a = room.center[0] + room.entranceOffset - ew / 2;
-  const b = room.center[0] + room.entranceOffset + ew / 2;
-  const c = room.center[1] + room.entranceOffset - ew / 2;
-  const d = room.center[1] + room.entranceOffset + ew / 2;
+  const a = room.entranceOffset - ew / 2;
+  const b = room.entranceOffset + ew / 2;
+  const c = room.entranceOffset - ew / 2;
+  const d = room.entranceOffset + ew / 2;
   switch (room.entranceSide) {
     case "north":
       return { minX: a, maxX: b, minZ: r.minZ - DOOR_DEPTH, maxZ: r.minZ };
@@ -146,12 +154,88 @@ function doorwayRect(room: MapRoom): Rect {
   }
 }
 
-export function roomRegions(room: MapRoom): Rect[] {
+export function roomRegionRects(room: MapRoom): Rect[] {
   return [interiorRect(room), doorwayRect(room)];
 }
 
 export function roomContains(room: MapRoom, point: [number, number]): boolean {
-  return roomRegions(room).some((rect) => pointInRect(point, rect));
+  const local = toRoomLocal(room, point);
+  return roomRegionRects(room).some((rect) => pointInRect(local, rect));
+}
+
+export function mapPointKey(point: [number, number]): string {
+  return `${point[0].toFixed(3)},${point[1].toFixed(3)}`;
+}
+
+export function endpointCount(map: Pick<CompositionMap, "segments">, key: string): number {
+  return map.segments.reduce((count, segment) => count + (mapPointKey(segment.start) === key ? 1 : 0) + (mapPointKey(segment.end) === key ? 1 : 0), 0);
+}
+
+export function isTerminalMapPoint(map: Pick<CompositionMap, "segments">, key: string): boolean {
+  return endpointCount(map, key) === 1;
+}
+
+export function roomAttachedToPoint(map: Pick<CompositionMap, "segments" | "rooms">, key: string): MapRoom | null {
+  return map.rooms.find((room) => {
+    const point = roomAttachmentPoint(map, room);
+    return point ? mapPointKey(point) === key : false;
+  }) ?? null;
+}
+
+export function canExtendTerminalPoint(map: Pick<CompositionMap, "segments" | "rooms">, key: string): boolean {
+  return isTerminalMapPoint(map, key) && !roomAttachedToPoint(map, key);
+}
+
+export function roomAttachmentPoint(map: Pick<CompositionMap, "segments">, room: MapRoom): [number, number] | null {
+  if (!room.attachment) return null;
+  const segment = map.segments.find((s) => s.id === room.attachment?.segmentId);
+  if (!segment) return null;
+  return room.attachment.end === "start" ? segment.start : segment.end;
+}
+
+export function attachmentForPoint(map: Pick<CompositionMap, "segments">, key: string): RoomAttachment | null {
+  for (const segment of map.segments) {
+    if (mapPointKey(segment.start) === key) return { segmentId: segment.id, end: "start" };
+    if (mapPointKey(segment.end) === key) return { segmentId: segment.id, end: "end" };
+  }
+  return null;
+}
+
+export function alignAttachedRooms(map: CompositionMap): CompositionMap {
+  return {
+    ...map,
+    rooms: map.rooms.map((room) => {
+      if (!room.attachment) return room;
+      const placed = attachedRoomPlacement(map, room);
+      return placed ? { ...room, ...placed, entranceOffset: 0 } : room;
+    }),
+  };
+}
+
+function attachedRoomPlacement(map: Pick<CompositionMap, "segments">, room: MapRoom): Pick<MapRoom, "center" | "rotation" | "entranceSide"> | null {
+  if (!room.attachment) return null;
+  const segment = map.segments.find((s) => s.id === room.attachment?.segmentId);
+  if (!segment) return null;
+  const point = room.attachment.end === "start" ? segment.start : segment.end;
+  const other = room.attachment.end === "start" ? segment.end : segment.start;
+  const out = normalizeDirection([point[0] - other[0], point[1] - other[1]]);
+  const rotation = Math.atan2(out[0], out[1]);
+  const center: [number, number] = [point[0] + out[0] * (room.depth / 2), point[1] + out[1] * (room.depth / 2)];
+  return { center, rotation, entranceSide: "north" };
+}
+
+function toRoomLocal(room: MapRoom, point: [number, number]): [number, number] {
+  const dx = point[0] - room.center[0];
+  const dz = point[1] - room.center[1];
+  const c = Math.cos(room.rotation);
+  const s = Math.sin(room.rotation);
+  return [dx * c - dz * s, dx * s + dz * c];
+}
+
+function fromRoomLocal(room: MapRoom, point: [number, number]): [number, number] {
+  const c = Math.cos(room.rotation);
+  const s = Math.sin(room.rotation);
+  return [room.center[0] + point[0] * c + point[1] * s, room.center[1] - point[0] * s + point[1] * c];
 }
 
 function pointInRect(p: [number, number], r: Rect): boolean {
@@ -213,6 +297,7 @@ function isMapRoom(value: unknown): value is MapRoom {
   return (
     typeof r?.id === "string" &&
     isPoint(r.center) &&
+    (r.rotation === undefined || (typeof r.rotation === "number" && Number.isFinite(r.rotation))) &&
     typeof r.width === "number" &&
     typeof r.depth === "number" &&
     typeof r.height === "number" &&
@@ -229,13 +314,20 @@ function normalizeRoom(room: MapRoom): MapRoom {
   return {
     id: room.id,
     center: room.center,
+    rotation: Number.isFinite(room.rotation) ? room.rotation : 0,
     width,
     depth,
     height: clamp(room.height ?? 3.2, 2, 12),
     entranceSide: room.entranceSide,
     entranceWidth,
     entranceOffset: clamp(room.entranceOffset ?? 0, -maxOffset, maxOffset),
+    attachment: isRoomAttachment(room.attachment) ? room.attachment : undefined,
   };
+}
+
+function isRoomAttachment(value: unknown): value is RoomAttachment {
+  const attachment = value as RoomAttachment;
+  return typeof attachment?.segmentId === "string" && (attachment.end === "start" || attachment.end === "end");
 }
 
 function isPoint(value: unknown): value is [number, number] {

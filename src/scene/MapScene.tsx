@@ -3,7 +3,7 @@ import { TransformControls } from "@react-three/drei";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
-import { clampToMap, CompositionMap, MapRoom, ROOM_WALL_THICKNESS, WalkableSegment } from "../map";
+import { canExtendTerminalPoint, clampToMap, CompositionMap, MapRoom, roomAttachedToPoint, ROOM_WALL_THICKNESS, WalkableSegment } from "../map";
 import { useStore } from "../store";
 import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 
@@ -56,8 +56,6 @@ function Rooms({ map, editMode }: { map: CompositionMap; editMode: boolean }) {
 
 function Room({ room, editMode, selected }: { room: MapRoom; editMode: boolean; selected: boolean }) {
   const selectRoom = useStore((s) => s.selectRoom);
-  const updateRoom = useStore((s) => s.updateRoom);
-  const [obj, setObj] = useState<THREE.Group | null>(null);
   const [cx, cz] = room.center;
   const h = room.height;
   const boxes = roomWallBoxes(room);
@@ -67,8 +65,8 @@ function Room({ room, editMode, selected }: { room: MapRoom; editMode: boolean; 
   return (
     <>
       <group
-        ref={setObj}
         position={[cx, 0, cz]}
+        rotation={[0, room.rotation, 0]}
         onClick={(e) => {
           if (!editMode) return;
           e.stopPropagation();
@@ -98,9 +96,6 @@ function Room({ room, editMode, selected }: { room: MapRoom; editMode: boolean; 
           </mesh>
         ))}
       </group>
-      {selected && obj && (
-        <TransformControls object={obj} mode="translate" showY={false} size={1} onObjectChange={() => updateRoom(room.id, { center: [obj.position.x, obj.position.z] })} />
-      )}
     </>
   );
 }
@@ -340,7 +335,7 @@ function BranchPlacementLayer({ map }: { map: CompositionMap }) {
   const startPoint = branchStartPointKey ? findPoint(map, branchStartPointKey) : null;
   const averageWidth = map.segments.length ? map.segments.reduce((sum, s) => sum + s.width, 0) / map.segments.length : 7.5;
 
-  if (!branchStartPointKey || !startPoint) return null;
+  if (!branchStartPointKey || !startPoint || !canExtendTerminalPoint(map, branchStartPointKey)) return null;
 
   return (
     <group>
@@ -749,8 +744,9 @@ function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpoint
       key,
       point,
       shared: (endpointCounts.get(key) ?? 0) > 1,
+      hasRoom: !!roomAttachedToPoint(map, key),
     }));
-  }, [endpointCounts, map.segments]);
+  }, [endpointCounts, map]);
 
   function moveEndpoint(e: ThreeEvent<PointerEvent>) {
     if (!drag.current) return;
@@ -800,9 +796,10 @@ function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpoint
 
   return (
     <group onPointerMove={moveEndpoint} onPointerUp={endDrag} onPointerCancel={endDrag} onPointerLeave={endDrag}>
-      {endpoints.map(({ id, key, point, shared }) => {
+      {endpoints.map(({ id, key, point, shared, hasRoom }) => {
         const active = activeId === id;
         const selected = selectedMapPointKey === key;
+        const terminalColor = hasRoom ? "#8fffe8" : "#ffffff";
         return (
           <mesh
             key={id}
@@ -820,11 +817,11 @@ function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpoint
               if (!drag.current) document.body.style.cursor = "auto";
             }}
           >
-            <sphereGeometry args={[shared ? 1.6 : 1.35, 24, 16]} />
+            <sphereGeometry args={[shared || hasRoom ? 1.6 : 1.35, 24, 16]} />
             <meshBasicMaterial transparent opacity={0} depthWrite={false} />
             <mesh>
-              <sphereGeometry args={[active ? 0.95 : selected ? 0.82 : shared ? 0.72 : 0.58, 24, 16]} />
-              <meshBasicMaterial color={active ? "#8fffe8" : selected ? "#9fb4ff" : shared ? "#ffd166" : "#ffffff"} transparent opacity={1} toneMapped={false} />
+              <sphereGeometry args={[active ? 0.95 : selected ? 0.82 : shared || hasRoom ? 0.72 : 0.58, 24, 16]} />
+              <meshBasicMaterial color={active ? "#8fffe8" : selected ? "#9fb4ff" : shared ? "#ffd166" : terminalColor} transparent opacity={1} toneMapped={false} />
             </mesh>
             {(active || selected) && (
               <>

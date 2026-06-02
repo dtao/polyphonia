@@ -127,7 +127,7 @@ export function MapPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () 
         >
           Snap stems to map
         </button>
-        <div style={hint}>Select a path point to grow the path or add a room.</div>
+        <div style={hint}>Select a terminal path point to grow the path or attach a room.</div>
       </div>
 
       {warnings.length > 0 && (

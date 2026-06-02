@@ -15,7 +15,7 @@ import {
 } from "./persistence";
 import { newId } from "./id";
 import { EnvironmentSettings, defaultEnvironment, normalizeEnvironment } from "./environment";
-import { CompositionMap, MapRoom, RoomSide, defaultMap, normalizeMap } from "./map";
+import { attachmentForPoint, canExtendTerminalPoint, CompositionMap, MapRoom, defaultMap, mapPointKey, normalizeMap } from "./map";
 import { ArtistIdentity } from "./artist";
 import {
   AuthUser,
@@ -225,10 +225,6 @@ function mapPointExists(segment: { start: [number, number]; end: [number, number
   return mapPointKey(segment.start) === key || mapPointKey(segment.end) === key;
 }
 
-function mapPointKey(point: [number, number]): string {
-  return `${point[0].toFixed(3)},${point[1].toFixed(3)}`;
-}
-
 export function moveViewToMapStart(map: CompositionMap): void {
   viewState.x = map.start.position[0];
   viewState.z = map.start.position[1];
@@ -344,6 +340,7 @@ export const useStore = create<StoreState>((set, get) => ({
     const room: MapRoom = {
       id: newId(),
       center: [sx, sz - forward * 12],
+      rotation: 0,
       width: 14,
       depth: 12,
       height: 3.4,
@@ -370,73 +367,55 @@ export const useStore = create<StoreState>((set, get) => ({
   // so the incoming path runs perpendicular to (straight into) the entrance wall.
   addRoomAtPoint: (pointKey) => {
     const map = get().composition.map;
-    const keyOf = (p: [number, number]) => `${p[0].toFixed(3)},${p[1].toFixed(3)}`;
-    let point: [number, number] | null = null;
-    let dir: [number, number] = [0, -1]; // direction the path travels arriving at the point
-    for (const seg of map.segments) {
-      if (keyOf(seg.start) === pointKey) {
-        point = seg.start;
-        dir = unitDir([seg.start[0] - seg.end[0], seg.start[1] - seg.end[1]]);
-        break;
-      }
-      if (keyOf(seg.end) === pointKey) {
-        point = seg.end;
-        dir = unitDir([seg.end[0] - seg.start[0], seg.end[1] - seg.start[1]]);
-        break;
-      }
-    }
-    if (!point) return;
+    if (!canExtendTerminalPoint(map, pointKey)) return;
+    const attachment = attachmentForPoint(map, pointKey);
+    if (!attachment) return;
 
-    // The room extends away from the path along the dominant axis of `dir`; the
-    // entrance wall sits at the point, facing back toward the path.
     const width = 14;
     const depth = 12;
-    let entranceSide: RoomSide;
-    let center: [number, number];
-    if (Math.abs(dir[0]) >= Math.abs(dir[1])) {
-      if (dir[0] >= 0) {
-        entranceSide = "west";
-        center = [point[0] + width / 2, point[1]];
-      } else {
-        entranceSide = "east";
-        center = [point[0] - width / 2, point[1]];
-      }
-    } else if (dir[1] >= 0) {
-      entranceSide = "north";
-      center = [point[0], point[1] + depth / 2];
-    } else {
-      entranceSide = "south";
-      center = [point[0], point[1] - depth / 2];
-    }
-
-    const room: MapRoom = { id: newId(), center, width, depth, height: 3.4, entranceSide, entranceWidth: 5, entranceOffset: 0 };
+    const room: MapRoom = {
+      id: newId(),
+      center: [0, 0],
+      rotation: 0,
+      width,
+      depth,
+      height: 3.4,
+      entranceSide: "south",
+      entranceWidth: 5,
+      entranceOffset: 0,
+      attachment,
+    };
     get().setMap({ rooms: [...map.rooms, room] });
     set({ selectedRoomId: room.id, selectedMapPointKey: null, selectedMapSegmentId: null, selectedId: null, selectedStart: false, branchStartPointKey: null });
   },
 
   deleteMapPoint: (pointKey) => {
     const map = get().composition.map;
-    const keyOf = (p: [number, number]) => `${p[0].toFixed(3)},${p[1].toFixed(3)}`;
-    get().setMap({ preset: "custom", segments: map.segments.filter((s) => keyOf(s.start) !== pointKey && keyOf(s.end) !== pointKey) });
-    set({ selectedMapPointKey: null, branchStartPointKey: null });
+    const deletedSegmentIds = new Set(map.segments.filter((s) => mapPointKey(s.start) === pointKey || mapPointKey(s.end) === pointKey).map((s) => s.id));
+    get().setMap({
+      preset: "custom",
+      segments: map.segments.filter((s) => mapPointKey(s.start) !== pointKey && mapPointKey(s.end) !== pointKey),
+      rooms: map.rooms.filter((room) => !room.attachment || !deletedSegmentIds.has(room.attachment.segmentId)),
+    });
+    set({ selectedMapPointKey: null, branchStartPointKey: null, selectedRoomId: null });
   },
 
   // Grow the path: add a new segment extending from the point, and select the
   // new endpoint so it can be dragged into place.
   addBranchAtPoint: (pointKey) => {
     const map = get().composition.map;
-    const keyOf = (p: [number, number]) => `${p[0].toFixed(3)},${p[1].toFixed(3)}`;
+    if (!canExtendTerminalPoint(map, pointKey)) return;
     let point: [number, number] | null = null;
     let dir: [number, number] = [0, -1];
     let width = map.segments.length ? map.segments.reduce((sum, s) => sum + s.width, 0) / map.segments.length : 7.5;
     for (const seg of map.segments) {
-      if (keyOf(seg.start) === pointKey) {
+      if (mapPointKey(seg.start) === pointKey) {
         point = seg.start;
         dir = unitDir([seg.start[0] - seg.end[0], seg.start[1] - seg.end[1]]);
         width = seg.width;
         break;
       }
-      if (keyOf(seg.end) === pointKey) {
+      if (mapPointKey(seg.end) === pointKey) {
         point = seg.end;
         dir = unitDir([seg.end[0] - seg.start[0], seg.end[1] - seg.start[1]]);
         width = seg.width;
@@ -447,7 +426,7 @@ export const useStore = create<StoreState>((set, get) => ({
     const end: [number, number] = [point[0] + dir[0] * 12, point[1] + dir[1] * 12];
     const segment = { id: newId(), start: point, end, width };
     get().setMap({ preset: "custom", segments: [...map.segments, segment] });
-    set({ selectedMapPointKey: keyOf(end), selectedRoomId: null, selectedId: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false });
+    set({ selectedMapPointKey: mapPointKey(end), selectedRoomId: null, selectedId: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false });
   },
 
   setTrackVolume: (id, volume) => {
@@ -594,6 +573,7 @@ export const useStore = create<StoreState>((set, get) => ({
           branchStartPointKey && nextMap.segments.some((segment) => mapPointExists(segment, branchStartPointKey))
             ? branchStartPointKey
             : null,
+        selectedRoomId: s.selectedRoomId && nextMap.rooms.some((room) => room.id === s.selectedRoomId) ? s.selectedRoomId : null,
       };
     }),
 
