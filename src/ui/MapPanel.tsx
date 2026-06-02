@@ -11,15 +11,11 @@ const LABELS: Record<MapPreset, string> = {
 export function MapPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () => void; onClose: () => void }) {
   const map = useStore((s) => s.composition.map);
   const tracks = useStore((s) => s.composition.tracks);
-  const selectedMapSegmentId = useStore((s) => s.selectedMapSegmentId);
   const setMap = useStore((s) => s.setMap);
   const setTrackPosition = useStore((s) => s.setTrackPosition);
   const resetViewToMapStart = useStore((s) => s.resetViewToMapStart);
   const startGizmoMode = useStore((s) => s.startGizmoMode);
   const setStartGizmoMode = useStore((s) => s.setStartGizmoMode);
-  const selectedSegment = selectedMapSegmentId ? map.segments.find((segment) => segment.id === selectedMapSegmentId) ?? null : null;
-  const averageWidth = map.segments.length ? map.segments.reduce((sum, s) => sum + s.width, 0) / map.segments.length : 7.5;
-  const widthValue = selectedSegment?.width ?? averageWidth;
   const warnings = validateMap(map, tracks);
   const outsideTrackCount = countTracksOutsideMap(map, tracks);
 
@@ -30,20 +26,6 @@ export function MapPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () 
 
   function goToStart() {
     resetViewToMapStart();
-  }
-
-  function setWidth(width: number) {
-    if (selectedSegment) {
-      setMap({
-        preset: "custom",
-        segments: map.segments.map((segment) => (segment.id === selectedSegment.id ? { ...segment, width } : segment)),
-      });
-      return;
-    }
-    setMap({
-      preset: "custom",
-      segments: map.segments.map((segment) => ({ ...segment, width })),
-    });
   }
 
   function snapStemsToMap() {
@@ -103,23 +85,6 @@ export function MapPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () 
         Click the <strong>disc</strong> to move the start position; click the <strong>arrow</strong> to rotate the facing direction. Then drag the gizmo.
       </div>
       <div style={editorGroup}>
-        <div style={editorHead}>{selectedSegment ? `Segment ${selectedSegment.id}` : "Select a corridor to set its width"}</div>
-        <label style={widthLabel}>
-          <div style={sliderHead}>
-            <span>{selectedSegment ? "Segment width" : "All widths"}</span>
-            <span>{widthValue.toFixed(1)}</span>
-          </div>
-          <input
-            type="range"
-            min={3}
-            max={18}
-            step={0.5}
-            value={widthValue}
-            onChange={(e) => setWidth(parseFloat(e.target.value))}
-            disabled={!map.segments.length}
-            style={{ width: "100%", accentColor: "#5b8cff", cursor: map.segments.length ? "pointer" : "not-allowed" }}
-          />
-        </label>
         <button
           style={{ ...actionBtn, width: "100%", marginTop: 10, opacity: outsideTrackCount ? 1 : 0.45 }}
           onClick={snapStemsToMap}
@@ -127,7 +92,7 @@ export function MapPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () 
         >
           Snap stems to map
         </button>
-        <div style={hint}>Select a terminal path point to grow the path or attach a room.</div>
+        <div style={hint}>Select a path segment to set its width, or a terminal point to grow the path or attach a room.</div>
       </div>
 
       {warnings.length > 0 && (
@@ -302,23 +267,6 @@ const editorGroup: React.CSSProperties = {
   marginTop: 12,
   paddingTop: 10,
   borderTop: "1px solid rgba(255,255,255,0.1)",
-};
-
-const editorHead: React.CSSProperties = {
-  fontSize: 12,
-  color: "rgba(255,255,255,0.7)",
-};
-
-const widthLabel: React.CSSProperties = {
-  display: "block",
-  marginTop: 10,
-};
-
-const sliderHead: React.CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  fontSize: 12,
-  color: "rgba(255,255,255,0.7)",
 };
 
 const meta: React.CSSProperties = {

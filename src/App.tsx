@@ -3,6 +3,7 @@ import { Canvas } from "@react-three/fiber";
 import { Scene } from "./scene/Scene";
 import { PropertiesPanel } from "./ui/PropertiesPanel";
 import { MapPointPanel } from "./ui/MapPointPanel";
+import { MapSegmentPanel } from "./ui/MapSegmentPanel";
 import { RoomPanel } from "./ui/RoomPanel";
 import { AddStem } from "./ui/AddStem";
 import { EntryScreen } from "./ui/EntryScreen";
@@ -46,7 +47,7 @@ function hudShortcutHint({
   if (selectedId) return `drag to move stem · Delete removes · ${mod}+D duplicates · Esc clears`;
   if (branchStartPointKey) return "click floor to place branch · B cancels · Delete removes point · Esc clears";
   if (selectedMapPointKey) return "drag point to reshape · terminal points can branch or become rooms · Delete removes point · Esc clears";
-  if (selectedMapSegmentId) return "adjust width in Map · click point to edit branches · Esc clears";
+  if (selectedMapSegmentId) return "adjust segment width · click point to edit branches · Esc clears";
   if (selectedStart) return "drag start marker · choose Move/Rotate in Map · Esc clears";
   return `WASD to move · drag to orbit · click a track or map point · ${mod}+O adds stem · ${mod}+Z undo · F fullscreen`;
 }
@@ -358,6 +359,7 @@ export default function App() {
 
           <PropertiesPanel />
           <MapPointPanel />
+          <MapSegmentPanel />
           <RoomPanel />
 
           {/* Empty composition: prompt the user to add their first stem. */}
