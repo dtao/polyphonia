@@ -79,7 +79,7 @@ depends only on earlier ones.
 - [ ] **Stem timing offset** — let each stem shift earlier or later by musical intervals such as 1/16, 1/8, 1/4, and 1/2 notes, while keeping all stems synchronized to the shared audio clock and saved in the composition manifest.
 - [ ] **Stem direction** — similar to real-world speakers, it should be possible for stems to be unidirectional (current behavior) or to be "pointed" in a direction, with the ability for the user to configure the width and dispersion of the sound.
 - [x] Paths have "gaps" at bridge points where floor isn't filled in.
-- [ ] Stem names should not be visible in Explore mode (only in Edit mode).
+- [x] Stem names should not be visible in Explore mode (only in Edit mode).
 - [ ] Lights stop pulsing (until browser refresh) after switching to Edit mode.
 - [ ] Locations of light points do not update (until browser refresh) after moving stems in Edit mode.
 - [ ] Extending one segment into another should "connect" them (unified bridge point).

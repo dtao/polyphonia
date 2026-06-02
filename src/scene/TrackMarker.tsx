@@ -152,13 +152,13 @@ export function TrackMarker({ track }: { track: TrackDef }) {
         </mesh>
       )}
       <pointLight ref={glow} position={[0, markerTop, 0]} color={track.color} intensity={6} distance={18} />
-      {/* Billboard keeps the label facing the camera so it's always readable,
-          even when you walk behind the marker. */}
-      <Billboard position={[0, markerTop + orbRadius + 0.75, 0]}>
-        <Text fontSize={0.5} color="white" anchorX="center">
-          {track.name}
-        </Text>
-      </Billboard>
+      {mode === "edit" && (
+        <Billboard position={[0, markerTop + orbRadius + 0.75, 0]}>
+          <Text fontSize={0.5} color="white" anchorX="center">
+            {track.name}
+          </Text>
+        </Billboard>
+      )}
     </group>
   );
 }
