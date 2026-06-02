@@ -569,6 +569,22 @@ function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpoint
     document.body.style.cursor = "grab";
   }
 
+  function startDrag(e: ThreeEvent<PointerEvent>, key: string) {
+    e.stopPropagation();
+    drag.current = { pointKey: key };
+    setActiveId(key);
+    selectMapPoint(key);
+    if (controls) controls.enabled = false;
+    const target = e.nativeEvent.target as Element | null;
+    target?.setPointerCapture?.(e.pointerId);
+    document.body.style.cursor = "grabbing";
+  }
+
+  function selectEndpoint(e: ThreeEvent<MouseEvent>, key: string) {
+    e.stopPropagation();
+    selectMapPoint(key);
+  }
+
   return (
     <group onPointerMove={moveEndpoint} onPointerUp={endDrag} onPointerCancel={endDrag} onPointerLeave={endDrag}>
       {endpoints.map(({ id, key, point, shared }) => {
@@ -577,17 +593,10 @@ function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpoint
         return (
           <mesh
             key={id}
-            position={[point[0], 0.35, point[1]]}
-            onPointerDown={(e) => {
-              e.stopPropagation();
-              drag.current = { pointKey: key };
-              setActiveId(id);
-              selectMapPoint(key);
-              if (controls) controls.enabled = false;
-              const target = e.nativeEvent.target as Element | null;
-              target?.setPointerCapture?.(e.pointerId);
-              document.body.style.cursor = "grabbing";
-            }}
+            position={[point[0], 0.58, point[1]]}
+            renderOrder={50}
+            onPointerDown={(e) => startDrag(e, key)}
+            onClick={(e) => selectEndpoint(e, key)}
             onPointerMove={moveEndpoint}
             onPointerUp={endDrag}
             onPointerOver={(e) => {
@@ -598,24 +607,63 @@ function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpoint
               if (!drag.current) document.body.style.cursor = "auto";
             }}
           >
-            <sphereGeometry args={[active ? 0.95 : selected ? 0.82 : shared ? 0.72 : 0.58, 24, 16]} />
-            <meshBasicMaterial color={active ? "#8fffe8" : selected ? "#9fb4ff" : shared ? "#ffd166" : "#ffffff"} transparent opacity={1} toneMapped={false} />
+            <sphereGeometry args={[shared ? 1.6 : 1.35, 24, 16]} />
+            <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+            <mesh>
+              <sphereGeometry args={[active ? 0.95 : selected ? 0.82 : shared ? 0.72 : 0.58, 24, 16]} />
+              <meshBasicMaterial color={active ? "#8fffe8" : selected ? "#9fb4ff" : shared ? "#ffd166" : "#ffffff"} transparent opacity={1} toneMapped={false} />
+            </mesh>
             {(active || selected) && (
-              <mesh>
-                <sphereGeometry args={[active ? 1.35 : 1.12, 24, 16]} />
-                <meshBasicMaterial
-                  color={active ? "#8fffe8" : "#9fb4ff"}
-                  transparent
-                  opacity={active ? 0.22 : 0.16}
-                  toneMapped={false}
-                  depthWrite={false}
-                  blending={THREE.AdditiveBlending}
-                />
-              </mesh>
+              <>
+                <mesh>
+                  <sphereGeometry args={[active ? 1.35 : 1.12, 24, 16]} />
+                  <meshBasicMaterial
+                    color={active ? "#8fffe8" : "#9fb4ff"}
+                    transparent
+                    opacity={active ? 0.22 : 0.16}
+                    toneMapped={false}
+                    depthWrite={false}
+                    blending={THREE.AdditiveBlending}
+                  />
+                </mesh>
+                <EndpointSelectionRing active={active} color={active ? "#8fffe8" : "#9fb4ff"} />
+              </>
             )}
           </mesh>
         );
       })}
+    </group>
+  );
+}
+
+function EndpointSelectionRing({ active, color }: { active: boolean; color: string }) {
+  const group = useRef<THREE.Group>(null);
+  const dots = useMemo(() => Array.from({ length: 24 }, (_, i) => (i / 24) * Math.PI * 2), []);
+  useFrame((_, dt) => {
+    if (!group.current) return;
+    group.current.rotation.y += dt * (active ? 1.1 : 0.62);
+  });
+
+  return (
+    <group rotation={[0.16, 0, 0.08]}>
+      <group ref={group}>
+      {dots.map((a, i) => {
+        const emphasis = i % 4 === 0;
+        return (
+          <mesh key={i} position={[Math.cos(a) * 1.45, 0, Math.sin(a) * 1.45]}>
+            <sphereGeometry args={[emphasis ? 0.075 : 0.052, 10, 8]} />
+            <meshBasicMaterial
+              color={color}
+              transparent
+              opacity={emphasis ? 0.95 : 0.58}
+              toneMapped={false}
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+            />
+          </mesh>
+        );
+      })}
+      </group>
     </group>
   );
 }
