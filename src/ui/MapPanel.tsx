@@ -21,6 +21,11 @@ export function MapPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () 
   const resetViewToMapStart = useStore((s) => s.resetViewToMapStart);
   const startGizmoMode = useStore((s) => s.startGizmoMode);
   const setStartGizmoMode = useStore((s) => s.setStartGizmoMode);
+  const selectedRoomId = useStore((s) => s.selectedRoomId);
+  const addRoom = useStore((s) => s.addRoom);
+  const updateRoom = useStore((s) => s.updateRoom);
+  const deleteRoom = useStore((s) => s.deleteRoom);
+  const selectedRoom = selectedRoomId ? map.rooms.find((r) => r.id === selectedRoomId) ?? null : null;
   const selectedPoint = selectedMapPointKey ? findPoint(map, selectedMapPointKey) : null;
   const selectedSegment = selectedMapSegmentId ? map.segments.find((segment) => segment.id === selectedMapSegmentId) ?? null : null;
   const averageWidth = map.segments.length ? map.segments.reduce((sum, s) => sum + s.width, 0) / map.segments.length : 7.5;
@@ -172,6 +177,40 @@ export function MapPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () 
           Snap stems to map
         </button>
       </div>
+
+      <div style={editorGroup}>
+        <div style={editorHead}>{selectedRoom ? "Room" : "Rooms"}</div>
+        <button style={{ ...actionBtn, width: "100%", marginTop: 4 }} onClick={addRoom}>
+          ＋ Add room
+        </button>
+        {selectedRoom && (
+          <>
+            <RoomSlider label="Width" value={selectedRoom.width} min={3} max={40} step={0.5} onChange={(v) => updateRoom(selectedRoom.id, { width: v })} />
+            <RoomSlider label="Depth" value={selectedRoom.depth} min={3} max={40} step={0.5} onChange={(v) => updateRoom(selectedRoom.id, { depth: v })} />
+            <RoomSlider label="Height" value={selectedRoom.height} min={2} max={10} step={0.2} onChange={(v) => updateRoom(selectedRoom.id, { height: v })} />
+            <RoomSlider label="Entrance width" value={selectedRoom.entranceWidth} min={1} max={Math.max(2, (selectedRoom.entranceSide === "north" || selectedRoom.entranceSide === "south" ? selectedRoom.width : selectedRoom.depth) - 1)} step={0.5} onChange={(v) => updateRoom(selectedRoom.id, { entranceWidth: v })} />
+            <div style={{ ...sliderHead, marginTop: 8 }}>
+              <span>Entrance side</span>
+            </div>
+            <div style={sideGrid}>
+              {(["north", "south", "east", "west"] as const).map((side) => (
+                <button
+                  key={side}
+                  style={{ ...presetBtn, ...(selectedRoom.entranceSide === side ? presetActive : null) }}
+                  onClick={() => updateRoom(selectedRoom.id, { entranceSide: side, entranceOffset: 0 })}
+                >
+                  {side[0].toUpperCase() + side.slice(1)}
+                </button>
+              ))}
+            </div>
+            <button style={{ ...dangerBtn, width: "100%", marginTop: 10 }} onClick={() => deleteRoom(selectedRoom.id)}>
+              Delete room
+            </button>
+          </>
+        )}
+        <div style={hint}>{selectedRoom ? "Drag the room to move it; position the doorway against a path to connect." : "Add an enclosed room, then drag it so its doorway opens onto a path."}</div>
+      </div>
+
       {branchStartPointKey && <div style={hint}>Click the floor to place the new branch endpoint.</div>}
       {warnings.length > 0 && (
         <div style={warningsBox}>
@@ -182,6 +221,26 @@ export function MapPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () 
       )}
       <div style={meta}>{map.segments.length ? "Lighted walkable path" : "Unbounded empty space"}</div>
     </div>
+  );
+}
+
+function RoomSlider({ label, value, min, max, step, onChange }: { label: string; value: number; min: number; max: number; step: number; onChange: (v: number) => void }) {
+  return (
+    <label style={widthLabel}>
+      <div style={sliderHead}>
+        <span>{label}</span>
+        <span>{value.toFixed(1)}</span>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        style={{ width: "100%", accentColor: "#5b8cff", cursor: "pointer" }}
+      />
+    </label>
   );
 }
 
@@ -310,6 +369,13 @@ const presetBtn: React.CSSProperties = {
   color: "rgba(255,255,255,0.78)",
   cursor: "pointer",
   fontSize: 13,
+};
+
+const sideGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 6,
+  marginTop: 6,
 };
 
 const presetActive: React.CSSProperties = {

@@ -3,7 +3,7 @@ import { TransformControls } from "@react-three/drei";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
-import { clampToMap, CompositionMap, WalkableSegment } from "../map";
+import { clampToMap, CompositionMap, MapRoom, ROOM_WALL_THICKNESS, WalkableSegment } from "../map";
 import { useStore } from "../store";
 import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 
@@ -34,10 +34,100 @@ export function MapScene({ map, tracks, editMode }: { map: CompositionMap; track
           selected={selectedMapSegmentId === segment.id}
         />
       ))}
+      <Rooms map={map} editMode={editMode} />
       {editMode && <BranchPlacementLayer map={map} />}
       {editMode && <EndpointEditor map={map} endpointCounts={endpointCounts} />}
     </group>
   );
+}
+
+const ROOM_FLOOR_Y = 0.05;
+
+function Rooms({ map, editMode }: { map: CompositionMap; editMode: boolean }) {
+  const selectedRoomId = useStore((s) => s.selectedRoomId);
+  return (
+    <group>
+      {map.rooms.map((room) => (
+        <Room key={room.id} room={room} editMode={editMode} selected={editMode && selectedRoomId === room.id} />
+      ))}
+    </group>
+  );
+}
+
+function Room({ room, editMode, selected }: { room: MapRoom; editMode: boolean; selected: boolean }) {
+  const selectRoom = useStore((s) => s.selectRoom);
+  const updateRoom = useStore((s) => s.updateRoom);
+  const [obj, setObj] = useState<THREE.Group | null>(null);
+  const [cx, cz] = room.center;
+  const h = room.height;
+  const boxes = roomWallBoxes(room);
+  const wallOpacity = editMode ? 0.3 : 0.94;
+  const wallColor = selected ? "#8fffe8" : "#9aa6bd";
+
+  return (
+    <>
+      <group
+        ref={setObj}
+        position={[cx, 0, cz]}
+        onClick={(e) => {
+          if (!editMode) return;
+          e.stopPropagation();
+          selectRoom(room.id);
+        }}
+        onPointerOver={(e) => {
+          if (!editMode) return;
+          e.stopPropagation();
+          document.body.style.cursor = "pointer";
+        }}
+        onPointerOut={() => {
+          document.body.style.cursor = "auto";
+        }}
+      >
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, ROOM_FLOOR_Y, 0]}>
+          <planeGeometry args={[room.width, room.depth]} />
+          <meshStandardMaterial color={selected ? "#16302e" : "#14161e"} roughness={0.92} metalness={0.08} side={THREE.DoubleSide} />
+        </mesh>
+        <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, h, 0]}>
+          <planeGeometry args={[room.width, room.depth]} />
+          <meshStandardMaterial color="#0e1019" roughness={1} transparent opacity={editMode ? 0.14 : 0.97} depthWrite={!editMode} side={THREE.DoubleSide} />
+        </mesh>
+        {boxes.map((b, i) => (
+          <mesh key={i} position={[b.pos[0], h / 2, b.pos[1]]}>
+            <boxGeometry args={[b.size[0], h, b.size[1]]} />
+            <meshStandardMaterial color={wallColor} roughness={0.85} metalness={0.05} transparent opacity={wallOpacity} depthWrite={!editMode} side={THREE.DoubleSide} />
+          </mesh>
+        ))}
+      </group>
+      {selected && obj && (
+        <TransformControls object={obj} mode="translate" showY={false} size={1} onObjectChange={() => updateRoom(room.id, { center: [obj.position.x, obj.position.z] })} />
+      )}
+    </>
+  );
+}
+
+// Wall boxes in room-local coords; the entrance side gets a gap for the doorway.
+function roomWallBoxes(room: MapRoom): Array<{ pos: [number, number]; size: [number, number] }> {
+  const hw = room.width / 2;
+  const hd = room.depth / 2;
+  const t = ROOM_WALL_THICKNESS;
+  const ew = room.entranceWidth;
+  const off = room.entranceOffset;
+  const boxes: Array<{ pos: [number, number]; size: [number, number] }> = [];
+  for (const [s, e] of splitWall(hw, room.entranceSide === "north", ew, off)) boxes.push({ pos: [(s + e) / 2, -hd], size: [e - s + t, t] });
+  for (const [s, e] of splitWall(hw, room.entranceSide === "south", ew, off)) boxes.push({ pos: [(s + e) / 2, hd], size: [e - s + t, t] });
+  for (const [s, e] of splitWall(hd, room.entranceSide === "west", ew, off)) boxes.push({ pos: [-hw, (s + e) / 2], size: [t, e - s + t] });
+  for (const [s, e] of splitWall(hd, room.entranceSide === "east", ew, off)) boxes.push({ pos: [hw, (s + e) / 2], size: [t, e - s + t] });
+  return boxes;
+}
+
+function splitWall(half: number, isEntrance: boolean, entranceWidth: number, offset: number): Array<[number, number]> {
+  if (!isEntrance) return [[-half, half]];
+  const a = offset - entranceWidth / 2;
+  const b = offset + entranceWidth / 2;
+  const parts: Array<[number, number]> = [];
+  if (a > -half + 0.05) parts.push([-half, a]);
+  if (b < half - 0.05) parts.push([b, half]);
+  return parts;
 }
 
 function ReflectiveUnderfloor({ segments, tracks }: { segments: WalkableSegment[]; tracks: TrackDef[] }) {

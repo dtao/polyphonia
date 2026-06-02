@@ -15,7 +15,7 @@ import {
 } from "./persistence";
 import { newId } from "./id";
 import { EnvironmentSettings, defaultEnvironment, normalizeEnvironment } from "./environment";
-import { CompositionMap, defaultMap, normalizeMap } from "./map";
+import { CompositionMap, MapRoom, defaultMap, normalizeMap } from "./map";
 import { ArtistIdentity } from "./artist";
 import {
   AuthUser,
@@ -59,6 +59,7 @@ interface StoreState {
   branchStartPointKey: string | null;
   selectedStart: boolean; // the map start marker is selected (shows its gizmo)
   startGizmoMode: "translate" | "rotate";
+  selectedRoomId: string | null;
   entered: boolean; // has the user started the experience (left the entry screen)
   viewer: boolean; // read-only shared-link view (no autosave, no editing)
   user: AuthUser | null; // signed-in account (for publishing); null = anonymous
@@ -87,6 +88,12 @@ interface StoreState {
   setBranchStartPoint: (key: string | null) => void;
   selectStart: () => void;
   setStartGizmoMode: (mode: "translate" | "rotate") => void;
+
+  // Rooms (enclosed spaces on the map).
+  selectRoom: (id: string | null) => void;
+  addRoom: () => void;
+  updateRoom: (id: string, patch: Partial<MapRoom>) => void;
+  deleteRoom: (id: string) => void;
 
   // Track edits. Those that affect audio also push the change to the engine,
   // so a playing composition responds live without ever restarting.
@@ -163,7 +170,10 @@ function pushRedo(redoStack: Composition[], comp: Composition): Composition[] {
   return [...redoStack, cloneComposition(comp)].slice(-HISTORY_LIMIT);
 }
 
-function pruneSelection(s: StoreState, composition: Composition): Pick<StoreState, "selectedId" | "selectedMapPointKey" | "selectedMapSegmentId" | "branchStartPointKey" | "selectedStart"> {
+function pruneSelection(
+  s: StoreState,
+  composition: Composition,
+): Pick<StoreState, "selectedId" | "selectedMapPointKey" | "selectedMapSegmentId" | "branchStartPointKey" | "selectedStart" | "selectedRoomId"> {
   return {
     selectedId: s.selectedId && composition.tracks.some((t) => t.id === s.selectedId) ? s.selectedId : null,
     selectedMapPointKey:
@@ -179,6 +189,7 @@ function pruneSelection(s: StoreState, composition: Composition): Pick<StoreStat
         ? s.branchStartPointKey
         : null,
     selectedStart: s.selectedStart,
+    selectedRoomId: s.selectedRoomId && composition.map.rooms.some((room) => room.id === s.selectedRoomId) ? s.selectedRoomId : null,
   };
 }
 
@@ -230,6 +241,7 @@ export const useStore = create<StoreState>((set, get) => ({
   branchStartPointKey: null,
   selectedStart: false,
   startGizmoMode: "translate",
+  selectedRoomId: null,
   entered: false,
   viewer: false,
   user: null,
@@ -302,14 +314,49 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   // Leaving edit mode clears the selection (the properties panel is edit-only).
-  setMode: (mode) => set((s) => ({ mode, selectedId: mode === "edit" ? s.selectedId : null, selectedStart: mode === "edit" ? s.selectedStart : false })),
+  setMode: (mode) =>
+    set((s) => ({ mode, selectedId: mode === "edit" ? s.selectedId : null, selectedStart: mode === "edit" ? s.selectedStart : false, selectedRoomId: mode === "edit" ? s.selectedRoomId : null })),
   toggleMode: () => get().setMode(get().mode === "edit" ? "explore" : "edit"),
-  select: (selectedId) => set({ selectedId, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
-  selectMapPoint: (selectedMapPointKey) => set({ selectedMapPointKey, selectedMapSegmentId: null, selectedId: null, selectedStart: false }),
-  selectMapSegment: (selectedMapSegmentId) => set({ selectedMapSegmentId, selectedMapPointKey: null, selectedId: null, branchStartPointKey: null, selectedStart: false }),
-  setBranchStartPoint: (branchStartPointKey) => set({ branchStartPointKey, selectedMapPointKey: branchStartPointKey, selectedMapSegmentId: null, selectedId: null, selectedStart: false }),
-  selectStart: () => set({ selectedStart: true, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null }),
+  select: (selectedId) => set({ selectedId, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false, selectedRoomId: null }),
+  selectMapPoint: (selectedMapPointKey) => set({ selectedMapPointKey, selectedMapSegmentId: null, selectedId: null, selectedStart: false, selectedRoomId: null }),
+  selectMapSegment: (selectedMapSegmentId) => set({ selectedMapSegmentId, selectedMapPointKey: null, selectedId: null, branchStartPointKey: null, selectedStart: false, selectedRoomId: null }),
+  setBranchStartPoint: (branchStartPointKey) => set({ branchStartPointKey, selectedMapPointKey: branchStartPointKey, selectedMapSegmentId: null, selectedId: null, selectedStart: false, selectedRoomId: null }),
+  selectStart: () => set({ selectedStart: true, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedRoomId: null }),
   setStartGizmoMode: (startGizmoMode) => set({ startGizmoMode }),
+
+  selectRoom: (selectedRoomId) =>
+    set({ selectedRoomId, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
+
+  addRoom: () => {
+    const map = get().composition.map;
+    // Place the new room a little ahead of the start, entrance facing the start.
+    const [sx, sz] = map.start.position;
+    const [, fz] = map.start.direction;
+    const forward = fz >= 0 ? 1 : -1; // start usually faces -z
+    const room: MapRoom = {
+      id: newId(),
+      center: [sx, sz - forward * 12],
+      width: 14,
+      depth: 12,
+      height: 3.4,
+      entranceSide: forward > 0 ? "south" : "north", // opening back toward the start/path
+      entranceWidth: 5,
+      entranceOffset: 0,
+    };
+    get().setMap({ rooms: [...map.rooms, room] });
+    set({ selectedRoomId: room.id, selectedId: null, selectedMapSegmentId: null, selectedMapPointKey: null, selectedStart: false });
+  },
+
+  updateRoom: (id, patch) => {
+    const map = get().composition.map;
+    get().setMap({ rooms: map.rooms.map((room) => (room.id === id ? { ...room, ...patch } : room)) });
+  },
+
+  deleteRoom: (id) => {
+    const map = get().composition.map;
+    get().setMap({ rooms: map.rooms.filter((room) => room.id !== id) });
+    if (get().selectedRoomId === id) set({ selectedRoomId: null });
+  },
 
   setTrackVolume: (id, volume) => {
     set((s) => ({ ...withHistory(s, `track:${id}:volume`), composition: patchTrack(s.composition, id, { volume }) }));
