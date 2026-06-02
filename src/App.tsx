@@ -36,6 +36,35 @@ function toggleBranchPlacementFromSelection(): void {
   s.setBranchStartPoint(s.branchStartPointKey === key ? null : key);
 }
 
+function modKey(): string {
+  return navigator.platform.toLowerCase().includes("mac") ? "Cmd" : "Ctrl";
+}
+
+function hudShortcutHint({
+  mode,
+  selectedId,
+  selectedMapPointKey,
+  selectedMapSegmentId,
+  branchStartPointKey,
+  selectedStart,
+}: {
+  mode: string;
+  selectedId: string | null;
+  selectedMapPointKey: string | null;
+  selectedMapSegmentId: string | null;
+  branchStartPointKey: string | null;
+  selectedStart: boolean;
+}): string {
+  const mod = modKey();
+  if (mode === "explore") return "WASD + mouse to move · click to look · Esc for cursor · Tab to edit";
+  if (selectedId) return `drag to move stem · Delete removes · ${mod}+D duplicates · Esc clears`;
+  if (branchStartPointKey) return "click floor to place branch · B cancels · Delete removes point · Esc clears";
+  if (selectedMapPointKey) return "drag point to reshape · B places branch · Delete removes point · Esc clears";
+  if (selectedMapSegmentId) return "adjust width in Map · click point to edit branches · Esc clears";
+  if (selectedStart) return "drag start marker · choose Move/Rotate in Map · Esc clears";
+  return `WASD to move · drag to orbit · click a track or map point · ${mod}+O adds stem · ${mod}+Z undo`;
+}
+
 export default function App() {
   const engine = useStore((s) => s.engine);
   const setEngine = useStore((s) => s.setEngine);
@@ -43,9 +72,22 @@ export default function App() {
   const comp = useStore((s) => s.composition);
   const mode = useStore((s) => s.mode);
   const select = useStore((s) => s.select);
+  const selectedId = useStore((s) => s.selectedId);
+  const selectedMapPointKey = useStore((s) => s.selectedMapPointKey);
+  const selectedMapSegmentId = useStore((s) => s.selectedMapSegmentId);
+  const branchStartPointKey = useStore((s) => s.branchStartPointKey);
+  const selectedStart = useStore((s) => s.selectedStart);
   const canUndo = useStore((s) => s.undoStack.length > 0);
   const canRedo = useStore((s) => s.redoStack.length > 0);
   const [openEditPanel, setOpenEditPanel] = useState<EditPanel>(null);
+  const hudHint = hudShortcutHint({
+    mode,
+    selectedId,
+    selectedMapPointKey,
+    selectedMapSegmentId,
+    branchStartPointKey,
+    selectedStart,
+  });
 
   // Load the saved composition library + auth session on launch.
   useEffect(() => {
@@ -240,8 +282,7 @@ export default function App() {
           <div style={hud}>
             <strong>{comp.title}</strong> — {comp.artist}
             <span style={{ opacity: 0.6 }}>
-              {" "}
-              · {mode === "explore" ? "WASD + mouse to move · click to look · Esc for cursor" : "WASD to move · drag to orbit · click a track"}
+              {" "}· {hudHint}
             </span>
           </div>
 
