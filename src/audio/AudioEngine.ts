@@ -210,6 +210,22 @@ export class AudioEngine {
     }
   }
 
+  // Clone an existing live track's decoded audio into a new track definition.
+  // This avoids re-fetching uploaded blob URLs and keeps duplicated stems
+  // phase-aligned with the rest of the composition.
+  duplicateLiveTrack(sourceId: string, def: TrackDef): void {
+    const source = this.find(sourceId);
+    if (!source) return;
+    const t = this.buildTrack(def, source.originalBuffer, this.prepareLoopBuffer(source.originalBuffer));
+    this.tracks.push(t);
+    if (this.started) {
+      const when = this.ctx.currentTime + 0.06;
+      const len = this.regionLength(t.buffer);
+      const phase = ((((when - this.loopStartTime) % len) + len) % len);
+      this.startSource(t, when, phase);
+    }
+  }
+
   updateLoopSettings(comp: Pick<Composition, "bpm" | "bars" | "loopEnabled" | "loopStart" | "loopEndTrim" | "loopCrossfade">): void {
     clearTimeout(this.auditionTimer);
     this.auditionStartTime = null;

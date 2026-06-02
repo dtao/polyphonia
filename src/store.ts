@@ -95,6 +95,7 @@ interface StoreState {
   renameTrack: (id: string, name: string) => void;
   setTrackColor: (id: string, color: string) => void;
   deleteTrack: (id: string) => void;
+  duplicateTrack: (id: string) => Promise<void>;
   addStem: (file: File) => Promise<void>;
   setLoopSettings: (settings: Partial<Pick<Composition, "loopEnabled" | "loopStart" | "loopEndTrim" | "loopCrossfade">>) => void;
   auditionLoopSeam: () => void;
@@ -128,6 +129,21 @@ function upsert(library: SerializedComposition[], s: SerializedComposition): Ser
 const PALETTE = ["#5b8cff", "#ff7a6b", "#ffd166", "#b96bff", "#56e0c0", "#f78fb3", "#7ee081", "#ffa057"];
 const randomColor = () => PALETTE[Math.floor(Math.random() * PALETTE.length)];
 const stripExt = (name: string) => name.replace(/\.[^.]+$/, "");
+
+function copyName(name: string, tracks: TrackDef[]): string {
+  const base = `${name} copy`;
+  const used = new Set(tracks.map((t) => t.name));
+  if (!used.has(base)) return base;
+  for (let i = 2; ; i++) {
+    const next = `${base} ${i}`;
+    if (!used.has(next)) return next;
+  }
+}
+
+function offsetCopyPosition([x, y, z]: [number, number, number], copyIndex: number): [number, number, number] {
+  const angle = copyIndex * 0.9;
+  return [x + Math.cos(angle) * 1.5, y, z + Math.sin(angle) * 1.5];
+}
 
 // Immutably patch one track in the current composition.
 function patchTrack(comp: Composition, id: string, patch: Partial<TrackDef>): Composition {
@@ -277,6 +293,40 @@ export const useStore = create<StoreState>((set, get) => ({
     set((s) => ({
       composition: touchComposition({ ...s.composition, tracks: s.composition.tracks.filter((t) => t.id !== id) }),
       selectedId: s.selectedId === id ? null : s.selectedId,
+    }));
+  },
+
+  duplicateTrack: async (id) => {
+    const { composition, engine } = get();
+    const source = composition.tracks.find((t) => t.id === id);
+    if (!source) return;
+
+    const copyId = newId();
+    let copiedSource = source.source;
+    if (source.source.kind === "file" && source.source.url.startsWith("blob:")) {
+      const blob = await (await fetch(source.source.url)).blob();
+      await stemPut(copyId, blob);
+      copiedSource = { kind: "file", url: URL.createObjectURL(blob) };
+    }
+
+    const { hash: _hash, ...copyable } = source;
+    const def: TrackDef = {
+      ...copyable,
+      id: copyId,
+      name: copyName(source.name, composition.tracks),
+      position: offsetCopyPosition(source.position, composition.tracks.length),
+      source: copiedSource,
+    };
+
+    engine?.duplicateLiveTrack(source.id, def);
+    set((s) => ({
+      composition: touchComposition({ ...s.composition, tracks: [...s.composition.tracks, def] }),
+      selectedId: copyId,
+      selectedMapPointKey: null,
+      selectedMapSegmentId: null,
+      branchStartPointKey: null,
+      selectedStart: false,
+      mode: "edit",
     }));
   },
 
