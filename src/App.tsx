@@ -192,6 +192,11 @@ export default function App() {
           s.deleteTrack(s.selectedId);
           return;
         }
+        if (s.selectedRoomId) {
+          e.preventDefault();
+          s.deleteRoom(s.selectedRoomId);
+          return;
+        }
         if (s.selectedMapPointKey) {
           e.preventDefault();
           deleteSelectedMapPoint();

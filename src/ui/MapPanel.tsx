@@ -203,7 +203,7 @@ export function MapPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () 
                 </button>
               ))}
             </div>
-            <button style={{ ...dangerBtn, width: "100%", marginTop: 10 }} onClick={() => deleteRoom(selectedRoom.id)}>
+            <button style={{ ...dangerBtn, width: "100%", marginTop: 10 }} onClick={() => deleteRoom(selectedRoom.id)} title="Delete selected room (Delete)">
               Delete room
             </button>
           </>
