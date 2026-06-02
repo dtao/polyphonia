@@ -39,6 +39,7 @@ export class AudioEngine {
   private loopStartOverride: number | undefined;
   private loopEndTrim = 0;
   private loopCrossfade = 0.035;
+  private bpm = 120;
   private auditionTimer: ReturnType<typeof setTimeout> | undefined;
   private auditionStartTime: number | null = null;
   private auditionDuration = 0;
@@ -104,6 +105,7 @@ export class AudioEngine {
     const fileBuffers = loaded.filter((t) => t.def.source.kind === "file").map((t) => t.buffer);
     const detectedOffsets = fileBuffers.map((b) => this.leadingSilence(b)).filter((s) => s > 0.001);
     this.loopOffset = detectedOffsets.length ? Math.min(0.1, Math.min(...detectedOffsets)) : 0;
+    if (this.loopEnabled && !this.loopLength) this.loopLength = this.inferLoopLength(loaded);
 
     for (const { def, buffer } of loaded) {
       this.tracks.push(this.buildTrack(def, buffer, this.prepareLoopBuffer(buffer)));
@@ -111,8 +113,9 @@ export class AudioEngine {
   }
 
   private setLoopFields(comp: Pick<Composition, "bpm" | "bars" | "loopEnabled" | "loopStart" | "loopEndTrim" | "loopCrossfade">): void {
+    this.bpm = Math.max(1, comp.bpm || 120);
     this.loopEnabled = comp.loopEnabled ?? true;
-    this.loopLength = comp.bars ? comp.bars * 4 * (60 / comp.bpm) : 0;
+    this.loopLength = comp.bars ? comp.bars * 4 * (60 / this.bpm) : 0;
     this.loopStartOverride = comp.loopStart;
     this.loopEndTrim = comp.loopEndTrim ?? 0;
     this.loopCrossfade = comp.loopCrossfade ?? 0.035;
@@ -129,9 +132,20 @@ export class AudioEngine {
     return 0;
   }
 
-  // Copy a decoded file into an exact musical loop and blend the very end into
-  // the start. MP3 decoders can leave tiny leading/trailing padding even after
-  // loop points are set; looping a prepared buffer avoids a split-second gap.
+  private inferLoopLength(loaded: Array<{ buffer: AudioBuffer }>): number {
+    const beatLength = 60 / this.bpm;
+    const trimStart = Math.max(0, this.loopStartOverride ?? this.loopOffset);
+    const longest = loaded.reduce((max, { buffer }) => Math.max(max, buffer.duration - trimStart), 0);
+    if (longest <= 0) return 0;
+    return Math.max(beatLength, Math.round(longest / beatLength) * beatLength);
+  }
+
+  // Copy a decoded file into a shared BPM-aligned loop and blend the very end
+  // into the start. Clips shorter than the shared length are padded with
+  // silence; clips longer than it are trimmed, so all stems restart together on
+  // every loop iteration. MP3 decoders can leave tiny leading/trailing padding
+  // even after loop points are set; looping a prepared buffer avoids drift and
+  // hides small boundary clicks.
   private prepareLoopBuffer(buffer: AudioBuffer): AudioBuffer {
     if (!this.loopEnabled) return buffer;
 
@@ -142,13 +156,14 @@ export class AudioEngine {
     const startFrame = Math.min(Math.round(trimStart * sr), maxStartFrame);
     const availableFrames = Math.max(1, buffer.length - startFrame - Math.round(trimEnd * sr));
     const targetFrames = this.loopLength ? Math.round(Math.max(0.1, this.loopLength - trimEnd) * sr) : availableFrames;
-    const loopFrames = Math.max(1, Math.min(targetFrames, availableFrames));
+    const loopFrames = Math.max(1, targetFrames);
     const out = this.ctx.createBuffer(buffer.numberOfChannels, loopFrames, sr);
 
     for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
       const input = buffer.getChannelData(ch);
       const output = out.getChannelData(ch);
-      for (let i = 0; i < loopFrames; i++) {
+      const copyFrames = Math.min(loopFrames, availableFrames);
+      for (let i = 0; i < copyFrames; i++) {
         output[i] = input[startFrame + i] ?? 0;
       }
       this.crossfadeLoop(output, sr);
@@ -244,11 +259,12 @@ export class AudioEngine {
   // drops in musically. We start its source partway into the buffer by the same
   // amount the existing loop has already advanced.
   addLiveTrack(def: TrackDef, buffer: AudioBuffer): void {
+    if (this.loopEnabled && !this.loopLength) this.loopLength = this.inferLoopLength([{ buffer }]);
     const t = this.buildTrack(def, buffer, this.prepareLoopBuffer(buffer));
     this.tracks.push(t);
     if (this.started) {
       const when = this.ctx.currentTime + 0.06;
-      const len = this.regionLength(buffer);
+      const len = this.regionLength(t.buffer);
       const phase = ((((when - this.loopStartTime) % len) + len) % len);
       this.startSource(t, when, phase);
     }
@@ -277,6 +293,7 @@ export class AudioEngine {
     const now = this.ctx.currentTime;
     const oldStart = this.loopStartTime;
     this.setLoopFields(comp);
+    if (this.loopEnabled && !this.loopLength) this.loopLength = this.inferLoopLength(this.tracks.map((t) => ({ buffer: t.originalBuffer })));
 
     for (const t of this.tracks) {
       try {

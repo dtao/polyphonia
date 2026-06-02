@@ -47,8 +47,9 @@ export interface Composition {
   bpm: number;
   /**
    * Loop length in bars (4 beats each). When set, stems are trimmed to this
-   * musical length for seamless looping. Omitted for user-built compositions,
-   * where each stem simply loops its whole buffer.
+   * musical length for seamless looping. When omitted, the engine infers a
+   * shared BPM-aligned loop length from uploaded stems and pads/trims prepared
+   * loop buffers to keep every stem restarting together.
    */
   bars?: number;
   /** Whether playback loops. Defaults to true for existing compositions. */

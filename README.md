@@ -138,8 +138,9 @@ SPA fallback so routes like `/c/:id`, `/gallery`, and `/artist/:slug` serve
   `AudioContext`. Every stem is scheduled off the same clock and started
   together (so they never drift); each feeds an HRTF `PannerNode` at its 3D
   position while the camera drives the `AudioListener`. Live setters let edits
-  apply without restarting playback; loop points are trimmed to the musical
-  length to hide MP3 encoder padding.
+  apply without restarting playback; loop buffers are padded/trimmed to a
+  shared BPM-aligned musical length to hide MP3 encoder padding and keep every
+  stem restarting together.
 - **State** ([src/store.ts](src/store.ts)) — a Zustand store is the single source
   of truth: the current composition, the library, mode/selection, and the audio
   engine. The scene renders from it; edits flow back into it and out to the
