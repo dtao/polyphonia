@@ -87,7 +87,7 @@ function Room({ room, editMode, selected }: { room: MapRoom; editMode: boolean; 
         </mesh>
         <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, h, 0]}>
           <planeGeometry args={[room.width, room.depth]} />
-          <meshStandardMaterial color="#0e1019" roughness={1} transparent opacity={editMode ? 0.14 : 0.97} depthWrite={!editMode} side={THREE.DoubleSide} />
+          <meshStandardMaterial color={wallColor} roughness={0.85} metalness={0.05} transparent opacity={wallOpacity} depthWrite={!editMode} side={THREE.DoubleSide} />
         </mesh>
         {boxes.map((b, i) => (
           <mesh key={i} position={[b.pos[0], h / 2, b.pos[1]]}>

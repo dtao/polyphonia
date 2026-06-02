@@ -105,11 +105,11 @@ export function TrackMarker({ track }: { track: TrackDef }) {
       </mesh>
       <mesh ref={aura} position={[0, markerTop, 0]}>
         <sphereGeometry args={[orbRadius, 24, 16]} />
-        <meshBasicMaterial color={track.color} transparent opacity={0.18} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
+        <meshBasicMaterial color={track.color} transparent opacity={0.18} toneMapped={false} depthWrite={false} depthTest={false} blending={THREE.AdditiveBlending} />
       </mesh>
       <mesh ref={outerAura} position={[0, markerTop, 0]}>
         <sphereGeometry args={[orbRadius, 24, 16]} />
-        <meshBasicMaterial color={track.color} transparent opacity={0.1} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
+        <meshBasicMaterial color={track.color} transparent opacity={0.1} toneMapped={false} depthWrite={false} depthTest={false} blending={THREE.AdditiveBlending} />
       </mesh>
       <Billboard position={[0, markerTop, 0]}>
         <mesh scale={[orbRadius * 5.6, orbRadius * 5.6, 1]}>
@@ -118,6 +118,7 @@ export function TrackMarker({ track }: { track: TrackDef }) {
             ref={flare}
             transparent
             depthWrite={false}
+            depthTest={false}
             blending={THREE.AdditiveBlending}
             uniforms={{
               color: { value: new THREE.Color(track.color) },
@@ -134,6 +135,7 @@ export function TrackMarker({ track }: { track: TrackDef }) {
             ref={rays}
             transparent
             depthWrite={false}
+            depthTest={false}
             blending={THREE.AdditiveBlending}
             uniforms={{
               color: { value: new THREE.Color(track.color) },
