@@ -15,7 +15,7 @@ import {
 } from "./persistence";
 import { newId } from "./id";
 import { EnvironmentSettings, defaultEnvironment, normalizeEnvironment } from "./environment";
-import { attachmentForPoint, canAddBranchAtPoint, canAddRoomAtPoint, CompositionMap, MapRoom, defaultMap, mapPointKey, normalizeMap } from "./map";
+import { attachmentForPoint, canAddBranchAtPoint, canAddRoomAtPoint, CompositionMap, MAP_PRESETS, MapRoom, defaultMap, mapPointKey, normalizeMap } from "./map";
 import { ArtistIdentity } from "./artist";
 import {
   AuthUser,
@@ -648,7 +648,7 @@ export const useStore = create<StoreState>((set, get) => ({
       artistAvatarEmailHash: get().accountArtist?.artistAvatarEmailHash,
       bpm: meta.bpm || 120,
       environment: get().composition.environment,
-      map: get().composition.map,
+      map: normalizeMap(MAP_PRESETS.line),
       tracks: [],
       createdAt: now,
       updatedAt: now,
