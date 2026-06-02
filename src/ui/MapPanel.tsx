@@ -13,19 +13,12 @@ export function MapPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () 
   const tracks = useStore((s) => s.composition.tracks);
   const setMap = useStore((s) => s.setMap);
   const setTrackPosition = useStore((s) => s.setTrackPosition);
-  const resetViewToMapStart = useStore((s) => s.resetViewToMapStart);
-  const startGizmoMode = useStore((s) => s.startGizmoMode);
-  const setStartGizmoMode = useStore((s) => s.setStartGizmoMode);
   const warnings = validateMap(map, tracks);
   const outsideTrackCount = countTracksOutsideMap(map, tracks);
 
   function setPreset(preset: Exclude<MapPreset, "custom">) {
     const next = MAP_PRESETS[preset];
     setMap({ ...next, start: map.start });
-  }
-
-  function goToStart() {
-    resetViewToMapStart();
   }
 
   function snapStemsToMap() {
@@ -61,28 +54,6 @@ export function MapPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () 
             </button>
           );
         })}
-      </div>
-      <div style={actionRow}>
-        <button
-          style={{ ...presetBtn, ...(startGizmoMode === "translate" ? presetActive : null) }}
-          onClick={() => setStartGizmoMode("translate")}
-        >
-          Move start
-        </button>
-        <button
-          style={{ ...presetBtn, ...(startGizmoMode === "rotate" ? presetActive : null) }}
-          onClick={() => setStartGizmoMode("rotate")}
-        >
-          Rotate start
-        </button>
-      </div>
-      <div style={actionRow}>
-        <button style={{ ...actionBtn, gridColumn: "1 / -1" }} onClick={goToStart}>
-          Go to start
-        </button>
-      </div>
-      <div style={hint}>
-        Click the <strong>disc</strong> to move the start position; click the <strong>arrow</strong> to rotate the facing direction. Then drag the gizmo.
       </div>
       <div style={editorGroup}>
         <button
@@ -240,13 +211,6 @@ const presetActive: React.CSSProperties = {
   color: "white",
 };
 
-const actionRow: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "1fr 1fr",
-  gap: 6,
-  marginTop: 10,
-};
-
 const actionBtn: React.CSSProperties = {
   padding: "8px 10px",
   borderRadius: 7,
@@ -255,12 +219,6 @@ const actionBtn: React.CSSProperties = {
   color: "rgba(255,255,255,0.84)",
   cursor: "pointer",
   fontSize: 12,
-};
-
-const dangerBtn: React.CSSProperties = {
-  ...actionBtn,
-  border: "1px solid rgba(255,122,107,0.35)",
-  background: "rgba(255,122,107,0.12)",
 };
 
 const editorGroup: React.CSSProperties = {
