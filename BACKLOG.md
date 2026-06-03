@@ -48,6 +48,7 @@ depends only on earlier ones.
 - [x] **29. Occlusion and obstruction pass** — introduce simple geometry-aware sound shaping between listener and stems (line-of-sight checks against environment/map obstacles; blocked sounds get softer/darker without breaking timing).
 - [ ] **30. Looping space model** — support composition-level spatial tiling (`none`, square, hex, path-loop`) with tile size/origin and compatible map topology so a stem layout can repeat infinitely like the audio loop.
   - First path-loop slice: terminal route points can be marked as loop start/end, and Explore wraps between them while preserving corridor-relative heading.
+  - Continuity preview slice: when the listener nears a loop endpoint, render the destination map/tracks as an adjacent transformed copy before the coordinate wrap happens.
 - [ ] **31. Tiled map rendering and audio instances** — render nearby visual tiles/map copies and create/cull nearby virtual stem instances around the listener, bounded by distance/performance limits so infinite space stays cheap.
 - [ ] **32. Tiling editor aids** — show tile boundaries, mirrored/ghost map copies, and edge-continuity hints in Edit mode so composers can intentionally make square/hex/path layouts that tile cleanly.
 - [ ] **33. Publish/viewer compatibility for maps and environments** — ensure `/c/:id`, `/gallery`, artist pages, export/import, and older manifests all handle environment, map, start, and tiling metadata gracefully.

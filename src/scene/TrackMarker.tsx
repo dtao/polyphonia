@@ -10,10 +10,10 @@ import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 // A glowing orb that marks where a stem lives in space and pulses with its
 // audio level — a visual anchor for the sound you hear from that direction.
 // In edit mode it can be clicked to select; the selected track wears a ring.
-export function TrackMarker({ track }: { track: TrackDef }) {
+export function TrackMarker({ track, preview = false }: { track: TrackDef; preview?: boolean }) {
   const engine = useStore((s) => s.engine);
   const mode = useStore((s) => s.mode);
-  const selected = useStore((s) => s.selectedId === track.id);
+  const selected = useStore((s) => !preview && s.selectedId === track.id);
   const map = useStore((s) => s.composition.map);
   const core = useRef<THREE.Mesh>(null);
   const aura = useRef<THREE.Mesh>(null);
@@ -72,22 +72,23 @@ export function TrackMarker({ track }: { track: TrackDef }) {
 
   // Selection only happens in edit mode; in explore the click locks the pointer.
   function handleClick(e: ThreeEvent<MouseEvent>) {
-    if (useStore.getState().mode !== "edit") return;
+    if (preview || useStore.getState().mode !== "edit") return;
     e.stopPropagation();
     useStore.getState().select(track.id);
   }
 
   function setCursor(c: string) {
-    if (useStore.getState().mode === "edit") document.body.style.cursor = c;
+    if (!preview && useStore.getState().mode === "edit") document.body.style.cursor = c;
   }
 
   // Register/unregister this marker's object for the move-gizmo to target.
   const registerGroup = useCallback(
     (g: THREE.Group | null) => {
+      if (preview) return;
       if (g) markerObjects.set(track.id, g);
       else markerObjects.delete(track.id);
     },
-    [track.id],
+    [preview, track.id],
   );
 
   return (

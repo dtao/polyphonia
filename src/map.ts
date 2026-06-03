@@ -263,6 +263,25 @@ export function wrapLoopPosition(
   return wrapFromEndpoint(map, map.loop.end, map.loop.start, previous, attempted) ?? wrapFromEndpoint(map, map.loop.start, map.loop.end, previous, attempted);
 }
 
+export interface LoopPreviewTransform {
+  id: "start" | "end";
+  anchor: [number, number];
+  source: [number, number];
+  rotation: number;
+  opacity: number;
+}
+
+export function loopPreviewTransforms(
+  map: Pick<CompositionMap, "segments" | "loop">,
+  viewer: [number, number],
+  radius = 34,
+): LoopPreviewTransform[] {
+  if (!map.loop?.start || !map.loop.end) return [];
+  const endPreview = loopPreviewTransform(map, map.loop.end, map.loop.start, viewer, radius, "end");
+  const startPreview = loopPreviewTransform(map, map.loop.start, map.loop.end, viewer, radius, "start");
+  return [endPreview, startPreview].filter((preview): preview is LoopPreviewTransform => !!preview);
+}
+
 export function alignAttachedRooms(map: CompositionMap): CompositionMap {
   return {
     ...map,
@@ -311,6 +330,31 @@ function wrapFromEndpoint(
   const fromAngle = Math.atan2(fromArm.out[0], fromArm.out[1]);
   const toAngle = Math.atan2(-toArm.out[0], -toArm.out[1]);
   return { position, yawDelta: toAngle - fromAngle };
+}
+
+function loopPreviewTransform(
+  map: Pick<CompositionMap, "segments">,
+  from: RoomAttachment,
+  to: RoomAttachment,
+  viewer: [number, number],
+  radius: number,
+  id: "start" | "end",
+): LoopPreviewTransform | null {
+  const fromArm = endpointArm(map, from);
+  const toArm = endpointArm(map, to);
+  if (!fromArm || !toArm) return null;
+  const distance = Math.hypot(viewer[0] - fromArm.point[0], viewer[1] - fromArm.point[1]);
+  if (distance > radius) return null;
+  const fromAngle = Math.atan2(fromArm.out[0], fromArm.out[1]);
+  const toAngle = Math.atan2(-toArm.out[0], -toArm.out[1]);
+  const t = 1 - distance / radius;
+  return {
+    id,
+    anchor: fromArm.point,
+    source: toArm.point,
+    rotation: fromAngle - toAngle,
+    opacity: clamp(t * 1.45, 0, 0.82),
+  };
 }
 
 function endpointArm(map: Pick<CompositionMap, "segments">, endpoint: RoomAttachment): { point: [number, number]; out: [number, number]; right: [number, number]; width: number } | null {
