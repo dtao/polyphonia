@@ -1,4 +1,4 @@
-import { attachmentForPoint, canAddBranchAtPoint, canAddRoomAtPoint, canSetLoopEndpoint, endpointCount, loopRoleForPoint, roomAttachedToPoint } from "../map";
+import { attachmentForPoint, canAddBranchAtPoint, canAddRoomAtPoint, canSetLoopEndpoint, endpointCount, loopRoleForPoint, pathLoopForMap, roomAttachedToPoint } from "../map";
 import { useStore } from "../store";
 
 // Bottom-left panel shown when a path point is selected in edit mode. Grow the
@@ -31,14 +31,14 @@ export function MapPointPanel() {
     if (!canSetLoop) return;
     const endpoint = attachmentForPoint(map, pointKey);
     if (!endpoint) return;
-    const loop = { ...map.loop, [which]: endpoint };
+    const loop = { ...pathLoopForMap(map), [which]: endpoint };
     if (which === "start" && loopRole === "end") loop.end = undefined;
     if (which === "end" && loopRole === "start") loop.start = undefined;
-    setMap({ preset: "custom", loop });
+    setMap({ preset: "custom", tiling: { ...map.tiling, type: "path-loop", pathLoop: loop } });
   }
 
   function clearLoop() {
-    setMap({ preset: "custom", loop: undefined });
+    setMap({ preset: "custom", tiling: { ...map.tiling, type: "none", pathLoop: undefined } });
   }
 
   return (
@@ -80,7 +80,7 @@ export function MapPointPanel() {
       >
         Set loop end
       </button>
-      {map.loop && (
+      {pathLoopForMap(map) && (
         <button style={secondaryBtn} onClick={clearLoop} title="Remove the path loop">
           Clear loop
         </button>

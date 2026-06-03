@@ -117,6 +117,7 @@ export function normalizeMap(value: Partial<CompositionMap> | undefined): Compos
   });
   map.loop = normalizeMapLoop(map);
   map.tiling = normalizeMapTiling({ ...tiling, pathLoop: map.loop }, undefined, fallback.tiling);
+  map.loop = map.tiling.type === "path-loop" ? map.tiling.pathLoop : undefined;
   return {
     ...map,
     start: {
@@ -269,19 +270,25 @@ export function endpointKey(map: Pick<CompositionMap, "segments">, endpoint: Roo
   return point ? mapPointKey(point) : null;
 }
 
-export function loopRoleForPoint(map: Pick<CompositionMap, "segments" | "loop">, key: string): "start" | "end" | null {
-  if (endpointKey(map, map.loop?.start) === key) return "start";
-  if (endpointKey(map, map.loop?.end) === key) return "end";
+export function pathLoopForMap(map: Pick<CompositionMap, "tiling">): CompositionMap["loop"] {
+  return map.tiling.type === "path-loop" ? map.tiling.pathLoop : undefined;
+}
+
+export function loopRoleForPoint(map: Pick<CompositionMap, "segments" | "tiling">, key: string): "start" | "end" | null {
+  const loop = pathLoopForMap(map);
+  if (endpointKey(map, loop?.start) === key) return "start";
+  if (endpointKey(map, loop?.end) === key) return "end";
   return null;
 }
 
 export function wrapLoopPosition(
-  map: Pick<CompositionMap, "segments" | "loop">,
+  map: Pick<CompositionMap, "segments" | "tiling">,
   previous: [number, number],
   attempted: [number, number],
 ): { position: [number, number]; yawDelta: number } | null {
-  if (!map.loop?.start || !map.loop.end) return null;
-  return wrapFromEndpoint(map, map.loop.end, map.loop.start, previous, attempted) ?? wrapFromEndpoint(map, map.loop.start, map.loop.end, previous, attempted);
+  const loop = pathLoopForMap(map);
+  if (!loop?.start || !loop.end) return null;
+  return wrapFromEndpoint(map, loop.end, loop.start, previous, attempted) ?? wrapFromEndpoint(map, loop.start, loop.end, previous, attempted);
 }
 
 export interface LoopPreviewTransform {
@@ -292,17 +299,18 @@ export interface LoopPreviewTransform {
 }
 
 export function loopPreviewTransforms(
-  map: Pick<CompositionMap, "segments" | "loop">,
+  map: Pick<CompositionMap, "segments" | "tiling">,
   viewer: [number, number],
   radius = 34,
 ): LoopPreviewTransform[] {
-  if (!map.loop?.start || !map.loop.end) return [];
-  const endPreview = loopPreviewTransform(map, map.loop.end, map.loop.start, viewer, radius, "end");
-  const startPreview = loopPreviewTransform(map, map.loop.start, map.loop.end, viewer, radius, "start");
+  const loop = pathLoopForMap(map);
+  if (!loop?.start || !loop.end) return [];
+  const endPreview = loopPreviewTransform(map, loop.end, loop.start, viewer, radius, "end");
+  const startPreview = loopPreviewTransform(map, loop.start, loop.end, viewer, radius, "start");
   return [endPreview, startPreview].filter((preview): preview is LoopPreviewTransform => !!preview);
 }
 
-export function loopAdjacentTransforms(map: Pick<CompositionMap, "segments" | "loop">): LoopPreviewTransform[] {
+export function loopAdjacentTransforms(map: Pick<CompositionMap, "segments" | "tiling">): LoopPreviewTransform[] {
   return loopPreviewTransforms(map, [0, 0], Infinity);
 }
 
