@@ -9,6 +9,8 @@ import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 import { debugFlag } from "../debug";
 import { TONES } from "./EnvironmentScene";
 
+const tempVec = new THREE.Vector3();
+
 // A glowing orb that marks where a stem lives in space and pulses with its
 // audio level — a visual anchor for the sound you hear from that direction.
 // In edit mode it can be clicked to select; the selected track wears a ring.
@@ -18,6 +20,7 @@ export function TrackMarker({ track, preview = false }: { track: TrackDef; previ
   const selected = useStore((s) => !preview && s.selectedId === track.id);
   const map = useStore((s) => s.composition.map);
   const environment = useStore((s) => s.composition.environment);
+  const groupRef = useRef<THREE.Group | null>(null);
   const core = useRef<THREE.Mesh>(null);
   const aura = useRef<THREE.Mesh>(null);
   const outerAura = useRef<THREE.Mesh>(null);
@@ -44,7 +47,14 @@ export function TrackMarker({ track, preview = false }: { track: TrackDef; previ
     const breath = 1 + Math.sin(t * 0.9 + seed + x * 0.2 + z * 0.13) * 0.035;
 
     // Calculate distance-based fog visibility
-    const dist = Math.hypot(x - camera.position.x, z - camera.position.z);
+    let markerX = x;
+    let markerZ = z;
+    if (groupRef.current) {
+      groupRef.current.getWorldPosition(tempVec);
+      markerX = tempVec.x;
+      markerZ = tempVec.z;
+    }
+    const dist = Math.hypot(markerX - camera.position.x, markerZ - camera.position.z);
     const tone = TONES[environment.type] || TONES.void;
     const fogNear = Number(tone.fogNear);
     const fogFar = Number(tone.fogFar);
@@ -104,9 +114,17 @@ export function TrackMarker({ track, preview = false }: { track: TrackDef; previ
     [preview, track.id],
   );
 
+  const handleRef = useCallback(
+    (g: THREE.Group | null) => {
+      groupRef.current = g;
+      registerGroup(g);
+    },
+    [registerGroup],
+  );
+
   return (
     <group
-      ref={registerGroup}
+      ref={handleRef}
       position={[x, 0, z]}
       onClick={handleClick}
       onPointerOver={() => setCursor("pointer")}
