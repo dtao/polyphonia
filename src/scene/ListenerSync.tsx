@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { useStore } from "../store";
+import { debugEnabled, recordAudioUpdateTiming } from "../debug";
 
 // Feeds the active camera's position/orientation to the AudioEngine every
 // frame — so the spatial mix tracks the viewpoint in BOTH explore and edit
@@ -15,7 +16,9 @@ export function ListenerSync() {
   useFrame(() => {
     if (!engine) return;
     camera.getWorldDirection(dir.current);
+    const start = debugEnabled() ? performance.now() : 0;
     engine.updateListener(camera.position, dir.current, camera.up, map);
+    if (start) recordAudioUpdateTiming(performance.now() - start);
   });
 
   return null;

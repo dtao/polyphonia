@@ -6,6 +6,7 @@ import { TrackDef } from "../composition";
 import { isPointInsideMap } from "../map";
 import { markerObjects, useStore } from "../store";
 import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
+import { debugFlag } from "../debug";
 
 // A glowing orb that marks where a stem lives in space and pulses with its
 // audio level — a visual anchor for the sound you hear from that direction.
@@ -31,6 +32,7 @@ export function TrackMarker({ track, preview = false }: { track: TrackDef; previ
   const volume = track.volume ?? 1;
   const orbRadius = 0.42 + volume * 0.32;
   const markerTop = 1.1 + orbRadius * 0.9;
+  const showPointLight = !debugFlag("debugNoPointLights");
 
   useFrame(({ clock }, dt) => {
     const level = engine?.level(track.id) ?? 0;
@@ -157,7 +159,7 @@ export function TrackMarker({ track, preview = false }: { track: TrackDef; previ
           <meshBasicMaterial color="white" toneMapped={false} />
         </mesh>
       )}
-      <pointLight ref={glow} position={[0, markerTop, 0]} color={track.color} intensity={6} distance={18} />
+      {showPointLight && <pointLight ref={glow} position={[0, markerTop, 0]} color={track.color} intensity={6} distance={18} />}
       {mode === "edit" && (
         <Billboard position={[0, markerTop + orbRadius + 0.75, 0]}>
           <Text fontSize={0.5} color="white" anchorX="center">

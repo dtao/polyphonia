@@ -6,20 +6,23 @@ import { TrackGizmo } from "./TrackGizmo";
 import { ListenerSync } from "./ListenerSync";
 import { EnvironmentScene } from "./EnvironmentScene";
 import { MapScene } from "./MapScene";
+import { DebugSampler } from "./DebugSampler";
 import { CompositionMap, loopAdjacentTransforms, transformLoopPoint } from "../map";
 import { TrackDef } from "../composition";
+import { debugFlag } from "../debug";
 
 export function Scene() {
   const tracks = useStore((s) => s.composition.tracks);
   const environment = useStore((s) => s.composition.environment);
   const map = useStore((s) => s.composition.map);
   const mode = useStore((s) => s.mode);
-  const loopLights = loopLightTracks(map, tracks);
+  const loopPreviewsEnabled = !debugFlag("debugNoLoopPreview");
+  const loopLights = loopPreviewsEnabled ? loopLightTracks(map, tracks) : tracks;
 
   return (
     <>
       <EnvironmentScene environment={environment} editMode={mode === "edit"} />
-      {mode === "explore" && <LoopContinuityPreview />}
+      {mode === "explore" && loopPreviewsEnabled && <LoopContinuityPreview />}
       <MapScene map={map} tracks={tracks} lightTracks={mode === "explore" ? loopLights : tracks} editMode={mode === "edit"} />
 
       {tracks.map((t) => (
@@ -39,6 +42,7 @@ export function Scene() {
         </>
       )}
       <ListenerSync />
+      <DebugSampler />
     </>
   );
 }
@@ -46,8 +50,8 @@ export function Scene() {
 function LoopContinuityPreview() {
   const tracks = useStore((s) => s.composition.tracks);
   const map = useStore((s) => s.composition.map);
-  const previews = loopAdjacentTransforms(map);
-  const loopLights = loopLightTracks(map, tracks);
+  const previews = debugFlag("debugNoLoopPreview") ? [] : loopAdjacentTransforms(map);
+  const loopLights = debugFlag("debugNoLoopPreview") ? tracks : loopLightTracks(map, tracks);
 
   return (
     <>
@@ -68,6 +72,7 @@ function LoopContinuityPreview() {
 }
 
 function loopLightTracks(map: CompositionMap, tracks: TrackDef[]): TrackDef[] {
+  if (debugFlag("debugNoLoopLights")) return tracks;
   const previews = loopAdjacentTransforms(map);
   if (!previews.length) return tracks;
   return tracks.flatMap((track) => [

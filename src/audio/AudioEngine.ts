@@ -45,6 +45,7 @@ export class AudioEngine {
   private map: CompositionMap | null = null;
   private activeRoomAcousticsKey: string | null = null;
   private loopAudioPreviewRadius = 72;
+  private activeRoomDebug: { id: string; decay: number; reverbSend: number; impulseDuration: number } | null = null;
 
   constructor() {
     this.ctx = new AudioContext();
@@ -205,7 +206,18 @@ export class AudioEngine {
     occlusionGain.connect(panner);
     panner.connect(this.dryBus);
 
-    const track = { def, originalBuffer, buffer, panner, gain, distanceGain, occlusionGain, occlusionFilter, analyser, levelData: new Uint8Array(new ArrayBuffer(analyser.fftSize)) };
+    const track = {
+      def,
+      originalBuffer,
+      buffer,
+      panner,
+      gain,
+      distanceGain,
+      occlusionGain,
+      occlusionFilter,
+      analyser,
+      levelData: new Uint8Array(new ArrayBuffer(analyser.fftSize)),
+    };
     this.updateTrackAcoustics(track, this.ctx.currentTime);
     return track;
   }
@@ -367,6 +379,24 @@ export class AudioEngine {
     if (!this.started || !this.loopEnabled) return null;
     const position = ((((this.ctx.currentTime - this.loopStartTime) % duration) + duration) % duration);
     return { mode: "playing", position, duration };
+  }
+
+  debugSnapshot(): {
+    contextState: AudioContextState;
+    started: boolean;
+    trackCount: number;
+    loopEnabled: boolean;
+    loopLength: number;
+    activeRoom: { id: string; decay: number; reverbSend: number; impulseDuration: number } | null;
+  } {
+    return {
+      contextState: this.ctx.state,
+      started: this.started,
+      trackCount: this.tracks.length,
+      loopEnabled: this.loopEnabled,
+      loopLength: this.loopLength,
+      activeRoom: this.activeRoomDebug,
+    };
   }
 
   private playSegment(t: LiveTrack, when: number, offset: number, duration: number): void {
@@ -531,6 +561,7 @@ export class AudioEngine {
     const room = this.map ? containingRoom(this.map, [this.listenerPosition.x, this.listenerPosition.z]) : null;
     if (!room) {
       this.activeRoomAcousticsKey = null;
+      this.activeRoomDebug = null;
       this.roomReverbSend.gain.setTargetAtTime(0, at, 0.18);
       return;
     }
@@ -541,6 +572,12 @@ export class AudioEngine {
       this.activeRoomAcousticsKey = key;
       this.roomConvolver.buffer = this.roomImpulse(profile.decay);
     }
+    this.activeRoomDebug = {
+      id: room.id,
+      decay: profile.decay,
+      reverbSend: profile.reverbSend,
+      impulseDuration: this.roomConvolver.buffer?.duration ?? 0,
+    };
 
     this.roomReverbSend.gain.setTargetAtTime(profile.reverbSend, at, 0.18);
   }
