@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { Composition, TrackDef } from "../composition";
-import { CompositionMap, MapRoom, containingRoom, loopPreviewTransforms, roomWallObstructionCount, transformLoopPoint } from "../map";
+import { CompositionMap, MapRoom, containingRoom, roomWallObstructionCount, tiledMapTransforms, transformLoopPoint } from "../map";
 import { createPlaceholderStems } from "./synth";
 
 interface LiveTrack {
@@ -44,7 +44,7 @@ export class AudioEngine {
   private trackPosition = new THREE.Vector3();
   private map: CompositionMap | null = null;
   private activeRoomAcousticsKey: string | null = null;
-  private loopAudioPreviewRadius = 72;
+  private tileAudioPreviewRadius = 120;
   private activeRoomDebug: { id: string; decay: number; reverbSend: number; impulseDuration: number } | null = null;
 
   constructor() {
@@ -616,7 +616,7 @@ export class AudioEngine {
   private audibleTrackPosition(def: TrackDef): [number, number, number] {
     const base = def.position;
     if (!this.map) return base;
-    const previews = loopPreviewTransforms(this.map, [this.listenerPosition.x, this.listenerPosition.z], this.loopAudioPreviewRadius);
+    const previews = tiledMapTransforms(this.map, [this.listenerPosition.x, this.listenerPosition.z], this.tileAudioPreviewRadius);
     if (!previews.length) return base;
 
     let best: [number, number, number] = base;
