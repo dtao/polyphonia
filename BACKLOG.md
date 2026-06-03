@@ -53,6 +53,7 @@ depends only on earlier ones.
 - [ ] **31. Tiled map rendering and audio instances** — render nearby visual tiles/map copies and create/cull nearby virtual stem instances around the listener, bounded by distance/performance limits so infinite space stays cheap.
   - First audio slice: virtual square/hex/path-loop tile copies now drive stem spatialization by choosing the nearest audible copy around the listener.
 - [ ] **32. Tiling editor aids** — show tile boundaries, mirrored/ghost map copies, and edge-continuity hints in Edit mode so composers can intentionally make square/hex/path layouts that tile cleanly.
+  - First boundary slice: square/hex tile outlines render subtly around the viewer in both Edit and Explore modes.
 - [ ] **33. Publish/viewer compatibility for maps and environments** — ensure `/c/:id`, `/gallery`, artist pages, export/import, and older manifests all handle environment, map, start, and tiling metadata gracefully.
 - [ ] **34. Open-world stitching prototype** — explore streaming/culling multiple artists' spaces into neighborhoods once single-composition maps and tiling work.
 
