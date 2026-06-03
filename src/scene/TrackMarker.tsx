@@ -32,7 +32,7 @@ export function TrackMarker({ track, preview = false }: { track: TrackDef; previ
   const volume = track.volume ?? 1;
   const orbRadius = 0.42 + volume * 0.32;
   const markerTop = 1.1 + orbRadius * 0.9;
-  const showPointLight = !debugFlag("debugNoPointLights");
+  const showPointLight = !preview && !debugFlag("debugNoPointLights");
 
   useFrame(({ clock }, dt) => {
     const level = engine?.level(track.id) ?? 0;
