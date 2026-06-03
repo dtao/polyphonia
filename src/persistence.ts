@@ -1,5 +1,6 @@
 import { Composition, TrackDef, defaultComposition, normalizeComposition } from "./composition";
 import { newId } from "./id";
+import { normalizeMap } from "./map";
 
 // Local-first persistence. A *library* of composition manifests (small JSON)
 // lives in localStorage; uploaded stem audio (large binary) lives in IndexedDB,
@@ -76,14 +77,14 @@ export async function resolveComposition(saved: SerializedComposition): Promise<
 
 const LIB_KEY = "polyphonia:library";
 const OLD_KEY = "polyphonia:composition"; // pre-library single-slot format
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 export function loadLibrary(): { library: SerializedComposition[]; currentId: string } {
   const raw = localStorage.getItem(LIB_KEY);
   if (raw) {
     try {
       const p = JSON.parse(raw);
-      if ((p?.version === 2 || p?.version === SCHEMA_VERSION) && Array.isArray(p.library) && p.library.length) {
+      if ((p?.version === 2 || p?.version === 3 || p?.version === SCHEMA_VERSION) && Array.isArray(p.library) && p.library.length) {
         return { library: p.library.map(normalizeComposition), currentId: p.currentId ?? p.library[0].id };
       }
     } catch (err) {
@@ -116,9 +117,10 @@ export function persistLibrary(library: SerializedComposition[], currentId: stri
 // Copy a manifest under fresh ids, duplicating any stored stems in IndexedDB so
 // the copy is fully independent of the original.
 export async function copyComposition(s: SerializedComposition): Promise<SerializedComposition> {
+  const source: SerializedComposition = { ...s, map: normalizeMap(s.map) };
   const now = new Date().toISOString();
   const tracks: SerializedTrack[] = [];
-  for (const t of s.tracks) {
+  for (const t of source.tracks) {
     const id = newId();
     if (t.source.kind === "stored") {
       const blob = await stemGet(t.source.key);
@@ -129,7 +131,7 @@ export async function copyComposition(s: SerializedComposition): Promise<Seriali
     }
   }
   return {
-    ...s,
+    ...source,
     id: newId(),
     title: `${s.title} (copy)`,
     tracks,
@@ -166,9 +168,10 @@ type StemEntry = { name: string; type: string; data: string };
 
 // Download the composition with all stem audio embedded, fully portable.
 export async function exportComposition(comp: Composition): Promise<void> {
+  const normalized = normalizeComposition(comp);
   const stems: Record<string, StemEntry> = {};
   const tracks: SerializedTrack[] = [];
-  for (const t of comp.tracks) {
+  for (const t of normalized.tracks) {
     if (t.source.kind === "file") {
       const blob = await (await fetch(t.source.url)).blob();
       stems[t.id] = { name: t.name, type: blob.type || "audio/mpeg", data: toBase64(await blob.arrayBuffer()) };
@@ -178,11 +181,11 @@ export async function exportComposition(comp: Composition): Promise<void> {
     }
   }
 
-  const payload = { version: BUNDLE_VERSION, composition: { ...comp, tracks }, stems };
+  const payload = { version: BUNDLE_VERSION, composition: { ...normalized, tracks }, stems };
   const url = URL.createObjectURL(new Blob([JSON.stringify(payload)], { type: "application/json" }));
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${(comp.title || "composition").replace(/[^\w.-]+/g, "_")}.polyphonia.json`;
+  a.download = `${(normalized.title || "composition").replace(/[^\w.-]+/g, "_")}.polyphonia.json`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -209,5 +212,5 @@ export async function importComposition(file: File): Promise<Composition> {
     }
   }
   const now = new Date().toISOString();
-  return { ...saved, id: newId(), tracks, publishedId: undefined, publishedRevision: undefined, publishedAt: undefined, createdAt: now, updatedAt: now };
+  return normalizeComposition({ ...saved, id: newId(), tracks, publishedId: undefined, publishedRevision: undefined, publishedAt: undefined, createdAt: now, updatedAt: now });
 }
