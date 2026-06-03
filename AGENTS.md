@@ -30,33 +30,40 @@ add a test framework unless asked.
 ## Architecture & key files
 
 - **The seam:** a *composition* is plain data (`src/composition.ts`) — tracks =
-  stems + 3D position + properties, plus environment metadata. The engine
-  renders any manifest. This is why "one demo" scales to "a platform."
+  stems + 3D position + properties, plus environment, map, start-position, and
+  tiling metadata. The engine/scene render any manifest. This is why "one demo"
+  scales to "a platform."
 - **State hub:** `src/store.ts` — a Zustand store is the single source of truth
   (current `composition`, `library`, `mode`, `selectedId`, `engine`, `user`,
-  `accountArtist`, `entered`, `viewer`). The scene renders from it; edits flow
-  back into it and out to the engine. Also holds two **non-reactive module
+  `accountArtist`, `entered`, `viewer`, map/room/start selections, undo/redo
+  stacks). The scene renders from it; edits flow back into it and out to the
+  engine. Also holds two **non-reactive module
   singletons** to avoid per-frame re-renders: `markerObjects` (id → 3D object,
   for the move gizmo) and `viewState` (`{x,z,fx,fz}` shared camera
   position+heading across modes).
 - **Audio:** `src/audio/AudioEngine.ts` — owns ONE `AudioContext`. All stems are
   scheduled off the same clock and started together so they never drift; each
-  feeds an HRTF `PannerNode` while the camera drives the `AudioListener`. See
-  gotchas below. `src/audio/synth.ts` is a procedural placeholder generator
-  (fallback; the live demo uses real files in `public/stems`).
+  feeds one or more HRTF `PannerNode` instances while the camera drives the
+  `AudioListener`. It also applies room reverb, room-wall occlusion, and
+  square/hex/path-loop virtual audio instances. See gotchas below.
+  `src/audio/synth.ts` is a procedural placeholder generator (fallback; the live
+  demo uses real files in `public/stems`).
 - **Scene (R3F):** `src/scene/` — `Scene` (composes it), `EnvironmentScene`
-  (procedural studio/cavern/forest/crystal presets), `Player` (explore: WASD +
-  pointer-lock look), `EditControls` (orbit/pan/turn camera), `TrackGizmo`
-  (drag-to-move selected track), `TrackMarker` (pillar + billboard label;
-  selected edit-mode marker also shows Near/Far rings, rolloff gradient, and
-  volume-scaled pillar), `ListenerSync` (drives the AudioListener in both
-  modes).
+  (procedural void/studio/cavern/forest/crystal/galaxy presets), `MapScene`
+  (walkable paths, endpoints, rooms, start marker, tile boundaries/previews),
+  `Player` (explore: WASD + pointer-lock look, map clamping and path-loop
+  wrapping), `EditControls` (orbit/pan/turn camera), `TrackGizmo`
+  (drag-to-move selected track or map start), `TrackMarker` (pillar + billboard
+  label; selected edit-mode marker also shows Near/Far rings, rolloff gradient,
+  and volume-scaled pillar), `ListenerSync` (drives the AudioListener in both
+  modes), `DebugSampler` (dev performance/audio/map samples).
 - **UI (DOM overlays):** `src/ui/` — `EntryScreen` (start screen: library
   chooser, new/export/import, sign-in, gallery link), `PropertiesPanel`,
   `AddStem`, `EnvironmentPanel` (preset + ambience picker), `LoopPanel`
-  (composition loop on/off, seam audition, trim, crossfade), `PublishControl`,
-  `Account` (auth + account artist), `Viewer` (read-only `/c/:id`), `Gallery`
-  (`/gallery`), `ArtistPage` (`/artist/:slug`).
+  (composition loop on/off, seam audition, trim, crossfade), `MapPanel`,
+  `MapPointPanel`, `MapSegmentPanel`, `RoomPanel`, `DebugPanel`,
+  `PublishControl`, `Account` (auth + account artist), `Viewer` (read-only
+  `/c/:id`), `Gallery` (`/gallery`), `ArtistPage` (`/artist/:slug`).
 - **Persistence (local-first):** `src/persistence.ts` — composition manifests in
   `localStorage` (a *library*, schema v2, with migration from the old single
   slot); uploaded stem audio in **IndexedDB** (localStorage can't hold audio).
@@ -65,10 +72,11 @@ add a test framework unless asked.
   load/create, publish (uploads stems to Storage, manifest to Postgres), fetch,
   unpublish, gallery list, artist page list. No custom server — RLS does the
   gating. DB schema lives in `supabase/migrations`.
-- **Environments:** `src/environment.ts` defines the first Milestone 5
-  environment model: preset type, material, ambience, and optional square/hex
-  tiling metadata. Older manifests are normalized through `normalizeComposition`
-  so missing environment data defaults to the studio preset.
+- **Environments and maps:** `src/environment.ts` defines visual/acoustic
+  ambience presets. `src/map.ts` defines walkable paths, attached rooms, start
+  position/facing, and tiling (`none`, `path-loop`, `square`, `hex`). Older
+  manifests are normalized through `normalizeComposition`, `normalizeEnvironment`,
+  and `normalizeMap` so missing fields get safe defaults.
 - **Routing:** `src/main.tsx` — `/` editor (`App`), `/c/:id` viewer, `/gallery`,
   `/artist/:slug`. StrictMode is intentionally OFF (see gotchas).
 
@@ -94,6 +102,10 @@ add a test framework unless asked.
 - Edits that affect audio go through store actions that also call the engine's
   live setters (`setVolume`/`setPosition`/`setFalloff`) — never restart playback
   to apply an edit.
+- Composition edits that should be reversible go through store actions with
+  history (`withHistory`/`undo`/`redo`). Keep map, room, environment, loop,
+  metadata, and stem edits in that path unless there is a deliberate reason not
+  to.
 
 ### Commit message mechanics
 
@@ -118,6 +130,15 @@ git commit -F /tmp/polyphonia-commit-msg.txt
   (`loopEnabled`, `loopStart`, `loopEndTrim`, `loopCrossfade`) live on the
   manifest; keep them applied through `AudioEngine.updateLoopSettings` so live
   playback and saved data stay aligned.
+- **Map-aware audio:** listener updates pass the current `CompositionMap` into
+  the engine. Room-wall obstruction, room reverb, and virtual tiled stem
+  instances depend on that map, so keep map normalization and audio listener
+  updates in sync when changing path/room/tiling behavior.
+- **Map movement:** Explore movement is clamped to the walkable map and
+  path-loop tiling can wrap the listener between terminal endpoints while
+  preserving corridor-relative heading. Composition start position/facing lives
+  under `composition.map.start`; use `moveViewToMapStart` when entering or
+  switching compositions.
 - **Pointer lock:** drei `PointerLockControls` locks on click of its `selector`
   element. We scope it to `"canvas"` after entry (so clicking UI buttons doesn't
   grab the pointer) and to `"#enter-btn"` before entry (so the entry click both
@@ -130,7 +151,9 @@ git commit -F /tmp/polyphonia-commit-msg.txt
   serializable and must be revoked on delete (`revokeBlobUrls`). Persistence
   swaps them to `{kind:"stored"}` + IndexedDB; cloud swaps them to public CDN
   URLs.
-- **Dev-only debug hook:** `window.polyStore` exposes the store in dev builds.
+- **Dev-only debug tools:** `window.polyStore` exposes the store in dev builds.
+  `?debug=1` enables the debug overlay/log, with flags such as
+  `debugNoPointLights=1`, `debugNoLoopPreview=1`, and `debugNoLoopLights=1`.
 
 ## Sharing / Supabase (the #1 source of confusing errors)
 
@@ -174,6 +197,7 @@ Netlify (config in `netlify.toml`; SPA fallback in `public/_redirects` so
 
 ## Where to look next
 
-`BACKLOG.md` — M1–M4 are done. Remaining: the **Polish** list (e.g. choppy
-mouse-look, turn-in-edit-mode) and the **"Later"** north star (immersive
-environments that shape the sound). Update the checkboxes as you complete items.
+`BACKLOG.md` — M1–M4 are done and Milestone 5 is partially complete. Remaining:
+map-shape editing, map-aware stem tools, material-aware ambience, tiling editor
+aids, publish/viewer compatibility sweeps, and the later high-fidelity
+environment pipeline. Update the checkboxes as you complete items.
