@@ -548,7 +548,6 @@ function FloorMaterial({ base, accent, density }: { base: string; accent: string
       }}
       vertexShader={floorVertexShader}
       fragmentShader={floorFragmentShader}
-      fog={true}
     />
   );
 }
@@ -563,21 +562,17 @@ function CavernFloorMaterial() {
       }}
       vertexShader={floorVertexShader}
       fragmentShader={cavernFloorFragmentShader}
-      fog={true}
     />
   );
 }
 
 const floorVertexShader = `
   varying vec2 vWorld;
-  #include <fog_pars_vertex>
 
   void main() {
     vec4 world = modelMatrix * vec4(position, 1.0);
     vWorld = world.xz;
-    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-    gl_Position = projectionMatrix * mvPosition;
-    #include <fog_vertex>
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
 
@@ -586,7 +581,6 @@ const floorFragmentShader = `
   uniform vec3 accentColor;
   uniform float density;
   varying vec2 vWorld;
-  #include <fog_pars_fragment>
 
   float hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
@@ -610,7 +604,6 @@ const floorFragmentShader = `
     float mixAmount = clamp(n * 0.55 + fine + bands, 0.0, 1.0);
     vec3 color = mix(baseColor, accentColor, mixAmount);
     gl_FragColor = vec4(color, 1.0);
-    #include <fog_fragment>
   }
 `;
 
@@ -619,7 +612,6 @@ const cavernFloorFragmentShader = `
   uniform vec3 accentColor;
   uniform vec3 wetColor;
   varying vec2 vWorld;
-  #include <fog_pars_fragment>
 
   float hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
@@ -644,7 +636,6 @@ const cavernFloorFragmentShader = `
     vec3 rock = mix(baseColor, accentColor, clamp(broad * 0.55 + grain, 0.0, 1.0));
     vec3 color = mix(rock, wetColor, puddle * 0.55);
     gl_FragColor = vec4(color, 1.0);
-    #include <fog_fragment>
   }
 `;
 
@@ -709,7 +700,7 @@ function scatterProps(count: number, clearRadius: number, spread: number): PropS
   });
 }
 
-export const TONES = {
+const TONES = {
   void: {
     background: "#05060a",
     fogNear: 28,

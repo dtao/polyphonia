@@ -7,23 +7,19 @@ import { isPointInsideMap } from "../map";
 import { markerObjects, useStore } from "../store";
 import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 import { debugFlag } from "../debug";
-import { TONES } from "./EnvironmentScene";
-
-const tempVec = new THREE.Vector3();
 
 // A glowing orb that marks where a stem lives in space and pulses with its
 // audio level — a visual anchor for the sound you hear from that direction.
 // In edit mode it can be clicked to select; the selected track wears a ring.
-export function TrackMarker({ track, preview = false }: { track: TrackDef; preview?: boolean }) {
+export function TrackMarker({ track, preview = false, fade = 1 }: { track: TrackDef; preview?: boolean; fade?: number }) {
   const engine = useStore((s) => s.engine);
   const mode = useStore((s) => s.mode);
   const selected = useStore((s) => !preview && s.selectedId === track.id);
   const map = useStore((s) => s.composition.map);
-  const environment = useStore((s) => s.composition.environment);
-  const groupRef = useRef<THREE.Group | null>(null);
   const core = useRef<THREE.Mesh>(null);
   const aura = useRef<THREE.Mesh>(null);
   const outerAura = useRef<THREE.Mesh>(null);
+  const footprint = useRef<THREE.Mesh>(null);
   const flare = useRef<THREE.ShaderMaterial>(null);
   const rays = useRef<THREE.ShaderMaterial>(null);
   const starburst = useRef<THREE.Mesh>(null);
@@ -39,45 +35,38 @@ export function TrackMarker({ track, preview = false }: { track: TrackDef; previ
   const markerTop = 1.1 + orbRadius * 0.9;
   const showPointLight = !preview && !debugFlag("debugNoPointLights");
 
-  useFrame(({ clock, camera }, dt) => {
+  useFrame(({ clock }, dt) => {
     const level = engine?.level(track.id) ?? 0;
     smoothedLevel.current = THREE.MathUtils.damp(smoothedLevel.current, level, 14, dt);
     const pulse = smoothedLevel.current;
     const t = clock.elapsedTime;
     const breath = 1 + Math.sin(t * 0.9 + seed + x * 0.2 + z * 0.13) * 0.035;
-
-    // Calculate distance-based fog visibility
-    let markerX = x;
-    let markerZ = z;
-    if (groupRef.current) {
-      groupRef.current.getWorldPosition(tempVec);
-      markerX = tempVec.x;
-      markerZ = tempVec.z;
+    const opticalFade = Math.sqrt(fade);
+    if (core.current) {
+      core.current.scale.setScalar(breath + pulse * 0.85);
+      const material = core.current.material;
+      if (material instanceof THREE.MeshBasicMaterial) material.opacity = fade;
     }
-    const dist = Math.hypot(markerX - camera.position.x, markerZ - camera.position.z);
-    const tone = TONES[environment.type] || TONES.void;
-    const fogNear = Number(tone.fogNear);
-    const fogFar = Number(tone.fogFar);
-    const fogFactor = THREE.MathUtils.clamp((dist - fogNear) / (fogFar - fogNear), 0, 1);
-    const visibility = 1.0 - fogFactor;
-
-    if (core.current) core.current.scale.setScalar(breath + pulse * 0.85);
+    if (footprint.current) {
+      const material = footprint.current.material;
+      if (material instanceof THREE.MeshBasicMaterial) material.opacity = 0.28 * fade;
+    }
     if (aura.current) {
       aura.current.scale.setScalar(1.35 + pulse * 1.45);
       const material = aura.current.material;
-      if (material instanceof THREE.MeshBasicMaterial) material.opacity = (0.22 + pulse * 0.3) * visibility;
+      if (material instanceof THREE.MeshBasicMaterial) material.opacity = (0.22 + pulse * 0.3) * opticalFade;
     }
     if (outerAura.current) {
       outerAura.current.scale.setScalar(2.1 + pulse * 2.2);
       const material = outerAura.current.material;
-      if (material instanceof THREE.MeshBasicMaterial) material.opacity = (0.08 + pulse * 0.18) * visibility;
+      if (material instanceof THREE.MeshBasicMaterial) material.opacity = (0.08 + pulse * 0.18) * opticalFade;
     }
     if (flare.current) {
-      flare.current.uniforms.opacity.value = (0.5 + pulse * 0.45) * visibility;
+      flare.current.uniforms.opacity.value = (0.5 + pulse * 0.45) * opticalFade;
       flare.current.uniforms.radius.value = 0.42 + pulse * 0.18;
     }
     if (rays.current) {
-      rays.current.uniforms.opacity.value = (0.38 + pulse * 0.52) * visibility;
+      rays.current.uniforms.opacity.value = (0.38 + pulse * 0.52) * opticalFade;
       rays.current.uniforms.radius.value = 0.22 + pulse * 0.1;
     }
     if (starburst.current) {
@@ -87,8 +76,8 @@ export function TrackMarker({ track, preview = false }: { track: TrackDef; previ
         Math.sin(t * 0.031 + seed * 4.1) * 0.55;
     }
     if (glow.current) {
-      glow.current.intensity = ((selected ? 8 : 4.8) + volume * 3.2 + pulse * 44) * visibility;
-      glow.current.distance = (12 + volume * 8 + pulse * 16) * visibility;
+      glow.current.intensity = (selected ? 8 : 4.8) + volume * 3.2 + pulse * 44;
+      glow.current.distance = 12 + volume * 8 + pulse * 16;
     }
     if (ring.current) ring.current.rotation.z += dt * 1.5;
   });
@@ -114,24 +103,16 @@ export function TrackMarker({ track, preview = false }: { track: TrackDef; previ
     [preview, track.id],
   );
 
-  const handleRef = useCallback(
-    (g: THREE.Group | null) => {
-      groupRef.current = g;
-      registerGroup(g);
-    },
-    [registerGroup],
-  );
-
   return (
     <group
-      ref={handleRef}
+      ref={registerGroup}
       position={[x, 0, z]}
       onClick={handleClick}
       onPointerOver={() => setCursor("pointer")}
       onPointerOut={() => setCursor("auto")}
     >
       {mode === "edit" && selected && <FalloffMap track={track} />}
-      <mesh position={[0, footprintHeight, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh ref={footprint} position={[0, footprintHeight, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[orbRadius * 0.95, orbRadius * 1.55, 48]} />
         <meshBasicMaterial color={track.color} transparent opacity={0.28} toneMapped={false} depthWrite={false} />
       </mesh>
@@ -179,7 +160,7 @@ export function TrackMarker({ track, preview = false }: { track: TrackDef; previ
       </Billboard>
       <mesh ref={core} position={[0, markerTop, 0]}>
         <sphereGeometry args={[orbRadius * 0.62, 32, 20]} />
-        <meshBasicMaterial color="white" toneMapped={false} />
+        <meshBasicMaterial color="white" transparent={fade < 0.999} opacity={fade} toneMapped={false} depthWrite={fade >= 0.999} />
       </mesh>
       {/* selection ring */}
       {selected && (

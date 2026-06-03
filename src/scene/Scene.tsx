@@ -15,6 +15,10 @@ import { TrackDef } from "../composition";
 import { debugFlag } from "../debug";
 
 const VIEWER_SAMPLE_DISTANCE = 2;
+const PATH_LOOP_PREVIEW_FADE_START = 18;
+const PATH_LOOP_PREVIEW_FADE_END = 46;
+const TILE_PREVIEW_FADE_START = 70;
+const TILE_PREVIEW_FADE_END = 130;
 
 export function Scene() {
   const tracks = useStore((s) => s.composition.tracks);
@@ -79,12 +83,14 @@ function TiledMapPreview({ viewer }: { viewer: [number, number] }) {
   return (
     <>
       {previews.map((preview) => {
+        const fade = previewVisibility(map, preview, viewer);
+        if (fade <= 0.01) return null;
         return (
           <group key={preview.id} position={[preview.anchor[0], 0, preview.anchor[1]]} rotation={[0, preview.rotation, 0]}>
             <group position={[-preview.source[0], 0, -preview.source[1]]}>
-              <MapScene map={map} tracks={tracks} lightTracks={tileLights} editMode={false} />
+              <MapScene map={map} tracks={tracks} lightTracks={tileLights} editMode={false} previewFade={fade} />
               {tracks.map((track) => (
-                <TrackMarker key={`${preview.id}-${track.id}`} track={track} preview />
+                <TrackMarker key={`${preview.id}-${track.id}`} track={track} preview fade={fade} />
               ))}
             </group>
           </group>
@@ -181,7 +187,7 @@ function pointBoundaryKey([x, z]: [number, number]): string {
 
 function tileLightTracks(map: CompositionMap, tracks: TrackDef[], viewer: [number, number]): TrackDef[] {
   if (debugFlag("debugNoLoopLights")) return tracks;
-  const previews = tiledMapTransforms(map, viewer);
+  const previews = tiledMapTransforms(map, viewer).filter((preview) => previewVisibility(map, preview, viewer) > 0.01);
   if (!previews.length) return tracks;
   return tracks.flatMap((track) => [
     track,
@@ -190,4 +196,11 @@ function tileLightTracks(map: CompositionMap, tracks: TrackDef[], viewer: [numbe
         return { ...track, position: [x, track.position[1], z] as [number, number, number] };
       }),
   ]);
+}
+
+function previewVisibility(map: CompositionMap, preview: { anchor: [number, number] }, viewer: [number, number]): number {
+  const distance = Math.hypot(viewer[0] - preview.anchor[0], viewer[1] - preview.anchor[1]);
+  const start = map.tiling.type === "path-loop" ? PATH_LOOP_PREVIEW_FADE_START : TILE_PREVIEW_FADE_START;
+  const end = map.tiling.type === "path-loop" ? PATH_LOOP_PREVIEW_FADE_END : TILE_PREVIEW_FADE_END;
+  return 1 - THREE.MathUtils.smoothstep(distance, start, end);
 }

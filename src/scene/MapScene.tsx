@@ -9,7 +9,19 @@ import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 
 const MAX_TRACK_LIGHTS = 64;
 
-export function MapScene({ map, tracks, editMode, lightTracks = tracks }: { map: CompositionMap; tracks: TrackDef[]; editMode: boolean; lightTracks?: TrackDef[] }) {
+export function MapScene({
+  map,
+  tracks,
+  editMode,
+  lightTracks = tracks,
+  previewFade = 1,
+}: {
+  map: CompositionMap;
+  tracks: TrackDef[];
+  editMode: boolean;
+  lightTracks?: TrackDef[];
+  previewFade?: number;
+}) {
   const selectedMapSegmentId = useStore((s) => s.selectedMapSegmentId);
   const endpointCounts = new Map<string, number>();
   for (const segment of map.segments) {
@@ -21,8 +33,8 @@ export function MapScene({ map, tracks, editMode, lightTracks = tracks }: { map:
   return (
     <group>
       {editMode && <StartMarker map={map} editMode={editMode} />}
-      <ReflectiveUnderfloor segments={map.segments} tracks={tracks} lightTracks={lightTracks} />
-      <WalkableFloor segments={map.segments} tracks={lightTracks} editMode={editMode} />
+      <ReflectiveUnderfloor segments={map.segments} tracks={tracks} lightTracks={lightTracks} previewFade={previewFade} />
+      <WalkableFloor segments={map.segments} tracks={lightTracks} editMode={editMode} previewFade={previewFade} />
       <PathDropSkirt segments={map.segments} />
       {map.segments.map((segment) => (
         <Segment
@@ -126,14 +138,24 @@ function splitWall(half: number, isEntrance: boolean, entranceWidth: number, off
   return parts;
 }
 
-function ReflectiveUnderfloor({ segments, tracks, lightTracks }: { segments: WalkableSegment[]; tracks: TrackDef[]; lightTracks: TrackDef[] }) {
+function ReflectiveUnderfloor({
+  segments,
+  tracks,
+  lightTracks,
+  previewFade,
+}: {
+  segments: WalkableSegment[];
+  tracks: TrackDef[];
+  lightTracks: TrackDef[];
+  previewFade: number;
+}) {
   const bounds = useMemo(() => mapBounds(segments, tracks), [segments, tracks]);
   if (!bounds) return null;
 
   return (
     <mesh position={[bounds.center[0], UNDERFLOOR_HEIGHT, bounds.center[1]]} rotation={[-Math.PI / 2, 0, 0]}>
       <planeGeometry args={[bounds.size, bounds.size, 96, 96]} />
-      <ReflectiveUnderfloorMaterial tracks={lightTracks} />
+      <ReflectiveUnderfloorMaterial tracks={lightTracks} previewFade={previewFade} />
     </mesh>
   );
 }
@@ -313,17 +335,19 @@ function WalkableFloor({
   segments,
   tracks,
   editMode,
+  previewFade,
 }: {
   segments: WalkableSegment[];
   tracks: TrackDef[];
   editMode: boolean;
+  previewFade: number;
 }) {
   const geometry = useMemo(() => walkableFloorGeometry(segments), [segments]);
   if (!geometry) return null;
 
   return (
     <mesh geometry={geometry} position={[0, PATH_HEIGHT, 0]}>
-      <PathMaterial tracks={tracks} editMode={editMode} selected={false} />
+      <PathMaterial tracks={tracks} editMode={editMode} selected={false} previewFade={previewFade} />
     </mesh>
   );
 }
@@ -617,10 +641,11 @@ function mapBounds(segments: WalkableSegment[], tracks: TrackDef[]): { center: [
   return { center, size: Math.max(90, span + 70) };
 }
 
-function PathMaterial({ tracks, editMode, selected }: { tracks: TrackDef[]; editMode: boolean; selected: boolean }) {
+function PathMaterial({ tracks, editMode, selected, previewFade }: { tracks: TrackDef[]; editMode: boolean; selected: boolean; previewFade: number }) {
   const material = useRef<THREE.ShaderMaterial>(null);
   const engine = useStore((s) => s.engine);
   const smoothedLevels = useRef(new Float32Array(MAX_TRACK_LIGHTS));
+  const isPreview = previewFade < 0.999;
   // Stable uniforms object — created ONCE. Recreating it on prop changes (e.g.
   // when `tracks` mutates on the first edit) hands a new object to
   // <shaderMaterial>, which desyncs the live material from what this useFrame
@@ -633,6 +658,7 @@ function PathMaterial({ tracks, editMode, selected }: { tracks: TrackDef[]; edit
       trackLevels: { value: new Float32Array(MAX_TRACK_LIGHTS) },
       trackCount: { value: 0 },
       floorStrength: { value: 0.66 },
+      opacity: { value: previewFade },
     }),
     [],
   );
@@ -656,25 +682,25 @@ function PathMaterial({ tracks, editMode, selected }: { tracks: TrackDef[]; edit
     }
     u.baseColor.value.set(selected ? "#8fffe8" : "#c8d2df");
     u.floorStrength.value = selected ? 0.92 : editMode ? 0.78 : 0.66;
+    u.opacity.value = previewFade;
   });
 
   return (
     <shaderMaterial
       ref={material}
-      transparent={false}
-      depthWrite
+      transparent={isPreview}
+      depthWrite={!isPreview}
       toneMapped={false}
       blending={THREE.NormalBlending}
       side={THREE.DoubleSide}
       uniforms={uniforms}
       vertexShader={pathVertexShader}
       fragmentShader={pathFragmentShader}
-      fog={true}
     />
   );
 }
 
-function ReflectiveUnderfloorMaterial({ tracks }: { tracks: TrackDef[] }) {
+function ReflectiveUnderfloorMaterial({ tracks, previewFade }: { tracks: TrackDef[]; previewFade: number }) {
   const material = useRef<THREE.ShaderMaterial>(null);
   const engine = useStore((s) => s.engine);
   const smoothedLevels = useRef(new Float32Array(MAX_TRACK_LIGHTS));
@@ -687,6 +713,7 @@ function ReflectiveUnderfloorMaterial({ tracks }: { tracks: TrackDef[] }) {
       trackLevels: { value: new Float32Array(MAX_TRACK_LIGHTS) },
       trackCount: { value: 0 },
       time: { value: 0 },
+      opacity: { value: previewFade },
     }),
     [],
   );
@@ -695,6 +722,7 @@ function ReflectiveUnderfloorMaterial({ tracks }: { tracks: TrackDef[] }) {
     if (!material.current) return;
     const u = material.current.uniforms;
     u.time.value = clock.elapsedTime;
+    u.opacity.value = previewFade;
     u.trackCount.value = Math.min(tracks.length, MAX_TRACK_LIGHTS);
     for (let i = 0; i < MAX_TRACK_LIGHTS; i++) {
       const track = tracks[i];
@@ -722,7 +750,6 @@ function ReflectiveUnderfloorMaterial({ tracks }: { tracks: TrackDef[] }) {
       uniforms={uniforms}
       vertexShader={reflectiveFloorVertexShader}
       fragmentShader={reflectiveFloorFragmentShader}
-      fog={true}
     />
   );
 }
@@ -909,14 +936,11 @@ function findPoint(map: CompositionMap, key: string): [number, number] | null {
 
 const pathVertexShader = `
   varying vec2 vWorld;
-  #include <fog_pars_vertex>
 
   void main() {
     vec4 worldPosition = modelMatrix * vec4(position, 1.0);
     vWorld = worldPosition.xz;
-    vec4 mvPosition = viewMatrix * worldPosition;
-    gl_Position = projectionMatrix * mvPosition;
-    #include <fog_vertex>
+    gl_Position = projectionMatrix * viewMatrix * worldPosition;
   }
 `;
 
@@ -929,8 +953,8 @@ const pathFragmentShader = `
   uniform float trackLevels[MAX_TRACK_LIGHTS];
   uniform int trackCount;
   uniform float floorStrength;
+  uniform float opacity;
   varying vec2 vWorld;
-  #include <fog_pars_fragment>
 
   void main() {
     vec3 color = baseColor * floorStrength;
@@ -948,23 +972,19 @@ const pathFragmentShader = `
     }
 
     color += baseColor * min(lightTotal, 1.0) * 0.08;
-    gl_FragColor = vec4(color, 1.0);
-    #include <fog_fragment>
+    gl_FragColor = vec4(color, opacity);
   }
 `;
 
 const reflectiveFloorVertexShader = `
   varying vec2 vWorld;
   varying vec2 vUv;
-  #include <fog_pars_vertex>
 
   void main() {
     vUv = uv;
     vec4 worldPosition = modelMatrix * vec4(position, 1.0);
     vWorld = worldPosition.xz;
-    vec4 mvPosition = viewMatrix * worldPosition;
-    gl_Position = projectionMatrix * mvPosition;
-    #include <fog_vertex>
+    gl_Position = projectionMatrix * viewMatrix * worldPosition;
   }
 `;
 
@@ -976,9 +996,9 @@ const reflectiveFloorFragmentShader = `
   uniform float trackLevels[MAX_TRACK_LIGHTS];
   uniform int trackCount;
   uniform float time;
+  uniform float opacity;
   varying vec2 vWorld;
   varying vec2 vUv;
-  #include <fog_pars_fragment>
 
   float hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -1018,15 +1038,6 @@ const reflectiveFloorFragmentShader = `
     vec3 sheen = vec3(0.12, 0.16, 0.19) * (0.08 + brushed * 0.18 + min(glowTotal, 1.0) * 0.15);
     color += sheen;
     float alpha = edgeFade * (0.72 + min(glowTotal, 1.0) * 0.22);
-    gl_FragColor = vec4(color, alpha);
-    #ifdef USE_FOG
-      #ifdef FOG_EXP2
-        float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );
-      #else
-        float fogFactor = smoothstep( fogNear, fogFar, vFogDepth );
-      #endif
-      gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );
-      gl_FragColor.a *= (1.0 - fogFactor);
-    #endif
+    gl_FragColor = vec4(color, alpha * opacity);
   }
 `;
