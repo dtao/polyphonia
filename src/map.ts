@@ -35,6 +35,10 @@ export interface CompositionMap {
   preset: MapPreset;
   segments: WalkableSegment[];
   rooms: MapRoom[];
+  loop?: {
+    start?: RoomAttachment;
+    end?: RoomAttachment;
+  };
   wallHeight: number;
   start: {
     position: [number, number];
@@ -84,12 +88,14 @@ export function normalizeMap(value: Partial<CompositionMap> | undefined): Compos
     preset,
     segments,
     rooms,
+    loop: isMapLoop(value?.loop) ? value.loop : undefined,
     wallHeight: clamp(value?.wallHeight ?? fallback.wallHeight, 0, 8),
     start: {
       position: startPosition,
       direction: startDirection,
     },
   });
+  map.loop = normalizeMapLoop(map);
   return {
     ...map,
     start: {
@@ -211,6 +217,10 @@ export function canAddBranchAtPoint(map: Pick<CompositionMap, "segments" | "room
   return endpointCount(map, key) > 0 && !roomAttachedToPoint(map, key);
 }
 
+export function canSetLoopEndpoint(map: Pick<CompositionMap, "segments" | "rooms">, key: string): boolean {
+  return isTerminalMapPoint(map, key) && !roomAttachedToPoint(map, key);
+}
+
 export function roomAttachmentPoint(map: Pick<CompositionMap, "segments">, room: MapRoom): [number, number] | null {
   if (!room.attachment) return null;
   const segment = map.segments.find((s) => s.id === room.attachment?.segmentId);
@@ -226,6 +236,33 @@ export function attachmentForPoint(map: Pick<CompositionMap, "segments">, key: s
   return null;
 }
 
+export function endpointPoint(map: Pick<CompositionMap, "segments">, endpoint: RoomAttachment): [number, number] | null {
+  const segment = map.segments.find((s) => s.id === endpoint.segmentId);
+  if (!segment) return null;
+  return endpoint.end === "start" ? segment.start : segment.end;
+}
+
+export function endpointKey(map: Pick<CompositionMap, "segments">, endpoint: RoomAttachment | undefined): string | null {
+  if (!endpoint) return null;
+  const point = endpointPoint(map, endpoint);
+  return point ? mapPointKey(point) : null;
+}
+
+export function loopRoleForPoint(map: Pick<CompositionMap, "segments" | "loop">, key: string): "start" | "end" | null {
+  if (endpointKey(map, map.loop?.start) === key) return "start";
+  if (endpointKey(map, map.loop?.end) === key) return "end";
+  return null;
+}
+
+export function wrapLoopPosition(
+  map: Pick<CompositionMap, "segments" | "loop">,
+  previous: [number, number],
+  attempted: [number, number],
+): { position: [number, number]; yawDelta: number } | null {
+  if (!map.loop?.start || !map.loop.end) return null;
+  return wrapFromEndpoint(map, map.loop.end, map.loop.start, previous, attempted) ?? wrapFromEndpoint(map, map.loop.start, map.loop.end, previous, attempted);
+}
+
 export function alignAttachedRooms(map: CompositionMap): CompositionMap {
   return {
     ...map,
@@ -235,6 +272,54 @@ export function alignAttachedRooms(map: CompositionMap): CompositionMap {
       return placed ? { ...room, ...placed, entranceOffset: 0 } : room;
     }),
   };
+}
+
+function normalizeMapLoop(map: CompositionMap): CompositionMap["loop"] {
+  const loop = map.loop;
+  if (!loop) return undefined;
+  const startKey = endpointKey(map, loop.start);
+  const endKey = endpointKey(map, loop.end);
+  const start = startKey && startKey !== endKey && canSetLoopEndpoint(map, startKey) ? loop.start : undefined;
+  const end = endKey && startKey !== endKey && canSetLoopEndpoint(map, endKey) ? loop.end : undefined;
+  return start || end ? { start, end } : undefined;
+}
+
+function wrapFromEndpoint(
+  map: Pick<CompositionMap, "segments">,
+  from: RoomAttachment,
+  to: RoomAttachment,
+  previous: [number, number],
+  attempted: [number, number],
+): { position: [number, number]; yawDelta: number } | null {
+  const fromArm = endpointArm(map, from);
+  const toArm = endpointArm(map, to);
+  if (!fromArm || !toArm) return null;
+  const [fx, fz] = fromArm.point;
+  const movementPastEndpoint = (attempted[0] - fx) * fromArm.out[0] + (attempted[1] - fz) * fromArm.out[1];
+  if (movementPastEndpoint <= 0) return null;
+  const wasNearEndpoint = Math.hypot(previous[0] - fx, previous[1] - fz) <= fromArm.width * 0.8 + 0.8;
+  if (!wasNearEndpoint) return null;
+  const lateral = (attempted[0] - fx) * fromArm.right[0] + (attempted[1] - fz) * fromArm.right[1];
+  if (Math.abs(lateral) > fromArm.width * 0.55 + 0.8) return null;
+
+  const insideDistance = Math.max(0.35, movementPastEndpoint);
+  const [tx, tz] = toArm.point;
+  const position: [number, number] = [
+    tx - toArm.out[0] * insideDistance + toArm.right[0] * lateral,
+    tz - toArm.out[1] * insideDistance + toArm.right[1] * lateral,
+  ];
+  const fromAngle = Math.atan2(fromArm.out[0], fromArm.out[1]);
+  const toAngle = Math.atan2(-toArm.out[0], -toArm.out[1]);
+  return { position, yawDelta: toAngle - fromAngle };
+}
+
+function endpointArm(map: Pick<CompositionMap, "segments">, endpoint: RoomAttachment): { point: [number, number]; out: [number, number]; right: [number, number]; width: number } | null {
+  const segment = map.segments.find((s) => s.id === endpoint.segmentId);
+  if (!segment) return null;
+  const point = endpoint.end === "start" ? segment.start : segment.end;
+  const other = endpoint.end === "start" ? segment.end : segment.start;
+  const out = normalizeDirection([point[0] - other[0], point[1] - other[1]]);
+  return { point, out, right: [out[1], -out[0]], width: segment.width };
 }
 
 function attachedRoomPlacement(map: Pick<CompositionMap, "segments">, room: MapRoom): Pick<MapRoom, "center" | "rotation" | "entranceSide"> | null {
@@ -391,6 +476,11 @@ function normalizeRoom(room: MapRoom): MapRoom {
 function isRoomAttachment(value: unknown): value is RoomAttachment {
   const attachment = value as RoomAttachment;
   return typeof attachment?.segmentId === "string" && (attachment.end === "start" || attachment.end === "end");
+}
+
+function isMapLoop(value: unknown): value is NonNullable<CompositionMap["loop"]> {
+  const loop = value as NonNullable<CompositionMap["loop"]>;
+  return isRoomAttachment(loop?.start) || isRoomAttachment(loop?.end);
 }
 
 function isPoint(value: unknown): value is [number, number] {

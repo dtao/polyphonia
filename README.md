@@ -15,7 +15,8 @@ these spatial compositions.
   kept sample-locked in sync.
 - **Immersive spaces** — compositions carry environment metadata and can render
   procedural spaces such as a studio void, cavern, forest clearing, or crystal
-  hall.
+  hall; editable path maps can define terminal loop points for corridor-like
+  spaces that wrap back on themselves.
 - **Edit** — an overhead edit mode to place tracks in space (drag gizmo), and a
   properties panel to rename, recolor, set volume, and tune distance falloff.
 - **Build from scratch** — create a new composition (title / BPM, plus an
@@ -147,8 +148,10 @@ SPA fallback so routes like `/c/:id`, `/gallery`, and `/artist/:slug` serve
   engine.
 - **Composition** ([src/composition.ts](src/composition.ts)) — a composition is
   just data (tracks = stems + positions + properties, plus environment
-  metadata). The engine renders any manifest, which is what lets one demo grow
-  into a platform.
+  metadata). Its map data can include a path-loop start/end pair; when the
+  listener walks past one terminal endpoint, exploration continues from the
+  other endpoint with the camera heading rotated into the destination path. The
+  engine renders any manifest, which is what lets one demo grow into a platform.
 - **Persistence** ([src/persistence.ts](src/persistence.ts)) — local-first
   library (localStorage manifests + IndexedDB stem blobs), plus export/import.
 - **Cloud** ([src/cloud.ts](src/cloud.ts)) — publish uploads stems to Supabase

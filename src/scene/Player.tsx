@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { useStore, viewState } from "../store";
-import { clampToMap } from "../map";
+import { clampToMap, wrapLoopPosition } from "../map";
 
 // Explore mode: WASD movement on the ground plane + pointer-lock mouse look.
 // (The AudioListener is driven separately by <ListenerSync>, which works in
@@ -107,10 +107,18 @@ export function Player() {
     forward.current.normalize();
     right.current.crossVectors(forward.current, up).normalize();
 
+    const previous: [number, number] = [camera.position.x, camera.position.z];
     if (keys.current["KeyW"]) camera.position.addScaledVector(forward.current, speed);
     if (keys.current["KeyS"]) camera.position.addScaledVector(forward.current, -speed);
     if (keys.current["KeyD"]) camera.position.addScaledVector(right.current, speed);
     if (keys.current["KeyA"]) camera.position.addScaledVector(right.current, -speed);
+    const wrapped = wrapLoopPosition(map, previous, [camera.position.x, camera.position.z]);
+    if (wrapped) {
+      camera.position.x = wrapped.position[0];
+      camera.position.z = wrapped.position[1];
+      look.current.yaw += wrapped.yawDelta;
+      look.current.targetYaw += wrapped.yawDelta;
+    }
     const [x, z] = clampToMap(map, [camera.position.x, camera.position.z]);
     camera.position.x = x;
     camera.position.z = z;

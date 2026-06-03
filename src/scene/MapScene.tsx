@@ -3,7 +3,7 @@ import { TransformControls } from "@react-three/drei";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
-import { canAddBranchAtPoint, clampToMap, CompositionMap, MapRoom, roomAttachedToPoint, ROOM_WALL_THICKNESS, WalkableSegment } from "../map";
+import { canAddBranchAtPoint, clampToMap, CompositionMap, loopRoleForPoint, MapRoom, roomAttachedToPoint, ROOM_WALL_THICKNESS, WalkableSegment } from "../map";
 import { useStore } from "../store";
 import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 
@@ -746,6 +746,7 @@ function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpoint
       point,
       shared: (endpointCounts.get(key) ?? 0) > 1,
       hasRoom: !!roomAttachedToPoint(map, key),
+      loopRole: loopRoleForPoint(map, key),
     }));
   }, [endpointCounts, map]);
 
@@ -803,10 +804,11 @@ function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpoint
           <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
         </mesh>
       )}
-      {endpoints.map(({ id, key, point, shared, hasRoom }) => {
+      {endpoints.map(({ id, key, point, shared, hasRoom, loopRole }) => {
         const active = activeId === id;
         const selected = selectedMapPointKey === key;
-        const terminalColor = hasRoom ? "#8fffe8" : "#ffffff";
+        const loopColor = loopRole === "start" ? "#56e0c0" : loopRole === "end" ? "#ff9f6e" : null;
+        const terminalColor = loopColor ?? (hasRoom ? "#8fffe8" : "#ffffff");
         return (
           <mesh
             key={id}
@@ -824,12 +826,18 @@ function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpoint
               if (!drag.current) document.body.style.cursor = "auto";
             }}
           >
-            <sphereGeometry args={[shared || hasRoom ? 1.6 : 1.35, 24, 16]} />
+            <sphereGeometry args={[shared || hasRoom || loopRole ? 1.6 : 1.35, 24, 16]} />
             <meshBasicMaterial transparent opacity={0} depthWrite={false} />
             <mesh>
-              <sphereGeometry args={[active ? 0.95 : selected ? 0.82 : shared || hasRoom ? 0.72 : 0.58, 24, 16]} />
+              <sphereGeometry args={[active ? 0.95 : selected ? 0.82 : shared || hasRoom || loopRole ? 0.72 : 0.58, 24, 16]} />
               <meshBasicMaterial color={active ? "#8fffe8" : selected ? "#9fb4ff" : shared ? "#ffd166" : terminalColor} transparent opacity={1} toneMapped={false} />
             </mesh>
+            {loopRole && (
+              <mesh rotation={[-Math.PI / 2, 0, 0]}>
+                <ringGeometry args={[0.95, 1.12, 36]} />
+                <meshBasicMaterial color={loopColor ?? "#ffffff"} transparent opacity={0.9} toneMapped={false} depthWrite={false} />
+              </mesh>
+            )}
             {(active || selected) && (
               <>
                 <mesh>
