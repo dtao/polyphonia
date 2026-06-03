@@ -53,9 +53,8 @@ let latest: DebugSample | null = null;
 export function debugEnabled(): boolean {
   if (typeof window === "undefined") return false;
   const param = new URLSearchParams(window.location.search).get("debug");
-  if (param === "0" || param === "false") return false;
   if (param === "1" || param === "true") return true;
-  return (import.meta as any).env?.DEV || ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+  return false;
 }
 
 export function debugFlag(name: string): boolean {
