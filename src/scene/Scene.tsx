@@ -10,6 +10,8 @@ import { EnvironmentScene } from "./EnvironmentScene";
 import { MapScene } from "./MapScene";
 import { LoopPreviewTransform, loopPreviewTransforms } from "../map";
 
+const LOOP_PREVIEW_RADIUS = 72;
+
 export function Scene() {
   const tracks = useStore((s) => s.composition.tracks);
   const environment = useStore((s) => s.composition.environment);
@@ -50,7 +52,7 @@ function LoopContinuityPreview() {
   const [previews, setPreviews] = useState<LoopPreviewTransform[]>([]);
 
   useFrame(() => {
-    const next = loopPreviewTransforms(map, [camera.position.x, camera.position.z]);
+    const next = loopPreviewTransforms(map, [camera.position.x, camera.position.z], LOOP_PREVIEW_RADIUS);
     setPreviews((current) => (samePreviews(current, next) ? current : next));
   });
 
@@ -80,8 +82,7 @@ function samePreviews(a: LoopPreviewTransform[], b: LoopPreviewTransform[]): boo
       Math.abs(left.anchor[1] - right.anchor[1]) < 0.001 &&
       Math.abs(left.source[0] - right.source[0]) < 0.001 &&
       Math.abs(left.source[1] - right.source[1]) < 0.001 &&
-      Math.abs(left.rotation - right.rotation) < 0.001 &&
-      Math.abs(left.opacity - right.opacity) < 0.02
+      Math.abs(left.rotation - right.rotation) < 0.001
     );
   });
 }

@@ -268,7 +268,6 @@ export interface LoopPreviewTransform {
   anchor: [number, number];
   source: [number, number];
   rotation: number;
-  opacity: number;
 }
 
 export function loopPreviewTransforms(
@@ -280,6 +279,14 @@ export function loopPreviewTransforms(
   const endPreview = loopPreviewTransform(map, map.loop.end, map.loop.start, viewer, radius, "end");
   const startPreview = loopPreviewTransform(map, map.loop.start, map.loop.end, viewer, radius, "start");
   return [endPreview, startPreview].filter((preview): preview is LoopPreviewTransform => !!preview);
+}
+
+export function transformLoopPoint(preview: LoopPreviewTransform, point: [number, number]): [number, number] {
+  const dx = point[0] - preview.source[0];
+  const dz = point[1] - preview.source[1];
+  const c = Math.cos(preview.rotation);
+  const s = Math.sin(preview.rotation);
+  return [preview.anchor[0] + dx * c + dz * s, preview.anchor[1] - dx * s + dz * c];
 }
 
 export function alignAttachedRooms(map: CompositionMap): CompositionMap {
@@ -347,13 +354,11 @@ function loopPreviewTransform(
   if (distance > radius) return null;
   const fromAngle = Math.atan2(fromArm.out[0], fromArm.out[1]);
   const toAngle = Math.atan2(-toArm.out[0], -toArm.out[1]);
-  const t = 1 - distance / radius;
   return {
     id,
     anchor: fromArm.point,
     source: toArm.point,
     rotation: fromAngle - toAngle,
-    opacity: clamp(t * 1.45, 0, 0.82),
   };
 }
 

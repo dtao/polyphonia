@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { Composition, TrackDef } from "../composition";
-import { CompositionMap, MapRoom, containingRoom, roomWallObstructionCount } from "../map";
+import { CompositionMap, MapRoom, containingRoom, loopPreviewTransforms, roomWallObstructionCount, transformLoopPoint } from "../map";
 import { createPlaceholderStems } from "./synth";
 
 interface LiveTrack {
@@ -44,6 +44,7 @@ export class AudioEngine {
   private trackPosition = new THREE.Vector3();
   private map: CompositionMap | null = null;
   private activeRoomAcousticsKey: string | null = null;
+  private loopAudioPreviewRadius = 72;
 
   constructor() {
     this.ctx = new AudioContext();
@@ -507,15 +508,17 @@ export class AudioEngine {
   private updateTrackAcoustics(t: LiveTrack, at: number): void {
     const maxVolume = Math.max(0, t.def.volume ?? 1);
     const minVolume = Math.min(Math.max(0, t.def.minVolume ?? 0), maxVolume);
-    const level = this.distanceLevel(t.def, minVolume, maxVolume);
+    const position = this.audibleTrackPosition(t.def);
+    this.setPannerPosition(t.panner, position);
+    const level = this.distanceLevel(t.def, position, minVolume, maxVolume);
     const ratio = maxVolume > 0 ? level / maxVolume : 0;
     t.distanceGain.gain.setValueAtTime(ratio, at);
-    this.updateOcclusion(t, at);
+    this.updateOcclusion(t, position, at);
   }
 
-  private updateOcclusion(t: LiveTrack, at: number): void {
+  private updateOcclusion(t: LiveTrack, position: [number, number, number], at: number): void {
     const obstructions = this.map
-      ? roomWallObstructionCount(this.map, [this.listenerPosition.x, this.listenerPosition.z], [t.def.position[0], t.def.position[2]])
+      ? roomWallObstructionCount(this.map, [this.listenerPosition.x, this.listenerPosition.z], [position[0], position[2]])
       : 0;
     const strength = Math.min(1, obstructions);
     const gain = THREE.MathUtils.lerp(1, 0.18, strength);
@@ -573,10 +576,37 @@ export class AudioEngine {
     return impulse;
   }
 
-  private distanceLevel(def: TrackDef, minVolume: number, maxVolume: number): number {
+  private audibleTrackPosition(def: TrackDef): [number, number, number] {
+    const base = def.position;
+    if (!this.map) return base;
+    const previews = loopPreviewTransforms(this.map, [this.listenerPosition.x, this.listenerPosition.z], this.loopAudioPreviewRadius);
+    if (!previews.length) return base;
+
+    let best: [number, number, number] = base;
+    let bestDistanceSq = this.distanceSqToListener(base);
+    for (const preview of previews) {
+      const [x, z] = transformLoopPoint(preview, [base[0], base[2]]);
+      const candidate: [number, number, number] = [x, base[1], z];
+      const distanceSq = this.distanceSqToListener(candidate);
+      if (distanceSq < bestDistanceSq) {
+        best = candidate;
+        bestDistanceSq = distanceSq;
+      }
+    }
+    return best;
+  }
+
+  private distanceSqToListener([x, y, z]: [number, number, number]): number {
+    const dx = this.listenerPosition.x - x;
+    const dy = this.listenerPosition.y - y;
+    const dz = this.listenerPosition.z - z;
+    return dx * dx + dy * dy + dz * dz;
+  }
+
+  private distanceLevel(def: TrackDef, position: [number, number, number], minVolume: number, maxVolume: number): number {
     const near = def.refDistance ?? 4;
     const far = Math.max(def.maxDistance ?? 40, near + 0.001);
-    const [x, y, z] = def.position;
+    const [x, y, z] = position;
     const distance = this.listenerPosition.distanceTo(this.trackPosition.set(x, y, z));
     if (distance <= near) return maxVolume;
     if (distance >= far) return minVolume;
