@@ -292,7 +292,7 @@ export function wrapLoopPosition(
 }
 
 export interface LoopPreviewTransform {
-  id: "start" | "end";
+  id: string;
   anchor: [number, number];
   source: [number, number];
   rotation: number;
@@ -314,12 +314,63 @@ export function loopAdjacentTransforms(map: Pick<CompositionMap, "segments" | "t
   return loopPreviewTransforms(map, [0, 0], Infinity);
 }
 
+export function tiledMapTransforms(
+  map: Pick<CompositionMap, "segments" | "tiling">,
+  viewer: [number, number],
+  radius = 120,
+): LoopPreviewTransform[] {
+  if (map.tiling.type === "path-loop") return loopAdjacentTransforms(map);
+  if (map.tiling.type === "square") return squareTileTransforms(map.tiling, viewer, radius);
+  if (map.tiling.type === "hex") return hexTileTransforms(map.tiling, viewer, radius);
+  return [];
+}
+
 export function transformLoopPoint(preview: LoopPreviewTransform, point: [number, number]): [number, number] {
   const dx = point[0] - preview.source[0];
   const dz = point[1] - preview.source[1];
   const c = Math.cos(preview.rotation);
   const s = Math.sin(preview.rotation);
   return [preview.anchor[0] + dx * c + dz * s, preview.anchor[1] - dx * s + dz * c];
+}
+
+function squareTileTransforms(tiling: MapTiling, viewer: [number, number], radius: number): LoopPreviewTransform[] {
+  const size = Math.max(1, tiling.tileSize);
+  const [ox, oz] = tiling.origin;
+  const cx = Math.round((viewer[0] - ox) / size);
+  const cz = Math.round((viewer[1] - oz) / size);
+  const range = 1;
+  const transforms: LoopPreviewTransform[] = [];
+  for (let ix = cx - range; ix <= cx + range; ix++) {
+    for (let iz = cz - range; iz <= cz + range; iz++) {
+      if (ix === 0 && iz === 0) continue;
+      const dx = ix * size;
+      const dz = iz * size;
+      if (Math.hypot(viewer[0] - (ox + dx), viewer[1] - (oz + dz)) > radius + size * 1.5) continue;
+      transforms.push({ id: `square:${ix}:${iz}`, anchor: [dx, dz], source: [0, 0], rotation: 0 });
+    }
+  }
+  return transforms;
+}
+
+function hexTileTransforms(tiling: MapTiling, viewer: [number, number], radius: number): LoopPreviewTransform[] {
+  const size = Math.max(1, tiling.tileSize);
+  const [ox, oz] = tiling.origin;
+  const stepX = size;
+  const stepZ = (Math.sqrt(3) / 2) * size;
+  const approxQ = Math.round((viewer[0] - ox) / stepX);
+  const approxR = Math.round((viewer[1] - oz) / stepZ);
+  const range = 1;
+  const transforms: LoopPreviewTransform[] = [];
+  for (let q = approxQ - range; q <= approxQ + range; q++) {
+    for (let r = approxR - range; r <= approxR + range; r++) {
+      if (q === 0 && r === 0) continue;
+      const dx = (q + r * 0.5) * stepX;
+      const dz = r * stepZ;
+      if (Math.hypot(viewer[0] - (ox + dx), viewer[1] - (oz + dz)) > radius + size * 1.5) continue;
+      transforms.push({ id: `hex:${q}:${r}`, anchor: [dx, dz], source: [0, 0], rotation: 0 });
+    }
+  }
+  return transforms;
 }
 
 export function inverseTransformLoopPoint(preview: LoopPreviewTransform, point: [number, number]): [number, number] {

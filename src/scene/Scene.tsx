@@ -1,3 +1,5 @@
+import { useFrame, useThree } from "@react-three/fiber";
+import { useState } from "react";
 import { useStore } from "../store";
 import { TrackMarker } from "./TrackMarker";
 import { Player } from "./Player";
@@ -7,7 +9,7 @@ import { ListenerSync } from "./ListenerSync";
 import { EnvironmentScene } from "./EnvironmentScene";
 import { MapScene } from "./MapScene";
 import { DebugSampler } from "./DebugSampler";
-import { CompositionMap, loopAdjacentTransforms, transformLoopPoint } from "../map";
+import { CompositionMap, tiledMapTransforms, transformLoopPoint } from "../map";
 import { TrackDef } from "../composition";
 import { debugFlag } from "../debug";
 
@@ -16,14 +18,20 @@ export function Scene() {
   const environment = useStore((s) => s.composition.environment);
   const map = useStore((s) => s.composition.map);
   const mode = useStore((s) => s.mode);
+  const camera = useThree((s) => s.camera);
+  const [viewer, setViewer] = useState<[number, number]>([0, 0]);
+  useFrame(() => {
+    const next: [number, number] = [camera.position.x, camera.position.z];
+    setViewer((current) => (Math.hypot(current[0] - next[0], current[1] - next[1]) > 8 ? next : current));
+  });
   const loopPreviewsEnabled = !debugFlag("debugNoLoopPreview");
-  const loopLights = loopPreviewsEnabled ? loopLightTracks(map, tracks) : tracks;
+  const tileLights = loopPreviewsEnabled ? tileLightTracks(map, tracks, viewer) : tracks;
 
   return (
     <>
       <EnvironmentScene environment={environment} editMode={mode === "edit"} />
-      {mode === "explore" && loopPreviewsEnabled && <LoopContinuityPreview />}
-      <MapScene map={map} tracks={tracks} lightTracks={mode === "explore" ? loopLights : tracks} editMode={mode === "edit"} />
+      {mode === "explore" && loopPreviewsEnabled && <TiledMapPreview viewer={viewer} />}
+      <MapScene map={map} tracks={tracks} lightTracks={mode === "explore" ? tileLights : tracks} editMode={mode === "edit"} />
 
       {tracks.map((t) => (
         <TrackMarker key={t.id} track={t} />
@@ -47,11 +55,11 @@ export function Scene() {
   );
 }
 
-function LoopContinuityPreview() {
+function TiledMapPreview({ viewer }: { viewer: [number, number] }) {
   const tracks = useStore((s) => s.composition.tracks);
   const map = useStore((s) => s.composition.map);
-  const previews = debugFlag("debugNoLoopPreview") ? [] : loopAdjacentTransforms(map);
-  const loopLights = debugFlag("debugNoLoopPreview") ? tracks : loopLightTracks(map, tracks);
+  const previews = debugFlag("debugNoLoopPreview") ? [] : tiledMapTransforms(map, viewer);
+  const tileLights = debugFlag("debugNoLoopPreview") ? tracks : tileLightTracks(map, tracks, viewer);
 
   return (
     <>
@@ -59,7 +67,7 @@ function LoopContinuityPreview() {
         return (
           <group key={preview.id} position={[preview.anchor[0], 0, preview.anchor[1]]} rotation={[0, preview.rotation, 0]}>
             <group position={[-preview.source[0], 0, -preview.source[1]]}>
-              <MapScene map={map} tracks={tracks} lightTracks={loopLights} editMode={false} />
+              <MapScene map={map} tracks={tracks} lightTracks={tileLights} editMode={false} />
               {tracks.map((track) => (
                 <TrackMarker key={`${preview.id}-${track.id}`} track={track} preview />
               ))}
@@ -71,9 +79,9 @@ function LoopContinuityPreview() {
   );
 }
 
-function loopLightTracks(map: CompositionMap, tracks: TrackDef[]): TrackDef[] {
+function tileLightTracks(map: CompositionMap, tracks: TrackDef[], viewer: [number, number]): TrackDef[] {
   if (debugFlag("debugNoLoopLights")) return tracks;
-  const previews = loopAdjacentTransforms(map);
+  const previews = tiledMapTransforms(map, viewer);
   if (!previews.length) return tracks;
   return tracks.flatMap((track) => [
     track,
