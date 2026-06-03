@@ -1,4 +1,4 @@
-import { clampToMap, CompositionMap, isPointInsideMap, MAP_PRESETS, MapPreset, MapTilingType, WalkableSegment } from "../map";
+import { canSetLoopEndpoint, clampToMap, CompositionMap, endpointKey, isPointInsideMap, MAP_PRESETS, MapPreset, MapTilingType, WalkableSegment } from "../map";
 import { useStore } from "../store";
 
 const LABELS: Record<MapPreset, string> = {
@@ -150,6 +150,29 @@ function validateMap(map: CompositionMap, tracks: Array<{ position: [number, num
   if (components > 1) warnings.push("This map has disconnected corridors.");
   const outside = countTracksOutsideMap(map, tracks);
   if (outside > 0) warnings.push(`${outside} stem${outside === 1 ? "" : "s"} outside the walkable area.`);
+  warnings.push(...validateTiling(map));
+  return warnings;
+}
+
+function validateTiling(map: CompositionMap): string[] {
+  const warnings: string[] = [];
+  if (map.tiling.type === "path-loop") {
+    const loop = map.tiling.pathLoop;
+    const startKey = endpointKey(map, loop?.start);
+    const endKey = endpointKey(map, loop?.end);
+    if (!loop?.start || !loop.end) warnings.push("Path-loop tiling needs both a start and end terminal point.");
+    else if (!startKey || !endKey) warnings.push("Path-loop tiling references a missing path endpoint.");
+    else if (startKey === endKey) warnings.push("Path-loop start and end must be different terminal points.");
+    else {
+      if (!canSetLoopEndpoint(map, startKey)) warnings.push("Path-loop start must be a terminal point without an attached room.");
+      if (!canSetLoopEndpoint(map, endKey)) warnings.push("Path-loop end must be a terminal point without an attached room.");
+    }
+  }
+  if (map.tiling.type === "square" || map.tiling.type === "hex") {
+    if (!Number.isFinite(map.tiling.tileSize) || map.tiling.tileSize <= 0) warnings.push(`${map.tiling.type === "square" ? "Square" : "Hex"} tiling needs a positive tile size.`);
+    if (!map.tiling.origin.every(Number.isFinite)) warnings.push(`${map.tiling.type === "square" ? "Square" : "Hex"} tiling needs a finite origin.`);
+    warnings.push(`${map.tiling.type === "square" ? "Square" : "Hex"} tiling is saved in the model; repeated rendering/audio comes in Milestone 5 item 31.`);
+  }
   return warnings;
 }
 
