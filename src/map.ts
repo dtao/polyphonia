@@ -298,6 +298,8 @@ export interface LoopPreviewTransform {
   rotation: number;
 }
 
+const MAX_TILE_PREVIEW_RANGE = 3;
+
 export function loopPreviewTransforms(
   map: Pick<CompositionMap, "segments" | "tiling">,
   viewer: [number, number],
@@ -338,7 +340,7 @@ function squareTileTransforms(tiling: MapTiling, viewer: [number, number], radiu
   const [ox, oz] = tiling.origin;
   const cx = Math.round((viewer[0] - ox) / size);
   const cz = Math.round((viewer[1] - oz) / size);
-  const range = 1;
+  const range = Math.min(MAX_TILE_PREVIEW_RANGE, Math.max(1, Math.ceil(radius / size) + 1));
   const transforms: LoopPreviewTransform[] = [];
   for (let ix = cx - range; ix <= cx + range; ix++) {
     for (let iz = cz - range; iz <= cz + range; iz++) {
@@ -357,9 +359,9 @@ function hexTileTransforms(tiling: MapTiling, viewer: [number, number], radius: 
   const [ox, oz] = tiling.origin;
   const stepX = size;
   const stepZ = (Math.sqrt(3) / 2) * size;
-  const approxQ = Math.round((viewer[0] - ox) / stepX);
   const approxR = Math.round((viewer[1] - oz) / stepZ);
-  const range = 1;
+  const approxQ = Math.round((viewer[0] - ox) / stepX - approxR * 0.5);
+  const range = Math.min(MAX_TILE_PREVIEW_RANGE, Math.max(1, Math.ceil(radius / Math.min(stepX, stepZ)) + 1));
   const transforms: LoopPreviewTransform[] = [];
   for (let q = approxQ - range; q <= approxQ + range; q++) {
     for (let r = approxR - range; r <= approxR + range; r++) {

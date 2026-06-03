@@ -14,6 +14,8 @@ import { CompositionMap, tiledMapTransforms, transformLoopPoint } from "../map";
 import { TrackDef } from "../composition";
 import { debugFlag } from "../debug";
 
+const VIEWER_SAMPLE_DISTANCE = 2;
+
 export function Scene() {
   const tracks = useStore((s) => s.composition.tracks);
   const environment = useStore((s) => s.composition.environment);
@@ -23,7 +25,7 @@ export function Scene() {
   const [viewer, setViewer] = useState<[number, number]>([0, 0]);
   useFrame(() => {
     const next: [number, number] = [camera.position.x, camera.position.z];
-    setViewer((current) => (Math.hypot(current[0] - next[0], current[1] - next[1]) > 8 ? next : current));
+    setViewer((current) => (Math.hypot(current[0] - next[0], current[1] - next[1]) > VIEWER_SAMPLE_DISTANCE ? next : current));
   });
   const loopPreviewsEnabled = !debugFlag("debugNoLoopPreview");
   const tileLights = loopPreviewsEnabled ? tileLightTracks(map, tracks, viewer) : tracks;
@@ -126,8 +128,8 @@ function hexTileBoundaryGeometry(tiling: CompositionMap["tiling"], viewer: [numb
   const [ox, oz] = tiling.origin;
   const stepX = size;
   const stepZ = (Math.sqrt(3) / 2) * size;
-  const approxQ = Math.round((viewer[0] - ox) / stepX);
   const approxR = Math.round((viewer[1] - oz) / stepZ);
+  const approxQ = Math.round((viewer[0] - ox) / stepX - approxR * 0.5);
   const range = Math.max(2, Math.ceil(150 / size));
   const radius = size / Math.sqrt(3);
   const edges = new TileEdges();
