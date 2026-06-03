@@ -7,15 +7,27 @@ interface LiveTrack {
   def: TrackDef;
   originalBuffer: AudioBuffer;
   buffer: AudioBuffer;
-  panner: PannerNode;
   gain: GainNode;
-  distanceGain: GainNode;
-  occlusionGain: GainNode;
-  occlusionFilter: BiquadFilterNode;
   analyser: AnalyserNode;
+  instances: Map<string, LiveTrackInstance>;
   source?: AudioBufferSourceNode;
   levelData: Uint8Array<ArrayBuffer>;
 }
+
+interface LiveTrackInstance {
+  id: string;
+  panner: PannerNode;
+  distanceGain: GainNode;
+  occlusionGain: GainNode;
+  occlusionFilter: BiquadFilterNode;
+}
+
+interface AudibleTrackInstance {
+  id: string;
+  position: [number, number, number];
+}
+
+const MAX_VIRTUAL_AUDIO_INSTANCES_PER_TRACK = 4;
 
 // Owns the single AudioContext. The golden rule: every stem is scheduled off
 // THIS context's clock and started at the SAME time, so they never drift. As
@@ -174,48 +186,24 @@ export class AudioEngine {
     }
   }
 
-  // Build the node graph for one track (no source yet). source -> gain ->
-  // distanceGain -> panner -> master; the analyser taps the authored gain for
-  // visual reactivity, independent of where the listener is standing.
+  // Build the shared node graph for one track (no source yet). The source feeds
+  // the authored gain/analyser, then active tile instances branch into their
+  // own distance/occlusion/panner chains.
   private buildTrack(def: TrackDef, originalBuffer: AudioBuffer, buffer = originalBuffer): LiveTrack {
-    const panner = this.ctx.createPanner();
-    panner.panningModel = "HRTF";
-    panner.distanceModel = "inverse";
-    panner.refDistance = def.refDistance ?? 4;
-    panner.maxDistance = def.maxDistance ?? 40;
-    panner.rolloffFactor = 0;
-    this.setPannerPosition(panner, def.position);
-
     const gain = this.ctx.createGain();
     gain.gain.value = def.volume ?? 1;
-    const distanceGain = this.ctx.createGain();
-    distanceGain.gain.value = 1;
-    const occlusionGain = this.ctx.createGain();
-    occlusionGain.gain.value = 1;
-    const occlusionFilter = this.ctx.createBiquadFilter();
-    occlusionFilter.type = "lowpass";
-    occlusionFilter.frequency.value = 22000;
-    occlusionFilter.Q.value = 0.4;
     const analyser = this.ctx.createAnalyser();
     analyser.fftSize = 256;
 
-    gain.connect(distanceGain);
     gain.connect(analyser);
-    distanceGain.connect(occlusionFilter);
-    occlusionFilter.connect(occlusionGain);
-    occlusionGain.connect(panner);
-    panner.connect(this.dryBus);
 
     const track = {
       def,
       originalBuffer,
       buffer,
-      panner,
       gain,
-      distanceGain,
-      occlusionGain,
-      occlusionFilter,
       analyser,
+      instances: new Map<string, LiveTrackInstance>(),
       levelData: new Uint8Array(new ArrayBuffer(analyser.fftSize)),
     };
     this.updateTrackAcoustics(track, this.ctx.currentTime);
@@ -453,7 +441,6 @@ export class AudioEngine {
     const t = this.find(id);
     if (!t) return;
     t.def = { ...t.def, position };
-    this.setPannerPosition(t.panner, position);
     this.updateTrackAcoustics(t, this.ctx.currentTime);
   }
 
@@ -461,8 +448,10 @@ export class AudioEngine {
     const t = this.find(id);
     if (!t) return;
     t.def = { ...t.def, ...f };
-    if (f.refDistance !== undefined) t.panner.refDistance = f.refDistance;
-    if (f.maxDistance !== undefined) t.panner.maxDistance = f.maxDistance;
+    for (const instance of t.instances.values()) {
+      if (f.refDistance !== undefined) instance.panner.refDistance = f.refDistance;
+      if (f.maxDistance !== undefined) instance.panner.maxDistance = f.maxDistance;
+    }
     this.updateTrackAcoustics(t, this.ctx.currentTime);
   }
 
@@ -492,11 +481,8 @@ export class AudioEngine {
     }
     t.source?.disconnect();
     t.gain.disconnect();
-    t.distanceGain.disconnect();
-    t.occlusionFilter.disconnect();
-    t.occlusionGain.disconnect();
-    t.panner.disconnect();
     t.analyser.disconnect();
+    this.disconnectTrackInstances(t);
     this.tracks.splice(i, 1);
   }
 
@@ -526,11 +512,8 @@ export class AudioEngine {
       }
       t.source?.disconnect();
       t.gain.disconnect();
-      t.distanceGain.disconnect();
-      t.occlusionFilter.disconnect();
-      t.occlusionGain.disconnect();
-      t.panner.disconnect();
       t.analyser.disconnect();
+      this.disconnectTrackInstances(t);
     }
     this.tracks = [];
   }
@@ -538,23 +521,29 @@ export class AudioEngine {
   private updateTrackAcoustics(t: LiveTrack, at: number): void {
     const maxVolume = Math.max(0, t.def.volume ?? 1);
     const minVolume = Math.min(Math.max(0, t.def.minVolume ?? 0), maxVolume);
-    const position = this.audibleTrackPosition(t.def);
-    this.setPannerPosition(t.panner, position);
-    const level = this.distanceLevel(t.def, position, minVolume, maxVolume);
-    const ratio = maxVolume > 0 ? level / maxVolume : 0;
-    t.distanceGain.gain.setValueAtTime(ratio, at);
-    this.updateOcclusion(t, position, at);
+    const audibleInstances = this.audibleTrackInstances(t.def);
+    this.syncTrackInstances(t, audibleInstances, at);
+    const stackGain = 1 / Math.sqrt(Math.max(1, audibleInstances.length));
+    for (const audible of audibleInstances) {
+      const instance = t.instances.get(audible.id);
+      if (!instance) continue;
+      this.setPannerPosition(instance.panner, audible.position);
+      const level = this.distanceLevel(t.def, audible.position, minVolume, maxVolume);
+      const ratio = maxVolume > 0 ? (level / maxVolume) * stackGain : 0;
+      instance.distanceGain.gain.setValueAtTime(ratio, at);
+      this.updateOcclusion(instance, audible.position, at);
+    }
   }
 
-  private updateOcclusion(t: LiveTrack, position: [number, number, number], at: number): void {
+  private updateOcclusion(instance: LiveTrackInstance, position: [number, number, number], at: number): void {
     const obstructions = this.map
       ? roomWallObstructionCount(this.map, [this.listenerPosition.x, this.listenerPosition.z], [position[0], position[2]])
       : 0;
     const strength = Math.min(1, obstructions);
     const gain = THREE.MathUtils.lerp(1, 0.18, strength);
     const frequency = THREE.MathUtils.lerp(22000, 420, strength);
-    t.occlusionGain.gain.setTargetAtTime(gain, at, 0.12);
-    t.occlusionFilter.frequency.setTargetAtTime(frequency, at, 0.12);
+    instance.occlusionGain.gain.setTargetAtTime(gain, at, 0.12);
+    instance.occlusionFilter.frequency.setTargetAtTime(frequency, at, 0.12);
   }
 
   private updateRoomAcoustics(at: number): void {
@@ -613,24 +602,23 @@ export class AudioEngine {
     return impulse;
   }
 
-  private audibleTrackPosition(def: TrackDef): [number, number, number] {
+  private audibleTrackInstances(def: TrackDef): AudibleTrackInstance[] {
     const base = def.position;
-    if (!this.map) return base;
+    if (!this.map) return [{ id: "base", position: base }];
     const previews = tiledMapTransforms(this.map, [this.listenerPosition.x, this.listenerPosition.z], this.tileAudioPreviewRadius);
-    if (!previews.length) return base;
+    if (!previews.length) return [{ id: "base", position: base }];
 
-    let best: [number, number, number] = base;
-    let bestDistanceSq = this.distanceSqToListener(base);
+    const candidates: AudibleTrackInstance[] = [{ id: "base", position: base }];
     for (const preview of previews) {
       const [x, z] = transformLoopPoint(preview, [base[0], base[2]]);
-      const candidate: [number, number, number] = [x, base[1], z];
-      const distanceSq = this.distanceSqToListener(candidate);
-      if (distanceSq < bestDistanceSq) {
-        best = candidate;
-        bestDistanceSq = distanceSq;
-      }
+      candidates.push({ id: preview.id, position: [x, base[1], z] });
     }
-    return best;
+    const far = Math.max(def.maxDistance ?? 40, def.refDistance ?? 4);
+    const audibleDistance = Math.max(far, this.tileAudioPreviewRadius);
+    const audibleDistanceSq = audibleDistance * audibleDistance;
+    const sorted = candidates.sort((a, b) => this.distanceSqToListener(a.position) - this.distanceSqToListener(b.position));
+    const audible = sorted.filter((candidate, index) => index === 0 || this.distanceSqToListener(candidate.position) <= audibleDistanceSq);
+    return audible.slice(0, MAX_VIRTUAL_AUDIO_INSTANCES_PER_TRACK);
   }
 
   private distanceSqToListener([x, y, z]: [number, number, number]): number {
@@ -663,5 +651,69 @@ export class AudioEngine {
     } else {
       (p as any).setPosition(x, y, z);
     }
+  }
+
+  private syncTrackInstances(t: LiveTrack, audibleInstances: AudibleTrackInstance[], at: number): void {
+    const desired = new Set(audibleInstances.map((instance) => instance.id));
+    for (const [id, instance] of t.instances) {
+      if (desired.has(id)) continue;
+      instance.distanceGain.gain.setTargetAtTime(0, at, 0.04);
+      t.instances.delete(id);
+      setTimeout(() => {
+        this.disconnectTrackInstance(t, instance);
+      }, 80);
+    }
+
+    for (const audible of audibleInstances) {
+      if (!t.instances.has(audible.id)) {
+        const instance = this.createTrackInstance(t, audible.id, audible.position);
+        instance.distanceGain.gain.setValueAtTime(0, at);
+        t.instances.set(audible.id, instance);
+      }
+    }
+  }
+
+  private createTrackInstance(t: LiveTrack, id: string, position: [number, number, number]): LiveTrackInstance {
+    const panner = this.ctx.createPanner();
+    panner.panningModel = "HRTF";
+    panner.distanceModel = "inverse";
+    panner.refDistance = t.def.refDistance ?? 4;
+    panner.maxDistance = t.def.maxDistance ?? 40;
+    panner.rolloffFactor = 0;
+    this.setPannerPosition(panner, position);
+
+    const distanceGain = this.ctx.createGain();
+    distanceGain.gain.value = 0;
+    const occlusionGain = this.ctx.createGain();
+    occlusionGain.gain.value = 1;
+    const occlusionFilter = this.ctx.createBiquadFilter();
+    occlusionFilter.type = "lowpass";
+    occlusionFilter.frequency.value = 22000;
+    occlusionFilter.Q.value = 0.4;
+
+    t.gain.connect(distanceGain);
+    distanceGain.connect(occlusionFilter);
+    occlusionFilter.connect(occlusionGain);
+    occlusionGain.connect(panner);
+    panner.connect(this.dryBus);
+
+    return { id, panner, distanceGain, occlusionGain, occlusionFilter };
+  }
+
+  private disconnectTrackInstances(t: LiveTrack): void {
+    for (const instance of t.instances.values()) this.disconnectTrackInstance(t, instance);
+    t.instances.clear();
+  }
+
+  private disconnectTrackInstance(t: LiveTrack, instance: LiveTrackInstance): void {
+    try {
+      t.gain.disconnect(instance.distanceGain);
+    } catch {
+      /* already disconnected */
+    }
+    instance.distanceGain.disconnect();
+    instance.occlusionFilter.disconnect();
+    instance.occlusionGain.disconnect();
+    instance.panner.disconnect();
   }
 }

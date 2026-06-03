@@ -50,8 +50,9 @@ depends only on earlier ones.
   - First path-loop slice: terminal route points can be marked as loop start/end, and Explore wraps between them while preserving corridor-relative heading.
   - Continuity preview slice: when the listener nears a loop endpoint, render the destination map/tracks as an adjacent transformed copy before the coordinate wrap happens.
   - Formal tiling slice: map manifests now store `none`/`path-loop`/`square`/`hex` tiling metadata, Map panel controls and validation edit that model, and persistence/export/import/publish paths normalize older manifests safely.
-- [ ] **31. Tiled map rendering and audio instances** — render nearby visual tiles/map copies and create/cull nearby virtual stem instances around the listener, bounded by distance/performance limits so infinite space stays cheap.
+- [x] **31. Tiled map rendering and audio instances** — render nearby visual tiles/map copies and create/cull nearby virtual stem instances around the listener, bounded by distance/performance limits so infinite space stays cheap.
   - First audio slice: virtual square/hex/path-loop tile copies now drive stem spatialization by choosing the nearest audible copy around the listener.
+  - Virtual instance slice: each stem can feed up to four nearby tiled panners, with quiet fade-out/culling as copies leave range.
 - [ ] **32. Tiling editor aids** — show tile boundaries, mirrored/ghost map copies, and edge-continuity hints in Edit mode so composers can intentionally make square/hex/path layouts that tile cleanly.
   - First boundary slice: square/hex tile outlines render subtly around the viewer in both Edit and Explore modes.
 - [ ] **33. Publish/viewer compatibility for maps and environments** — ensure `/c/:id`, `/gallery`, artist pages, export/import, and older manifests all handle environment, map, start, and tiling metadata gracefully.
