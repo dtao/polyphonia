@@ -335,6 +335,28 @@ export function transformLoopPoint(preview: LoopPreviewTransform, point: [number
   return [preview.anchor[0] + dx * c + dz * s, preview.anchor[1] - dx * s + dz * c];
 }
 
+export function pointInOriginalTile(map: Pick<CompositionMap, "tiling">, point: [number, number]): [number, number] {
+  if (map.tiling.type === "square") {
+    const size = Math.max(1, map.tiling.tileSize);
+    const [ox, oz] = map.tiling.origin;
+    const ix = Math.round((point[0] - ox) / size);
+    const iz = Math.round((point[1] - oz) / size);
+    return [point[0] - ix * size, point[1] - iz * size];
+  }
+
+  if (map.tiling.type === "hex") {
+    const size = Math.max(1, map.tiling.tileSize);
+    const [ox, oz] = map.tiling.origin;
+    const stepX = size;
+    const stepZ = (Math.sqrt(3) / 2) * size;
+    const r = Math.round((point[1] - oz) / stepZ);
+    const q = Math.round((point[0] - ox) / stepX - r * 0.5);
+    return [point[0] - (q + r * 0.5) * stepX, point[1] - r * stepZ];
+  }
+
+  return point;
+}
+
 function squareTileTransforms(tiling: MapTiling, viewer: [number, number], radius: number): LoopPreviewTransform[] {
   const size = Math.max(1, tiling.tileSize);
   const [ox, oz] = tiling.origin;

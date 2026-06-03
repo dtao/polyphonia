@@ -15,7 +15,7 @@ import {
 } from "./persistence";
 import { newId } from "./id";
 import { EnvironmentSettings, defaultEnvironment, normalizeEnvironment } from "./environment";
-import { attachmentForPoint, canAddBranchAtPoint, canAddRoomAtPoint, CompositionMap, MAP_PRESETS, MapRoom, defaultMap, mapPointKey, normalizeMap } from "./map";
+import { attachmentForPoint, canAddBranchAtPoint, canAddRoomAtPoint, CompositionMap, MAP_PRESETS, MapRoom, defaultMap, mapPointKey, normalizeMap, pointInOriginalTile } from "./map";
 import { ArtistIdentity } from "./artist";
 import {
   AuthUser,
@@ -319,7 +319,20 @@ export const useStore = create<StoreState>((set, get) => ({
 
   // Leaving edit mode clears the selection (the properties panel is edit-only).
   setMode: (mode) =>
-    set((s) => ({ mode, selectedId: mode === "edit" ? s.selectedId : null, selectedStart: mode === "edit" ? s.selectedStart : false, selectedRoomId: mode === "edit" ? s.selectedRoomId : null })),
+    set((s) => {
+      if (s.mode === "explore" && mode === "edit") {
+        const [x, z] = pointInOriginalTile(s.composition.map, [viewState.x, viewState.z]);
+        viewState.x = x;
+        viewState.z = z;
+      }
+
+      return {
+        mode,
+        selectedId: mode === "edit" ? s.selectedId : null,
+        selectedStart: mode === "edit" ? s.selectedStart : false,
+        selectedRoomId: mode === "edit" ? s.selectedRoomId : null,
+      };
+    }),
   toggleMode: () => get().setMode(get().mode === "edit" ? "explore" : "edit"),
   select: (selectedId) => set({ selectedId, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false, selectedRoomId: null }),
   selectMapPoint: (selectedMapPointKey) => set({ selectedMapPointKey, selectedMapSegmentId: null, selectedId: null, selectedStart: false, selectedRoomId: null }),
