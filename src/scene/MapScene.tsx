@@ -7,7 +7,7 @@ import { canAddBranchAtPoint, clampToMap, CompositionMap, loopRoleForPoint, MapR
 import { useStore } from "../store";
 import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 
-const MAX_TRACK_LIGHTS = 12;
+const MAX_TRACK_LIGHTS = 64;
 
 export function MapScene({ map, tracks, editMode, lightTracks = tracks }: { map: CompositionMap; tracks: TrackDef[]; editMode: boolean; lightTracks?: TrackDef[] }) {
   const selectedMapSegmentId = useStore((s) => s.selectedMapSegmentId);

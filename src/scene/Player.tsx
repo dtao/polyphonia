@@ -118,6 +118,11 @@ export function Player() {
       camera.position.z = wrapped.position[1];
       look.current.yaw += wrapped.yawDelta;
       look.current.targetYaw += wrapped.yawDelta;
+      euler.current.set(look.current.pitch, look.current.yaw, 0, "YXZ");
+      camera.quaternion.setFromEuler(euler.current);
+      camera.getWorldDirection(forward.current);
+      forward.current.y = 0;
+      forward.current.normalize();
     }
     const [x, z] = clampToMap(map, [camera.position.x, camera.position.z]);
     camera.position.x = x;

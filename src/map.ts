@@ -293,6 +293,14 @@ export function transformLoopPoint(preview: LoopPreviewTransform, point: [number
   return [preview.anchor[0] + dx * c + dz * s, preview.anchor[1] - dx * s + dz * c];
 }
 
+export function inverseTransformLoopPoint(preview: LoopPreviewTransform, point: [number, number]): [number, number] {
+  const dx = point[0] - preview.anchor[0];
+  const dz = point[1] - preview.anchor[1];
+  const c = Math.cos(preview.rotation);
+  const s = Math.sin(preview.rotation);
+  return [preview.source[0] + dx * c - dz * s, preview.source[1] + dx * s + dz * c];
+}
+
 export function alignAttachedRooms(map: CompositionMap): CompositionMap {
   return {
     ...map,
@@ -332,14 +340,9 @@ function wrapFromEndpoint(
   const lateral = (attempted[0] - fx) * fromArm.right[0] + (attempted[1] - fz) * fromArm.right[1];
   if (Math.abs(lateral) > fromArm.width * 0.55 + 0.8) return null;
 
-  const insideDistance = Math.max(0.35, movementPastEndpoint);
-  const [tx, tz] = toArm.point;
-  const position: [number, number] = [
-    tx - toArm.out[0] * insideDistance + toArm.right[0] * lateral,
-    tz - toArm.out[1] * insideDistance + toArm.right[1] * lateral,
-  ];
   const fromAngle = Math.atan2(fromArm.out[0], fromArm.out[1]);
   const toAngle = Math.atan2(-toArm.out[0], -toArm.out[1]);
+  const position = inverseTransformLoopPoint({ id: "end", anchor: fromArm.point, source: toArm.point, rotation: fromAngle - toAngle }, attempted);
   return { position, yawDelta: toAngle - fromAngle };
 }
 
