@@ -1,4 +1,4 @@
-import { clampToMap, CompositionMap, isPointInsideMap, MAP_PRESETS, MapPreset, WalkableSegment } from "../map";
+import { clampToMap, CompositionMap, isPointInsideMap, MAP_PRESETS, MapPreset, MapTilingType, WalkableSegment } from "../map";
 import { useStore } from "../store";
 
 const LABELS: Record<MapPreset, string> = {
@@ -6,6 +6,13 @@ const LABELS: Record<MapPreset, string> = {
   line: "Line",
   y: "Y",
   custom: "Custom",
+};
+
+const TILING_LABELS: Record<MapTilingType, string> = {
+  none: "None",
+  "path-loop": "Path",
+  square: "Square",
+  hex: "Hex",
 };
 
 export function MapPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () => void; onClose: () => void }) {
@@ -27,6 +34,22 @@ export function MapPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () 
       const [nx, nz] = clampToMap(map, [x, z]);
       if (Math.hypot(nx - x, nz - z) > 0.001) setTrackPosition(track.id, [nx, y, nz]);
     }
+  }
+
+  function setTilingType(type: MapTilingType) {
+    setMap({ preset: "custom", tiling: { ...map.tiling, type, pathLoop: type === "path-loop" ? map.tiling.pathLoop : undefined } });
+  }
+
+  function setTileSize(tileSize: number) {
+    if (!Number.isFinite(tileSize)) return;
+    setMap({ preset: "custom", tiling: { ...map.tiling, tileSize } });
+  }
+
+  function setTilingOrigin(axis: 0 | 1, value: number) {
+    if (!Number.isFinite(value)) return;
+    const origin: [number, number] = [...map.tiling.origin];
+    origin[axis] = value;
+    setMap({ preset: "custom", tiling: { ...map.tiling, origin } });
   }
 
   if (!open) {
@@ -64,6 +87,36 @@ export function MapPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () 
           Snap stems to map
         </button>
         <div style={hint}>Select a path segment to set its width, or a terminal point to grow the path or attach a room.</div>
+      </div>
+      <div style={editorGroup}>
+        <div style={sectionTitle}>Tiling</div>
+        <div style={tilingGrid}>
+          {(Object.keys(TILING_LABELS) as MapTilingType[]).map((type) => {
+            const active = map.tiling.type === type;
+            return (
+              <button key={type} style={{ ...presetBtn, ...(active ? presetActive : null) }} onClick={() => setTilingType(type)}>
+                {TILING_LABELS[type]}
+              </button>
+            );
+          })}
+        </div>
+        {map.tiling.type === "path-loop" && <div style={tilingHint}>Select terminal path points to set the path-loop start and end.</div>}
+        {(map.tiling.type === "square" || map.tiling.type === "hex") && (
+          <div style={numericGrid}>
+            <label style={fieldLabel}>
+              Tile
+              <input style={numberInput} type="number" min={5} max={1000} step={1} value={map.tiling.tileSize} onChange={(e) => setTileSize(e.currentTarget.valueAsNumber)} />
+            </label>
+            <label style={fieldLabel}>
+              X
+              <input style={numberInput} type="number" step={1} value={map.tiling.origin[0]} onChange={(e) => setTilingOrigin(0, e.currentTarget.valueAsNumber)} />
+            </label>
+            <label style={fieldLabel}>
+              Z
+              <input style={numberInput} type="number" step={1} value={map.tiling.origin[1]} onChange={(e) => setTilingOrigin(1, e.currentTarget.valueAsNumber)} />
+            </label>
+          </div>
+        )}
       </div>
 
       {warnings.length > 0 && (
@@ -195,6 +248,12 @@ const presetGrid: React.CSSProperties = {
   gap: 6,
 };
 
+const tilingGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 6,
+};
+
 const presetBtn: React.CSSProperties = {
   padding: "8px 10px",
   borderRadius: 7,
@@ -225,6 +284,46 @@ const editorGroup: React.CSSProperties = {
   marginTop: 12,
   paddingTop: 10,
   borderTop: "1px solid rgba(255,255,255,0.1)",
+};
+
+const sectionTitle: React.CSSProperties = {
+  marginBottom: 8,
+  color: "rgba(255,255,255,0.7)",
+  fontSize: 11,
+  fontWeight: 700,
+  textTransform: "uppercase",
+};
+
+const tilingHint: React.CSSProperties = {
+  marginTop: 8,
+  color: "rgba(255,255,255,0.55)",
+  fontSize: 11,
+  lineHeight: 1.35,
+};
+
+const numericGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr 1fr",
+  gap: 6,
+  marginTop: 8,
+};
+
+const fieldLabel: React.CSSProperties = {
+  display: "grid",
+  gap: 4,
+  color: "rgba(255,255,255,0.58)",
+  fontSize: 11,
+};
+
+const numberInput: React.CSSProperties = {
+  width: "100%",
+  boxSizing: "border-box",
+  borderRadius: 6,
+  border: "1px solid rgba(255,255,255,0.14)",
+  background: "rgba(255,255,255,0.08)",
+  color: "white",
+  padding: "6px 7px",
+  fontSize: 12,
 };
 
 const meta: React.CSSProperties = {
