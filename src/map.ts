@@ -281,6 +281,10 @@ export function loopPreviewTransforms(
   return [endPreview, startPreview].filter((preview): preview is LoopPreviewTransform => !!preview);
 }
 
+export function loopAdjacentTransforms(map: Pick<CompositionMap, "segments" | "loop">): LoopPreviewTransform[] {
+  return loopPreviewTransforms(map, [0, 0], Infinity);
+}
+
 export function transformLoopPoint(preview: LoopPreviewTransform, point: [number, number]): [number, number] {
   const dx = point[0] - preview.source[0];
   const dz = point[1] - preview.source[1];

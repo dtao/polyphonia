@@ -9,7 +9,7 @@ import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 
 const MAX_TRACK_LIGHTS = 12;
 
-export function MapScene({ map, tracks, editMode }: { map: CompositionMap; tracks: TrackDef[]; editMode: boolean }) {
+export function MapScene({ map, tracks, editMode, lightTracks = tracks }: { map: CompositionMap; tracks: TrackDef[]; editMode: boolean; lightTracks?: TrackDef[] }) {
   const selectedMapSegmentId = useStore((s) => s.selectedMapSegmentId);
   const endpointCounts = new Map<string, number>();
   for (const segment of map.segments) {
@@ -21,8 +21,8 @@ export function MapScene({ map, tracks, editMode }: { map: CompositionMap; track
   return (
     <group>
       {editMode && <StartMarker map={map} editMode={editMode} />}
-      <ReflectiveUnderfloor segments={map.segments} tracks={tracks} />
-      <WalkableFloor segments={map.segments} tracks={tracks} editMode={editMode} />
+      <ReflectiveUnderfloor segments={map.segments} tracks={tracks} lightTracks={lightTracks} />
+      <WalkableFloor segments={map.segments} tracks={lightTracks} editMode={editMode} />
       <PathDropSkirt segments={map.segments} />
       {map.segments.map((segment) => (
         <Segment
@@ -126,14 +126,14 @@ function splitWall(half: number, isEntrance: boolean, entranceWidth: number, off
   return parts;
 }
 
-function ReflectiveUnderfloor({ segments, tracks }: { segments: WalkableSegment[]; tracks: TrackDef[] }) {
+function ReflectiveUnderfloor({ segments, tracks, lightTracks }: { segments: WalkableSegment[]; tracks: TrackDef[]; lightTracks: TrackDef[] }) {
   const bounds = useMemo(() => mapBounds(segments, tracks), [segments, tracks]);
   if (!bounds) return null;
 
   return (
     <mesh position={[bounds.center[0], UNDERFLOOR_HEIGHT, bounds.center[1]]} rotation={[-Math.PI / 2, 0, 0]}>
       <planeGeometry args={[bounds.size, bounds.size, 96, 96]} />
-      <ReflectiveUnderfloorMaterial tracks={tracks} />
+      <ReflectiveUnderfloorMaterial tracks={lightTracks} />
     </mesh>
   );
 }
