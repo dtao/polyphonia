@@ -79,8 +79,9 @@ add a test framework unless asked.
 - Commit messages should follow the house style in recent history (e.g.
   `9d23d5b`): imperative subject line, one concise explanatory paragraph, then
   focused bullets for user-visible behavior, key implementation points, and
-  fixes/edge cases when useful. Include "Co-Authored-By" line specifying model
-  (e.g. Opus 4.8, GPT 5.5) where appropriate.
+  fixes/edge cases when useful. Adhere to an 80-character line limit (wrapping
+  is okay). Include "Co-Authored-By" line specifying model (e.g. Opus 4.8,
+  GPT 5.5).
 - Keep the runtime composition model clean: persistence/cloud do their own
   (de)serialization (e.g. `{kind:"stored"}` markers, `publishedId`, `hash`) —
   don't leak storage concerns into the engine/scene.
@@ -93,6 +94,18 @@ add a test framework unless asked.
 - Edits that affect audio go through store actions that also call the engine's
   live setters (`setVolume`/`setPosition`/`setFalloff`) — never restart playback
   to apply an edit.
+
+### Commit message mechanics
+
+When creating commits, do not use one `git commit -m` flag per bullet. Git
+inserts a blank line between each `-m` paragraph, which makes bullet lists
+double-spaced.
+
+Prefer composing the full message as a temporary file and committing with:
+
+```bash
+git commit -F /tmp/polyphonia-commit-msg.txt
+```
 
 ## Gotchas (hard-won — read before touching these areas)
 
