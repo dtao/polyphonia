@@ -9,6 +9,7 @@ export interface WalkableSegment {
 
 export type RoomSide = "north" | "south" | "east" | "west";
 export type SegmentEnd = "start" | "end";
+export type MapTilingType = "none" | "path-loop" | "square" | "hex";
 
 export interface RoomAttachment {
   segmentId: string;
@@ -31,10 +32,22 @@ export interface MapRoom {
   attachment?: RoomAttachment; // rooms created from path endpoints stay attached to that branch point
 }
 
+export interface MapTiling {
+  type: MapTilingType;
+  origin: [number, number];
+  tileSize: number;
+  pathLoop?: {
+    start?: RoomAttachment;
+    end?: RoomAttachment;
+  };
+}
+
 export interface CompositionMap {
   preset: MapPreset;
   segments: WalkableSegment[];
   rooms: MapRoom[];
+  tiling: MapTiling;
+  /** @deprecated Use tiling.pathLoop. Kept as a compatibility mirror for older code/manifests. */
   loop?: {
     start?: RoomAttachment;
     end?: RoomAttachment;
@@ -53,12 +66,15 @@ const DOOR_DEPTH = 2.6;
 
 type Rect = { minX: number; maxX: number; minZ: number; maxZ: number };
 
+export const defaultTiling: MapTiling = { type: "none", origin: [0, 0], tileSize: 80 };
+
 export const MAP_PRESETS: Record<Exclude<MapPreset, "custom">, CompositionMap> = {
-  open: { preset: "open", segments: [], rooms: [], wallHeight: 0, start: { position: [0, 0], direction: [0, -1] } },
+  open: { preset: "open", segments: [], rooms: [], tiling: defaultTiling, wallHeight: 0, start: { position: [0, 0], direction: [0, -1] } },
   line: {
     preset: "line",
     wallHeight: 2.1,
     rooms: [],
+    tiling: defaultTiling,
     start: { position: [0, 36], direction: [0, -1] },
     segments: [{ id: "line", start: [0, 40.5], end: [0, -40.5], width: 7.5 }],
   },
@@ -66,6 +82,7 @@ export const MAP_PRESETS: Record<Exclude<MapPreset, "custom">, CompositionMap> =
     preset: "y",
     wallHeight: 2.1,
     rooms: [],
+    tiling: defaultTiling,
     start: { position: [0, 36], direction: [0, -1] },
     segments: [
       { id: "trunk", start: [0, 40.5], end: [0, -6.75], width: 7.5 },
@@ -84,11 +101,14 @@ export function normalizeMap(value: Partial<CompositionMap> | undefined): Compos
   const rooms = Array.isArray(value?.rooms) ? value.rooms.filter(isMapRoom).map(normalizeRoom) : fallback.rooms;
   const startPosition = isPoint(value?.start?.position) ? value.start.position : fallback.start.position;
   const startDirection = normalizeDirection(isPoint(value?.start?.direction) ? value.start.direction : fallback.start.direction);
+  const legacyLoop = isMapLoop(value?.loop) ? value.loop : undefined;
+  const tiling = normalizeMapTiling(value?.tiling, legacyLoop, fallback.tiling);
   const map = alignAttachedRooms({
     preset,
     segments,
     rooms,
-    loop: isMapLoop(value?.loop) ? value.loop : undefined,
+    tiling,
+    loop: tiling.type === "path-loop" ? tiling.pathLoop : legacyLoop,
     wallHeight: clamp(value?.wallHeight ?? fallback.wallHeight, 0, 8),
     start: {
       position: startPosition,
@@ -96,6 +116,7 @@ export function normalizeMap(value: Partial<CompositionMap> | undefined): Compos
     },
   });
   map.loop = normalizeMapLoop(map);
+  map.tiling = normalizeMapTiling({ ...tiling, pathLoop: map.loop }, undefined, fallback.tiling);
   return {
     ...map,
     start: {
@@ -322,6 +343,20 @@ function normalizeMapLoop(map: CompositionMap): CompositionMap["loop"] {
   return start || end ? { start, end } : undefined;
 }
 
+function normalizeMapTiling(value: unknown, legacyLoop: CompositionMap["loop"], fallback = defaultTiling): MapTiling {
+  const tiling = value as Partial<MapTiling> | undefined;
+  const type = isMapTilingType(tiling?.type) ? tiling.type : legacyLoop ? "path-loop" : fallback.type;
+  const origin = isPoint(tiling?.origin) ? tiling.origin : fallback.origin;
+  const tileSize = clamp(typeof tiling?.tileSize === "number" && Number.isFinite(tiling.tileSize) ? tiling.tileSize : fallback.tileSize, 5, 1000);
+  const pathLoop = isMapLoop(tiling?.pathLoop) ? tiling.pathLoop : legacyLoop;
+  return {
+    type,
+    origin,
+    tileSize,
+    pathLoop: type === "path-loop" ? pathLoop : undefined,
+  };
+}
+
 function wrapFromEndpoint(
   map: Pick<CompositionMap, "segments">,
   from: RoomAttachment,
@@ -537,6 +572,10 @@ function isRoomAttachment(value: unknown): value is RoomAttachment {
 function isMapLoop(value: unknown): value is NonNullable<CompositionMap["loop"]> {
   const loop = value as NonNullable<CompositionMap["loop"]>;
   return isRoomAttachment(loop?.start) || isRoomAttachment(loop?.end);
+}
+
+function isMapTilingType(value: unknown): value is MapTilingType {
+  return value === "none" || value === "path-loop" || value === "square" || value === "hex";
 }
 
 function isPoint(value: unknown): value is [number, number] {
