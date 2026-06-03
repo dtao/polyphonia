@@ -669,6 +669,7 @@ function PathMaterial({ tracks, editMode, selected }: { tracks: TrackDef[]; edit
       uniforms={uniforms}
       vertexShader={pathVertexShader}
       fragmentShader={pathFragmentShader}
+      fog={true}
     />
   );
 }
@@ -721,6 +722,7 @@ function ReflectiveUnderfloorMaterial({ tracks }: { tracks: TrackDef[] }) {
       uniforms={uniforms}
       vertexShader={reflectiveFloorVertexShader}
       fragmentShader={reflectiveFloorFragmentShader}
+      fog={true}
     />
   );
 }
@@ -907,11 +909,14 @@ function findPoint(map: CompositionMap, key: string): [number, number] | null {
 
 const pathVertexShader = `
   varying vec2 vWorld;
+  #include <fog_pars_vertex>
 
   void main() {
     vec4 worldPosition = modelMatrix * vec4(position, 1.0);
     vWorld = worldPosition.xz;
-    gl_Position = projectionMatrix * viewMatrix * worldPosition;
+    vec4 mvPosition = viewMatrix * worldPosition;
+    gl_Position = projectionMatrix * mvPosition;
+    #include <fog_vertex>
   }
 `;
 
@@ -925,6 +930,7 @@ const pathFragmentShader = `
   uniform int trackCount;
   uniform float floorStrength;
   varying vec2 vWorld;
+  #include <fog_pars_fragment>
 
   void main() {
     vec3 color = baseColor * floorStrength;
@@ -943,18 +949,22 @@ const pathFragmentShader = `
 
     color += baseColor * min(lightTotal, 1.0) * 0.08;
     gl_FragColor = vec4(color, 1.0);
+    #include <fog_fragment>
   }
 `;
 
 const reflectiveFloorVertexShader = `
   varying vec2 vWorld;
   varying vec2 vUv;
+  #include <fog_pars_vertex>
 
   void main() {
     vUv = uv;
     vec4 worldPosition = modelMatrix * vec4(position, 1.0);
     vWorld = worldPosition.xz;
-    gl_Position = projectionMatrix * viewMatrix * worldPosition;
+    vec4 mvPosition = viewMatrix * worldPosition;
+    gl_Position = projectionMatrix * mvPosition;
+    #include <fog_vertex>
   }
 `;
 
@@ -968,6 +978,7 @@ const reflectiveFloorFragmentShader = `
   uniform float time;
   varying vec2 vWorld;
   varying vec2 vUv;
+  #include <fog_pars_fragment>
 
   float hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -1008,5 +1019,14 @@ const reflectiveFloorFragmentShader = `
     color += sheen;
     float alpha = edgeFade * (0.72 + min(glowTotal, 1.0) * 0.22);
     gl_FragColor = vec4(color, alpha);
+    #ifdef USE_FOG
+      #ifdef FOG_EXP2
+        float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );
+      #else
+        float fogFactor = smoothstep( fogNear, fogFar, vFogDepth );
+      #endif
+      gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );
+      gl_FragColor.a *= (1.0 - fogFactor);
+    #endif
   }
 `;
