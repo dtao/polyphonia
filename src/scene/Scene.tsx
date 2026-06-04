@@ -10,15 +10,21 @@ import { ListenerSync } from "./ListenerSync";
 import { EnvironmentScene } from "./EnvironmentScene";
 import { MapScene } from "./MapScene";
 import { DebugSampler } from "./DebugSampler";
-import { CompositionMap, tiledMapTransforms, transformLoopPoint } from "../map";
+import { CompositionMap, LoopPreviewTransform, tiledMapTransforms, transformLoopPoint } from "../map";
 import { TrackDef } from "../composition";
 import { debugFlag } from "../debug";
 
-const VIEWER_SAMPLE_DISTANCE = 2;
-const PATH_LOOP_PREVIEW_FADE_START = 18;
-const PATH_LOOP_PREVIEW_FADE_END = 46;
-const TILE_PREVIEW_FADE_START = 70;
-const TILE_PREVIEW_FADE_END = 130;
+const VIEWER_SAMPLE_DISTANCE = 0.75;
+const TILE_PREVIEW_RADIUS = 180;
+const PREVIEW_FADE_EPSILON = 0.003;
+const PATH_LOOP_MAP_FADE_START = 18;
+const PATH_LOOP_MAP_FADE_END = 58;
+const PATH_LOOP_STEM_FADE_START = 72;
+const PATH_LOOP_STEM_FADE_END = 180;
+const TILE_MAP_FADE_START = 85;
+const TILE_MAP_FADE_END = 180;
+const TILE_STEM_FADE_START = 95;
+const TILE_STEM_FADE_END = 200;
 
 export function Scene() {
   const tracks = useStore((s) => s.composition.tracks);
@@ -77,19 +83,22 @@ function TileBoundaryOverlay({ map, viewer, editMode }: { map: CompositionMap; v
 function TiledMapPreview({ viewer }: { viewer: [number, number] }) {
   const tracks = useStore((s) => s.composition.tracks);
   const map = useStore((s) => s.composition.map);
-  const previews = debugFlag("debugNoLoopPreview") ? [] : tiledMapTransforms(map, viewer);
+  const previews = debugFlag("debugNoLoopPreview") ? [] : tiledMapTransforms(map, viewer, TILE_PREVIEW_RADIUS);
   const tileLights = debugFlag("debugNoLoopPreview") ? tracks : tileLightTracks(map, tracks, viewer);
 
   return (
     <>
       {previews.map((preview) => {
-        const fade = previewVisibility(map, preview, viewer);
-        if (fade <= 0.01) return null;
+        const mapFade = previewMapVisibility(map, preview, viewer);
+        const markerFades = tracks.map((track) => ({ track, fade: previewTrackVisibility(map, preview, track, viewer) })).filter(({ fade }) => fade > PREVIEW_FADE_EPSILON);
+        const strongestMarkerFade = markerFades.reduce((max, marker) => Math.max(max, marker.fade), 0);
+        const previewFade = Math.max(mapFade, strongestMarkerFade * 0.7);
+        if (previewFade <= PREVIEW_FADE_EPSILON) return null;
         return (
           <group key={preview.id} position={[preview.anchor[0], 0, preview.anchor[1]]} rotation={[0, preview.rotation, 0]}>
             <group position={[-preview.source[0], 0, -preview.source[1]]}>
-              <MapScene map={map} tracks={tracks} lightTracks={tileLights} editMode={false} previewFade={fade} />
-              {tracks.map((track) => (
+              <MapScene map={map} tracks={tracks} lightTracks={tileLights} editMode={false} previewFade={previewFade} />
+              {markerFades.map(({ track, fade }) => (
                 <TrackMarker key={`${preview.id}-${track.id}`} track={track} preview fade={fade} />
               ))}
             </group>
@@ -187,20 +196,33 @@ function pointBoundaryKey([x, z]: [number, number]): string {
 
 function tileLightTracks(map: CompositionMap, tracks: TrackDef[], viewer: [number, number]): TrackDef[] {
   if (debugFlag("debugNoLoopLights")) return tracks;
-  const previews = tiledMapTransforms(map, viewer).filter((preview) => previewVisibility(map, preview, viewer) > 0.01);
+  const previews = tiledMapTransforms(map, viewer, TILE_PREVIEW_RADIUS);
   if (!previews.length) return tracks;
   return tracks.flatMap((track) => [
     track,
-    ...previews.map((preview) => {
+    ...previews.flatMap((preview) => {
+        if (previewTrackVisibility(map, preview, track, viewer) <= PREVIEW_FADE_EPSILON) return [];
         const [x, z] = transformLoopPoint(preview, [track.position[0], track.position[2]]);
-        return { ...track, position: [x, track.position[1], z] as [number, number, number] };
+        return [{ ...track, position: [x, track.position[1], z] as [number, number, number] }];
       }),
   ]);
 }
 
-function previewVisibility(map: CompositionMap, preview: { anchor: [number, number] }, viewer: [number, number]): number {
+function previewMapVisibility(map: CompositionMap, preview: { anchor: [number, number] }, viewer: [number, number]): number {
   const distance = Math.hypot(viewer[0] - preview.anchor[0], viewer[1] - preview.anchor[1]);
-  const start = map.tiling.type === "path-loop" ? PATH_LOOP_PREVIEW_FADE_START : TILE_PREVIEW_FADE_START;
-  const end = map.tiling.type === "path-loop" ? PATH_LOOP_PREVIEW_FADE_END : TILE_PREVIEW_FADE_END;
+  const start = map.tiling.type === "path-loop" ? PATH_LOOP_MAP_FADE_START : TILE_MAP_FADE_START;
+  const end = map.tiling.type === "path-loop" ? PATH_LOOP_MAP_FADE_END : TILE_MAP_FADE_END;
+  return distanceVisibility(distance, start, end);
+}
+
+function previewTrackVisibility(map: CompositionMap, preview: LoopPreviewTransform, track: TrackDef, viewer: [number, number]): number {
+  const [x, z] = transformLoopPoint(preview, [track.position[0], track.position[2]]);
+  const distance = Math.hypot(viewer[0] - x, viewer[1] - z);
+  const start = map.tiling.type === "path-loop" ? PATH_LOOP_STEM_FADE_START : TILE_STEM_FADE_START;
+  const end = map.tiling.type === "path-loop" ? PATH_LOOP_STEM_FADE_END : TILE_STEM_FADE_END;
+  return distanceVisibility(distance, start, end);
+}
+
+function distanceVisibility(distance: number, start: number, end: number): number {
   return 1 - THREE.MathUtils.smoothstep(distance, start, end);
 }

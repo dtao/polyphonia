@@ -26,6 +26,7 @@ export function TrackMarker({ track, preview = false, fade = 1 }: { track: Track
   const glow = useRef<THREE.PointLight>(null);
   const ring = useRef<THREE.Mesh>(null);
   const smoothedLevel = useRef(0);
+  const visibleFade = useRef(preview ? 0 : fade);
   const seed = useMemo(() => trackSeed(track.id), [track.id]);
   const [x, , z] = track.position;
   const onWalkablePath = !map.segments.length || isPointInsideMap(map, [x, z]);
@@ -38,18 +39,20 @@ export function TrackMarker({ track, preview = false, fade = 1 }: { track: Track
   useFrame(({ clock }, dt) => {
     const level = engine?.level(track.id) ?? 0;
     smoothedLevel.current = THREE.MathUtils.damp(smoothedLevel.current, level, 14, dt);
+    visibleFade.current = preview ? THREE.MathUtils.damp(visibleFade.current, fade, fade > visibleFade.current ? 3.8 : 8, dt) : fade;
     const pulse = smoothedLevel.current;
     const t = clock.elapsedTime;
     const breath = 1 + Math.sin(t * 0.9 + seed + x * 0.2 + z * 0.13) * 0.035;
-    const opticalFade = Math.sqrt(fade);
+    const renderedFade = visibleFade.current;
+    const opticalFade = Math.sqrt(renderedFade);
     if (core.current) {
       core.current.scale.setScalar(breath + pulse * 0.85);
       const material = core.current.material;
-      if (material instanceof THREE.MeshBasicMaterial) material.opacity = fade;
+      if (material instanceof THREE.MeshBasicMaterial) material.opacity = renderedFade;
     }
     if (footprint.current) {
       const material = footprint.current.material;
-      if (material instanceof THREE.MeshBasicMaterial) material.opacity = 0.28 * fade;
+      if (material instanceof THREE.MeshBasicMaterial) material.opacity = 0.28 * renderedFade;
     }
     if (aura.current) {
       aura.current.scale.setScalar(1.35 + pulse * 1.45);
@@ -160,7 +163,7 @@ export function TrackMarker({ track, preview = false, fade = 1 }: { track: Track
       </Billboard>
       <mesh ref={core} position={[0, markerTop, 0]}>
         <sphereGeometry args={[orbRadius * 0.62, 32, 20]} />
-        <meshBasicMaterial color="white" transparent={fade < 0.999} opacity={fade} toneMapped={false} depthWrite={fade >= 0.999} />
+        <meshBasicMaterial color="white" transparent={preview || fade < 0.999} opacity={preview ? 0 : fade} toneMapped={false} depthWrite={!preview && fade >= 0.999} />
       </mesh>
       {/* selection ring */}
       {selected && (
