@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useFrame, ThreeEvent } from "@react-three/fiber";
 import { Billboard, Text } from "@react-three/drei";
 import * as THREE from "three";
@@ -7,11 +7,24 @@ import { isPointInsideMap } from "../map";
 import { markerObjects, useStore } from "../store";
 import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 import { debugFlag } from "../debug";
+import { unregisterMarkerDebug, updateMarkerDebug } from "./markerDebug";
 
 // A glowing orb that marks where a stem lives in space and pulses with its
 // audio level — a visual anchor for the sound you hear from that direction.
 // In edit mode it can be clicked to select; the selected track wears a ring.
-export function TrackMarker({ track, preview = false, fade = 1 }: { track: TrackDef; preview?: boolean; fade?: number }) {
+export function TrackMarker({
+  track,
+  preview = false,
+  fade = 1,
+  debugId,
+  debugPosition,
+}: {
+  track: TrackDef;
+  preview?: boolean;
+  fade?: number;
+  debugId?: string;
+  debugPosition?: [number, number];
+}) {
   const engine = useStore((s) => s.engine);
   const mode = useStore((s) => s.mode);
   const selected = useStore((s) => !preview && s.selectedId === track.id);
@@ -35,8 +48,12 @@ export function TrackMarker({ track, preview = false, fade = 1 }: { track: Track
   const orbRadius = 0.42 + volume * 0.32;
   const markerTop = 1.1 + orbRadius * 0.9;
   const showPointLight = !preview && !debugFlag("debugNoPointLights");
+  const markerDebugId = debugId ?? `base:${track.id}`;
+  const markerDebugPosition = debugPosition ?? [x, z];
 
-  useFrame(({ clock }, dt) => {
+  useEffect(() => () => unregisterMarkerDebug(markerDebugId), [markerDebugId]);
+
+  useFrame(({ clock, camera }, dt) => {
     const level = engine?.level(track.id) ?? 0;
     smoothedLevel.current = THREE.MathUtils.damp(smoothedLevel.current, level, 14, dt);
     visibleFade.current = preview ? THREE.MathUtils.damp(visibleFade.current, fade, fade > visibleFade.current ? 3.8 : 8, dt) : fade;
@@ -45,6 +62,15 @@ export function TrackMarker({ track, preview = false, fade = 1 }: { track: Track
     const breath = 1 + Math.sin(t * 0.9 + seed + x * 0.2 + z * 0.13) * 0.035;
     const renderedFade = visibleFade.current;
     const opticalFade = Math.sqrt(renderedFade);
+    updateMarkerDebug({
+      id: markerDebugId,
+      trackId: track.id,
+      kind: preview ? "preview" : "base",
+      fade: renderedFade,
+      targetFade: fade,
+      distance: Math.hypot(camera.position.x - markerDebugPosition[0], camera.position.z - markerDebugPosition[1]),
+      updatedAt: performance.now(),
+    });
     if (core.current) {
       core.current.scale.setScalar(breath + pulse * 0.85);
       const material = core.current.material;

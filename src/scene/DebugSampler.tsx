@@ -3,6 +3,7 @@ import { useRef } from "react";
 import { debugEnabled, mapDebugSnapshot, memorySnapshot, recordDebugSample, roomDebugSnapshot, timingSnapshot } from "../debug";
 import { useStore } from "../store";
 import * as THREE from "three";
+import { markerDebugSnapshot } from "./markerDebug";
 
 export function DebugSampler() {
   const { camera, gl, scene } = useThree();
@@ -34,6 +35,7 @@ export function DebugSampler() {
       ...room,
       map: mapDebugSnapshot(state.composition.map),
       render: renderDebugSnapshot(gl, scene),
+      visual: markerDebugSnapshot(now),
       audio: state.engine?.debugSnapshot() ?? null,
       timings: timingSnapshot(),
     });

@@ -375,16 +375,60 @@ export class AudioEngine {
     trackCount: number;
     loopEnabled: boolean;
     loopLength: number;
+    instances: {
+      total: number;
+      base: number;
+      virtual: number;
+      tracksWithInstances: number;
+      tracksWithVirtualInstances: number;
+      maxPerTrack: number;
+    };
     activeRoom: { id: string; decay: number; reverbSend: number; impulseDuration: number } | null;
   } {
+    const instances = this.audioInstanceDebug();
     return {
       contextState: this.ctx.state,
       started: this.started,
       trackCount: this.tracks.length,
       loopEnabled: this.loopEnabled,
       loopLength: this.loopLength,
+      instances,
       activeRoom: this.activeRoomDebug,
     };
+  }
+
+  private audioInstanceDebug(): {
+    total: number;
+    base: number;
+    virtual: number;
+    tracksWithInstances: number;
+    tracksWithVirtualInstances: number;
+    maxPerTrack: number;
+  } {
+    let total = 0;
+    let base = 0;
+    let virtual = 0;
+    let tracksWithInstances = 0;
+    let tracksWithVirtualInstances = 0;
+    let maxPerTrack = 0;
+
+    for (const track of this.tracks) {
+      const size = track.instances.size;
+      if (size > 0) tracksWithInstances++;
+      maxPerTrack = Math.max(maxPerTrack, size);
+      total += size;
+      let trackVirtual = 0;
+      for (const id of track.instances.keys()) {
+        if (id === "base") base++;
+        else {
+          virtual++;
+          trackVirtual++;
+        }
+      }
+      if (trackVirtual > 0) tracksWithVirtualInstances++;
+    }
+
+    return { total, base, virtual, tracksWithInstances, tracksWithVirtualInstances, maxPerTrack };
   }
 
   private playSegment(t: LiveTrack, when: number, offset: number, duration: number): void {

@@ -48,7 +48,7 @@ export function Scene() {
       <MapScene map={map} tracks={tracks} lightTracks={mode === "explore" ? tileLights : tracks} editMode={mode === "edit"} />
 
       {tracks.map((t) => (
-        <TrackMarker key={t.id} track={t} />
+        <TrackMarker key={t.id} track={t} debugId={`base:${t.id}`} debugPosition={[t.position[0], t.position[2]]} />
       ))}
 
       {/* Player is mounted even on the entry screen so the enter button's click
@@ -90,7 +90,12 @@ function TiledMapPreview({ viewer }: { viewer: [number, number] }) {
     <>
       {previews.map((preview) => {
         const mapFade = previewMapVisibility(map, preview, viewer);
-        const markerFades = tracks.map((track) => ({ track, fade: previewTrackVisibility(map, preview, track, viewer) })).filter(({ fade }) => fade > PREVIEW_FADE_EPSILON);
+        const markerFades = tracks
+          .map((track) => {
+            const position = transformLoopPoint(preview, [track.position[0], track.position[2]]);
+            return { track, position, fade: previewTrackVisibility(map, preview, track, viewer) };
+          })
+          .filter(({ fade }) => fade > PREVIEW_FADE_EPSILON);
         const strongestMarkerFade = markerFades.reduce((max, marker) => Math.max(max, marker.fade), 0);
         const previewFade = Math.max(mapFade, strongestMarkerFade * 0.7);
         if (previewFade <= PREVIEW_FADE_EPSILON) return null;
@@ -98,8 +103,8 @@ function TiledMapPreview({ viewer }: { viewer: [number, number] }) {
           <group key={preview.id} position={[preview.anchor[0], 0, preview.anchor[1]]} rotation={[0, preview.rotation, 0]}>
             <group position={[-preview.source[0], 0, -preview.source[1]]}>
               <MapScene map={map} tracks={tracks} lightTracks={tileLights} editMode={false} previewFade={previewFade} />
-              {markerFades.map(({ track, fade }) => (
-                <TrackMarker key={`${preview.id}-${track.id}`} track={track} preview fade={fade} />
+              {markerFades.map(({ track, fade, position }) => (
+                <TrackMarker key={`${preview.id}-${track.id}`} track={track} preview fade={fade} debugId={`${preview.id}:${track.id}`} debugPosition={position} />
               ))}
             </group>
           </group>

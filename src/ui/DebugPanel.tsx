@@ -13,6 +13,7 @@ export function DebugPanel() {
   }, [enabled]);
 
   if (!enabled) return null;
+  const farthestMarker = sample?.visual.farthestVisibleMarkers[0];
 
   const audio = sample?.audio as
     | null
@@ -21,6 +22,14 @@ export function DebugPanel() {
         contextState: string;
         started: boolean;
         trackCount: number;
+        instances?: {
+          total: number;
+          base: number;
+          virtual: number;
+          tracksWithInstances: number;
+          tracksWithVirtualInstances: number;
+          maxPerTrack: number;
+        };
         activeRoom: null | { decay: number; reverbSend: number; impulseDuration: number };
       };
 
@@ -53,10 +62,28 @@ export function DebugPanel() {
           <div>Memory {sample?.memory ? `${fmt(sample.memory.usedMB)} / ${fmt(sample.memory.totalMB)} MB` : "n/a"}</div>
           <div>Room {sample?.room ? `${sample.room.width}x${sample.room.depth}x${sample.room.height} (${Math.round(sample.room.volume)})` : "none"}</div>
           <div>Tracks {sample?.tracks.count ?? 0} · in room {sample?.tracks.inCurrentRoom ?? 0}</div>
+          <div>
+            Orbs {sample?.visual.visible ?? 0}/{sample?.visual.mounted ?? 0} visible · fading {sample?.visual.fading ?? 0}
+          </div>
+          <div>
+            Orb base {sample?.visual.base.visible ?? 0}/{sample?.visual.base.mounted ?? 0} · preview {sample?.visual.preview.visible ?? 0}/{sample?.visual.preview.mounted ?? 0}
+          </div>
+          <div>
+            Orb far {fmt(sample?.visual.farthestVisible)} · hidden near {fmt(sample?.visual.nearestHidden ?? undefined)}
+          </div>
+          <div>
+            Far orb {farthestMarker ? `${farthestMarker.kind} ${fmt(farthestMarker.distance)} · fade ${fmt(farthestMarker.fade)}` : "none"}
+          </div>
           <div>Map seg {sample?.map.segments ?? 0} · rooms {sample?.map.rooms ?? 0} · loop copies {sample?.map.loopPreviews ?? 0}</div>
           <div>Render calls {sample?.render?.calls ?? 0} · tris {sample?.render ? Math.round(sample.render.triangles / 1000) : 0}k</div>
           <div>Scene meshes {sample?.render?.meshes ?? 0} · point lights {sample?.render?.visiblePointLights ?? 0}</div>
           <div>Audio {audio ? `${audio.contextState} · ${audio.trackCount} tracks` : "none"}</div>
+          <div>
+            Audible {audio?.instances ? `${audio.instances.total} inst · base ${audio.instances.base} · virt ${audio.instances.virtual}` : "n/a"}
+          </div>
+          <div>
+            Audio tracks {audio?.instances ? `${audio.instances.tracksWithInstances} live · ${audio.instances.tracksWithVirtualInstances} virtual · max ${audio.instances.maxPerTrack}` : "n/a"}
+          </div>
           <div>Audio update {fmt(sample?.timings?.audioUpdateMs)}ms</div>
           <div>
             Reverb{" "}

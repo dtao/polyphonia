@@ -1,5 +1,6 @@
 import { CompositionMap, containingRoom, loopAdjacentTransforms } from "./map";
 import { TrackDef } from "./composition";
+import { MarkerDebugSnapshot } from "./scene/markerDebug";
 
 export interface DebugSample {
   t: number;
@@ -38,6 +39,7 @@ export interface DebugSample {
     count: number;
     inCurrentRoom: number;
   };
+  visual: MarkerDebugSnapshot;
   audio: unknown;
   timings?: {
     audioUpdateMs?: number;
