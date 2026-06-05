@@ -13,6 +13,7 @@ import { EnvironmentPanel } from "./ui/EnvironmentPanel";
 import { MapPanel } from "./ui/MapPanel";
 import { DebugPanel } from "./ui/DebugPanel";
 import { AudioLoadingOverlay } from "./ui/AudioLoadingOverlay";
+import { GeoWalkControls } from "./ui/GeoWalkControls";
 import { useStore } from "./store";
 import { exportComposition } from "./persistence";
 
@@ -365,6 +366,7 @@ export default function App() {
           <MapPointPanel />
           <MapSegmentPanel />
           <RoomPanel />
+          {mode === "explore" && <GeoWalkControls map={comp.map} />}
 
           {/* Empty composition: prompt the user to add their first stem. */}
           {comp.tracks.length === 0 && !locked && (

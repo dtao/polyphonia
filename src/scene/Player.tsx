@@ -1,10 +1,16 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { useStore, viewState, touchMove } from "../store";
+import { useStore, viewState, touchMove, geoWalk } from "../store";
 import { MapSupport, mapSupportAt, stepOnMap, surfaceHeightOnSupport, wrapLoopPosition } from "../map";
 
 const EYE_HEIGHT = 1.7;
+const GEO_HEADING_SMOOTHING = 0.45;
+
+function turnToward(current: number, target: number, amount: number): number {
+  const delta = Math.atan2(Math.sin(target - current), Math.cos(target - current));
+  return current + delta * amount;
+}
 
 // Explore mode: WASD movement on the ground plane + pointer-lock mouse look.
 // (The AudioListener is driven separately by <ListenerSync>, which works in
@@ -165,16 +171,30 @@ export function Player() {
     right.current.crossVectors(forward.current, up).normalize();
 
     const previous: [number, number] = [camera.position.x, camera.position.z];
-    // Combine keyboard (WASD) and touch-joystick input into one move vector so
-    // both input methods drive the same clamped, loop-wrapped movement.
-    let moveForward = touchMove.forward;
-    let moveStrafe = touchMove.strafe;
-    if (keys.current["KeyW"]) moveForward += 1;
-    if (keys.current["KeyS"]) moveForward -= 1;
-    if (keys.current["KeyD"]) moveStrafe += 1;
-    if (keys.current["KeyA"]) moveStrafe -= 1;
-    if (moveForward) camera.position.addScaledVector(forward.current, speed * moveForward);
-    if (moveStrafe) camera.position.addScaledVector(right.current, speed * moveStrafe);
+    if (geoWalk.active) {
+      const dx = geoWalk.pendingX;
+      const dz = geoWalk.pendingZ;
+      geoWalk.pendingX = 0;
+      geoWalk.pendingZ = 0;
+      camera.position.x += dx;
+      camera.position.z += dz;
+      if (Math.hypot(dx, dz) > 0.03) {
+        const targetYaw = Math.atan2(-dx, -dz);
+        look.current.targetYaw = turnToward(look.current.targetYaw, targetYaw, GEO_HEADING_SMOOTHING);
+        look.current.targetPitch = THREE.MathUtils.damp(look.current.targetPitch, 0, 10, dt);
+      }
+    } else {
+      // Combine keyboard (WASD) and touch-joystick input into one move vector so
+      // both input methods drive the same clamped, loop-wrapped movement.
+      let moveForward = touchMove.forward;
+      let moveStrafe = touchMove.strafe;
+      if (keys.current["KeyW"]) moveForward += 1;
+      if (keys.current["KeyS"]) moveForward -= 1;
+      if (keys.current["KeyD"]) moveStrafe += 1;
+      if (keys.current["KeyA"]) moveStrafe -= 1;
+      if (moveForward) camera.position.addScaledVector(forward.current, speed * moveForward);
+      if (moveStrafe) camera.position.addScaledVector(right.current, speed * moveStrafe);
+    }
     const wrapped = wrapLoopPosition(map, previous, [camera.position.x, camera.position.z]);
     if (wrapped) {
       camera.position.x = wrapped.position[0];

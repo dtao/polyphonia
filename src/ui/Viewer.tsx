@@ -7,6 +7,7 @@ import { fetchPublishedComposition, isSharingConfigured } from "../cloud";
 import { ArtistAvatar, artistPath } from "./galleryStyles";
 import { TouchControls, isTouchDevice } from "./TouchControls";
 import { AudioLoadingOverlay } from "./AudioLoadingOverlay";
+import { GeoWalkControls } from "./GeoWalkControls";
 
 type Status = "loading" | "ready" | "notfound" | "error";
 
@@ -69,6 +70,7 @@ export function Viewer() {
       </Canvas>
 
       {status === "ready" && entered && touch && <TouchControls />}
+      {status === "ready" && entered && <GeoWalkControls map={comp.map} />}
 
       {status === "ready" && !entered && (
         <div style={overlay}>
