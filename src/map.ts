@@ -65,6 +65,8 @@ export interface CompositionMap {
   };
 }
 
+export type MapSupport = { kind: "open" } | { kind: "segment"; segmentId: string } | { kind: "room"; roomId: string };
+
 export const ROOM_WALL_THICKNESS = 0.3;
 // How far the walkable doorway "threshold" extends outside the entrance wall, so
 // a room positioned against a path connects to it.
@@ -174,6 +176,43 @@ export function clampToMap(map: CompositionMap, point: [number, number]): [numbe
   return best;
 }
 
+export interface MapStep {
+  position: [number, number];
+  support: MapSupport;
+}
+
+export function mapSupportAt(map: CompositionMap, point: [number, number], previous?: MapSupport | null): MapSupport {
+  if (!map.segments.length && !map.rooms.length) return { kind: "open" };
+  const previousSupport = previous && supportExists(map, previous) ? previous : null;
+  if (previousSupport && supportContains(map, previousSupport, point)) return previousSupport;
+
+  const room = containingRoom(map, point);
+  if (room) return { kind: "room", roomId: room.id };
+
+  const segment = nearestSegmentContaining(map, point);
+  if (segment) return { kind: "segment", segmentId: segment.id };
+
+  const clamped = clampToMap(map, point);
+  const clampedRoom = containingRoom(map, clamped);
+  if (clampedRoom) return { kind: "room", roomId: clampedRoom.id };
+  return { kind: "segment", segmentId: nearestSegment(map.segments, clamped)?.id ?? map.segments[0]?.id ?? "" };
+}
+
+export function stepOnMap(map: CompositionMap, previous: [number, number], attempted: [number, number], previousSupport?: MapSupport | null): MapStep {
+  if (!map.segments.length && !map.rooms.length) return { position: attempted, support: { kind: "open" } };
+  const support = previousSupport && supportExists(map, previousSupport) ? previousSupport : mapSupportAt(map, previous, previousSupport);
+
+  if (supportContains(map, support, attempted)) return { position: attempted, support };
+
+  const transition = transitionSupport(map, support, previous, attempted);
+  if (transition) return transition;
+
+  return {
+    position: clampToSupport(map, support, attempted) ?? clampToMap(map, attempted),
+    support,
+  };
+}
+
 export function isPointInsideMap(map: CompositionMap, point: [number, number]): boolean {
   if (!map.segments.length && !map.rooms.length) return true;
   return map.segments.some((segment) => pointInSegment(point, segment)) || map.rooms.some((room) => roomContains(room, point));
@@ -279,6 +318,22 @@ export function surfaceHeightAt(map: Pick<CompositionMap, "segments" | "rooms" |
     }
   }
   return best;
+}
+
+export function surfaceHeightOnSupport(
+  map: Pick<CompositionMap, "segments" | "rooms" | "elevations">,
+  point: [number, number],
+  support?: MapSupport | null,
+): number {
+  if (support?.kind === "room") {
+    const room = map.rooms.find((r) => r.id === support.roomId);
+    if (room) return roomElevation(map, room);
+  }
+  if (support?.kind === "segment") {
+    const segment = map.segments.find((s) => s.id === support.segmentId);
+    if (segment) return segmentHeightAt(map, segment, point);
+  }
+  return surfaceHeightAt(map, point);
 }
 
 export function endpointCount(map: Pick<CompositionMap, "segments">, key: string): number {
@@ -559,6 +614,131 @@ function endpointArm(map: Pick<CompositionMap, "segments">, endpoint: RoomAttach
   const other = endpoint.end === "start" ? segment.end : segment.start;
   const out = normalizeDirection([point[0] - other[0], point[1] - other[1]]);
   return { point, out, right: [out[1], -out[0]], width: segment.width };
+}
+
+function supportExists(map: CompositionMap, support: MapSupport): boolean {
+  if (support.kind === "open") return !map.segments.length && !map.rooms.length;
+  if (support.kind === "room") return map.rooms.some((room) => room.id === support.roomId);
+  return map.segments.some((segment) => segment.id === support.segmentId);
+}
+
+function supportContains(map: CompositionMap, support: MapSupport, point: [number, number]): boolean {
+  if (support.kind === "open") return true;
+  if (support.kind === "room") {
+    const room = map.rooms.find((r) => r.id === support.roomId);
+    return room ? roomContains(room, point) : false;
+  }
+  const segment = map.segments.find((s) => s.id === support.segmentId);
+  return segment ? pointInSegment(point, segment) : false;
+}
+
+function transitionSupport(map: CompositionMap, support: MapSupport, previous: [number, number], attempted: [number, number]): MapStep | null {
+  if (support.kind === "open") return { position: attempted, support };
+
+  if (support.kind === "room") {
+    const room = map.rooms.find((r) => r.id === support.roomId);
+    const attachment = room?.attachment;
+    if (!room || !attachment) return null;
+    const segment = map.segments.find((s) => s.id === attachment.segmentId);
+    if (segment && pointInSegment(attempted, segment) && nearEndpoint(map, attachment, previous, attempted)) {
+      return { position: attempted, support: { kind: "segment", segmentId: segment.id } };
+    }
+    return null;
+  }
+
+  const segment = map.segments.find((s) => s.id === support.segmentId);
+  if (!segment) return null;
+  for (const room of map.rooms) {
+    if (!room.attachment || room.attachment.segmentId !== segment.id) continue;
+    if (roomContains(room, attempted) && nearEndpoint(map, room.attachment, previous, attempted)) {
+      return { position: attempted, support: { kind: "room", roomId: room.id } };
+    }
+  }
+
+  for (const candidate of map.segments) {
+    if (candidate.id === segment.id || !pointInSegment(attempted, candidate)) continue;
+    if (segmentsShareEndpoint(segment, candidate) && nearSharedEndpoint(segment, candidate, previous, attempted)) {
+      return { position: attempted, support: { kind: "segment", segmentId: candidate.id } };
+    }
+  }
+  return null;
+}
+
+function clampToSupport(map: CompositionMap, support: MapSupport, point: [number, number]): [number, number] | null {
+  if (support.kind === "open") return point;
+  if (support.kind === "room") {
+    const room = map.rooms.find((r) => r.id === support.roomId);
+    if (!room) return null;
+    let best: [number, number] = point;
+    let bestDistanceSq = Infinity;
+    for (const rect of roomRegionRects(room)) {
+      const candidate = fromRoomLocal(room, closestInRect(toRoomLocal(room, point), rect));
+      const dx = point[0] - candidate[0];
+      const dz = point[1] - candidate[1];
+      const distanceSq = dx * dx + dz * dz;
+      if (distanceSq < bestDistanceSq) {
+        best = candidate;
+        bestDistanceSq = distanceSq;
+      }
+    }
+    return best;
+  }
+  const segment = map.segments.find((s) => s.id === support.segmentId);
+  return segment ? closestPointInSegment(point, segment) : null;
+}
+
+function nearestSegmentContaining(map: CompositionMap, point: [number, number]): WalkableSegment | null {
+  const containing = map.segments.filter((segment) => pointInSegment(point, segment));
+  return nearestSegment(containing, point);
+}
+
+function nearestSegment(segments: WalkableSegment[], point: [number, number]): WalkableSegment | null {
+  let best: WalkableSegment | null = null;
+  let bestDistSq = Infinity;
+  for (const segment of segments) {
+    const { px, pz } = centerlineProjection(point, segment);
+    const dx = point[0] - px;
+    const dz = point[1] - pz;
+    const distSq = dx * dx + dz * dz;
+    if (distSq < bestDistSq) {
+      best = segment;
+      bestDistSq = distSq;
+    }
+  }
+  return best;
+}
+
+function segmentsShareEndpoint(a: WalkableSegment, b: WalkableSegment): boolean {
+  return sharedEndpoint(a, b) !== null;
+}
+
+function nearSharedEndpoint(a: WalkableSegment, b: WalkableSegment, previous: [number, number], attempted: [number, number]): boolean {
+  const point = sharedEndpoint(a, b);
+  if (!point) return false;
+  const threshold = Math.max(a.width, b.width) * 0.65 + 0.8;
+  return Math.hypot(previous[0] - point[0], previous[1] - point[1]) <= threshold || Math.hypot(attempted[0] - point[0], attempted[1] - point[1]) <= threshold;
+}
+
+function sharedEndpoint(a: WalkableSegment, b: WalkableSegment): [number, number] | null {
+  const aStart = mapPointKey(a.start);
+  const aEnd = mapPointKey(a.end);
+  if (aStart === mapPointKey(b.start) || aStart === mapPointKey(b.end)) return a.start;
+  if (aEnd === mapPointKey(b.start) || aEnd === mapPointKey(b.end)) return a.end;
+  return null;
+}
+
+function nearEndpoint(map: Pick<CompositionMap, "segments">, endpoint: RoomAttachment, previous: [number, number], attempted: [number, number]): boolean {
+  const arm = endpointArm(map, endpoint);
+  if (!arm) return false;
+  const threshold = arm.width * 0.65 + 0.8;
+  return Math.hypot(previous[0] - arm.point[0], previous[1] - arm.point[1]) <= threshold || Math.hypot(attempted[0] - arm.point[0], attempted[1] - arm.point[1]) <= threshold;
+}
+
+function segmentHeightAt(map: Pick<CompositionMap, "elevations">, segment: WalkableSegment, point: [number, number]): number {
+  const { t } = centerlineProjection(point, segment);
+  const startElev = pointElevation(map, mapPointKey(segment.start));
+  const endElev = pointElevation(map, mapPointKey(segment.end));
+  return startElev + (endElev - startElev) * t;
 }
 
 function attachedRoomPlacement(map: Pick<CompositionMap, "segments">, room: MapRoom): Pick<MapRoom, "center" | "rotation" | "entranceSide"> | null {

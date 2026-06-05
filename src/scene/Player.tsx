@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { useStore, viewState, touchMove } from "../store";
-import { clampToMap, surfaceHeightAt, wrapLoopPosition } from "../map";
+import { MapSupport, mapSupportAt, stepOnMap, surfaceHeightOnSupport, wrapLoopPosition } from "../map";
 
 const EYE_HEIGHT = 1.7;
 
@@ -19,6 +19,7 @@ export function Player() {
   const up = new THREE.Vector3(0, 1, 0);
   const look = useRef({ yaw: 0, pitch: 0, targetYaw: 0, targetPitch: 0, locked: false });
   const euler = useRef(new THREE.Euler(0, 0, 0, "YXZ"));
+  const support = useRef<MapSupport | null>(null);
 
   // Drop in at the shared ground position and facing direction (both preserved
   // across mode switches), at eye height and horizontal.
@@ -32,7 +33,8 @@ export function Player() {
     look.current.yaw = euler.current.y;
     look.current.targetPitch = euler.current.x;
     look.current.targetYaw = euler.current.y;
-  }, [camera, entered]);
+    support.current = mapSupportAt(map, [viewState.x, viewState.z], support.current);
+  }, [camera, entered, map]);
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -177,6 +179,7 @@ export function Player() {
     if (wrapped) {
       camera.position.x = wrapped.position[0];
       camera.position.z = wrapped.position[1];
+      support.current = mapSupportAt(map, wrapped.position, null);
       look.current.yaw += wrapped.yawDelta;
       look.current.targetYaw += wrapped.yawDelta;
       euler.current.set(look.current.pitch, look.current.yaw, 0, "YXZ");
@@ -185,15 +188,18 @@ export function Player() {
       forward.current.y = 0;
       forward.current.normalize();
     }
-    const [x, z] = clampToMap(map, [camera.position.x, camera.position.z]);
-    camera.position.x = x;
-    camera.position.z = z;
+    const step = wrapped
+      ? { position: [camera.position.x, camera.position.z] as [number, number], support: support.current ?? mapSupportAt(map, [camera.position.x, camera.position.z], null) }
+      : stepOnMap(map, previous, [camera.position.x, camera.position.z], support.current);
+    support.current = step.support;
+    camera.position.x = step.position[0];
+    camera.position.z = step.position[1];
     // Follow the walkable surface: ride at a fixed eye height above the floor,
     // damped so ramps feel smooth rather than snapping the camera. At a loop
     // seam, snap instead — the canonical elevation resets there, but the lifted
     // preview copy you were walking toward dropped by the same amount, so the
     // instantaneous reset is invisible and the climb feels continuous.
-    const ground = surfaceHeightAt(map, [x, z]);
+    const ground = surfaceHeightOnSupport(map, step.position, support.current);
     camera.position.y = wrapped ? ground + EYE_HEIGHT : THREE.MathUtils.damp(camera.position.y, ground + EYE_HEIGHT, 12, dt);
 
     // Record position + heading so edit mode (and new stems) stay anchored here.

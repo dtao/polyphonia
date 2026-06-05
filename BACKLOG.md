@@ -59,6 +59,7 @@ earlier ones.
   - First boundary slice: square/hex tile outlines render subtly around the viewer in both Edit and Explore modes.
 - [x] **M5.15 Elevation (the vertical dimension)** — stems drag freely in 3D (gizmo Y unlocked) and branch points carry a height (`map.elevations`), so segments become ramps. The explore player auto-follows the walkable surface, attached rooms inherit their branch point's height, and spatial audio is 3D for free (listener + panners already honor Y).
   - Endless-ascent loops: path-loop preview copies are lifted by their endpoint elevation delta and the camera snaps that same delta at the seam, so a loop whose start/end differ in height feels like it climbs (or descends) infinitely with no visible reset. Square/hex tiling stays flat; room occlusion/reverb remain 2D.
+  - Over/under crossings: Explore now tracks the current segment/room support, clamps movement against that support, and only transfers to another segment through a shared endpoint, so stacked paths no longer steal the listener's elevation at XZ crossovers.
 - [ ] **M5.13 Publish/viewer compatibility for maps and environments** — ensure `/c/:id`, `/gallery`, artist pages, export/import, and older manifests all handle environment, map, start, and tiling metadata gracefully.
 - [ ] **M5.14 Open-world stitching prototype** — explore streaming/culling multiple artists' spaces into neighborhoods once single-composition maps and tiling work.
 
