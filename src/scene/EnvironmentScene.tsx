@@ -7,6 +7,10 @@ import { EnvironmentSettings } from "../environment";
 type PropSet = Array<{ position: [number, number, number]; scale: [number, number, number]; rotation?: [number, number, number] }>;
 type TorchSet = Array<{ position: [number, number, number]; rotation: [number, number, number]; color: string }>;
 
+export function environmentBackgroundColor(type: EnvironmentSettings["type"]): string {
+  return TONES[type].background as string;
+}
+
 export function EnvironmentScene({ environment, editMode }: { environment: EnvironmentSettings; editMode: boolean }) {
   const tone = TONES[environment.type];
 

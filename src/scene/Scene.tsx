@@ -8,7 +8,7 @@ import { Player } from "./Player";
 import { EditControls } from "./EditControls";
 import { TrackGizmo } from "./TrackGizmo";
 import { ListenerSync } from "./ListenerSync";
-import { EnvironmentScene } from "./EnvironmentScene";
+import { EnvironmentScene, environmentBackgroundColor } from "./EnvironmentScene";
 import { MapScene } from "./MapScene";
 import { DebugSampler } from "./DebugSampler";
 import { ARWalkSession } from "./ARWalkSession";
@@ -78,8 +78,46 @@ export function Scene() {
       )}
       <ListenerSync />
       <ARWalkSession />
+      <ARBackdrop />
       <DebugSampler />
     </>
+  );
+}
+
+// In immersive-ar the WebXR compositor blends our render over the live camera
+// feed: three forces a transparent clear for the alpha-blend environment blend
+// mode (see WebGLBackground), so scene.background and setClearAlpha(1) can't
+// hide the real world. To show only the Polyphonia environment we draw an
+// opaque inverted sphere of the environment background color that rides with
+// the camera, occluding the passthrough. depthTest/depthWrite are off so it
+// always sits behind every other object regardless of distance (e.g. galaxy
+// stars beyond its radius). It only renders while AR Walk is active; explore
+// and edit modes keep using scene.background.
+function ARBackdrop() {
+  const environment = useStore((s) => s.composition.environment);
+  const gl = useThree((s) => s.gl);
+  const mesh = useRef<THREE.Mesh>(null);
+
+  useFrame(() => {
+    const m = mesh.current;
+    if (!m) return;
+    const showing = arWalk.active && gl.xr.isPresenting;
+    m.visible = showing;
+    if (showing) m.position.setFromMatrixPosition(gl.xr.getCamera().matrixWorld);
+  });
+
+  return (
+    <mesh ref={mesh} renderOrder={-1000} visible={false} frustumCulled={false}>
+      <sphereGeometry args={[50, 32, 16]} />
+      <meshBasicMaterial
+        color={environmentBackgroundColor(environment.type)}
+        side={THREE.BackSide}
+        depthTest={false}
+        depthWrite={false}
+        fog={false}
+        toneMapped={false}
+      />
+    </mesh>
   );
 }
 
