@@ -10,10 +10,11 @@ these spatial compositions.
 ## Features
 
 - **Explore** — first-person movement (WASD + mouse) through a composition;
-  realistic 3D audio via the Web Audio API (HRTF panning + distance falloff),
-  room-wall occlusion for muffled obstructed stems, room reverb, and every stem
-  kept sample-locked in sync. Square/hex tiled maps can also opt into an
-  experimental **AR Walk** mode that mirrors mobile WebXR pose movement into
+  realistic 3D audio via the Web Audio API (HRTF panning on capable devices,
+  adaptive lower-cost panning on mobile/low-power devices, plus distance
+  falloff), room-wall occlusion for muffled obstructed stems, room reverb, and
+  every stem kept sample-locked in sync. Square/hex tiled maps can also opt into
+  an experimental **AR Walk** mode that mirrors mobile WebXR pose movement into
   the composition and turns the listener toward their direction of travel.
 - **Immersive spaces** — compositions carry environment metadata and can render
   procedural spaces such as a studio void, cavern, forest clearing, or crystal
@@ -55,6 +56,8 @@ a version string.
 For performance diagnostics, append `?debug=1` to the local URL. This enables a
 small overlay and exportable JSON log. Optional A/B flags include
 `debugNoPointLights=1`, `debugNoLoopPreview=1`, and `debugNoLoopLights=1`.
+Audio quality can be A/B tested with `audioQuality=full` or
+`audioQuality=reduced`.
 
 ### Controls
 
@@ -149,11 +152,14 @@ SPA fallback so routes like `/c/:id`, `/gallery`, and `/artist/:slug` serve
 
 - **Engine** ([src/audio/AudioEngine.ts](src/audio/AudioEngine.ts)) — owns one
   `AudioContext`. Every stem is scheduled off the same clock and started
-  together (so they never drift); each feeds an HRTF `PannerNode` at its 3D
-  position while the camera drives the `AudioListener`. Live setters let edits
-  apply without restarting playback; loop buffers are padded/trimmed to a
-  shared BPM-aligned musical length to hide MP3 encoder padding and keep every
-  stem restarting together.
+  together (so they never drift); each feeds a spatial `PannerNode` at its 3D
+  position while the camera drives the `AudioListener`. Mobile/low-power
+  devices use a reduced-cost path with a larger playback buffer, cheaper
+  panning, fewer virtual tiled instances, and throttled acoustic updates to
+  avoid crackle from audio underruns. Live setters let edits apply without
+  restarting playback; loop buffers are padded/trimmed to a shared BPM-aligned
+  musical length to hide MP3 encoder padding and keep every stem restarting
+  together.
 - **State** ([src/store.ts](src/store.ts)) — a Zustand store is the single source
   of truth: the current composition, the library, mode/selection, and the audio
   engine. The scene renders from it; edits flow back into it and out to the

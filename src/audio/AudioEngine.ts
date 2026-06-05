@@ -27,6 +27,8 @@ interface AudibleTrackInstance {
   position: [number, number, number];
 }
 
+type AudioPerformanceMode = "full" | "reduced";
+
 export interface AudioLoadProgress {
   loaded: number;
   total: number;
@@ -35,12 +37,34 @@ export interface AudioLoadProgress {
 }
 
 const MAX_VIRTUAL_AUDIO_INSTANCES_PER_TRACK = 4;
+const REDUCED_MAX_VIRTUAL_AUDIO_INSTANCES_PER_TRACK = 2;
+const REDUCED_TILE_AUDIO_PREVIEW_RADIUS = 80;
+const REDUCED_LISTENER_UPDATE_INTERVAL = 1 / 30;
+const REDUCED_ACOUSTICS_UPDATE_INTERVAL = 1 / 20;
+const REDUCED_ROOM_UPDATE_INTERVAL = 1 / 8;
+
+function preferredAudioPerformanceMode(): AudioPerformanceMode {
+  if (typeof window !== "undefined") {
+    const override = new URLSearchParams(window.location.search).get("audioQuality");
+    if (override === "full" || override === "desktop") return "full";
+    if (override === "reduced" || override === "mobile") return "reduced";
+  }
+
+  if (typeof navigator === "undefined") return "full";
+  const nav = navigator as Navigator & { userAgentData?: { mobile?: boolean } };
+  if (nav.userAgentData?.mobile) return "reduced";
+  if (/Android|iPhone|iPad|iPod|Mobile/i.test(nav.userAgent)) return "reduced";
+  if (/Macintosh/i.test(nav.userAgent) && nav.maxTouchPoints > 1) return "reduced";
+  if (nav.hardwareConcurrency && nav.hardwareConcurrency <= 4) return "reduced";
+  return "full";
+}
 
 // Owns the single AudioContext. The golden rule: every stem is scheduled off
 // THIS context's clock and started at the SAME time, so they never drift. As
 // the listener moves we only change what's *heard*, never restart sources.
 export class AudioEngine {
   readonly ctx: AudioContext;
+  readonly performanceMode: AudioPerformanceMode;
   private master: GainNode;
   private dryBus: GainNode;
   private roomReverbSend: GainNode;
@@ -63,11 +87,29 @@ export class AudioEngine {
   private trackPosition = new THREE.Vector3();
   private map: CompositionMap | null = null;
   private activeRoomAcousticsKey: string | null = null;
-  private tileAudioPreviewRadius = 120;
+  private tileAudioPreviewRadius: number;
   private activeRoomDebug: { id: string; decay: number; reverbSend: number; impulseDuration: number } | null = null;
+  private panningModel: PanningModelType;
+  private maxVirtualAudioInstancesPerTrack: number;
+  private listenerUpdateInterval: number;
+  private acousticsUpdateInterval: number;
+  private roomUpdateInterval: number;
+  private lastListenerParamUpdate = -Infinity;
+  private lastAcousticsUpdate = -Infinity;
+  private lastRoomUpdate = -Infinity;
+  private lastListenerParamPosition = new THREE.Vector3(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY);
+  private lastListenerParamForward = new THREE.Vector3(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY);
 
   constructor() {
-    this.ctx = new AudioContext();
+    this.performanceMode = preferredAudioPerformanceMode();
+    this.ctx = this.createAudioContext();
+    this.panningModel = this.performanceMode === "reduced" ? "equalpower" : "HRTF";
+    this.maxVirtualAudioInstancesPerTrack =
+      this.performanceMode === "reduced" ? REDUCED_MAX_VIRTUAL_AUDIO_INSTANCES_PER_TRACK : MAX_VIRTUAL_AUDIO_INSTANCES_PER_TRACK;
+    this.tileAudioPreviewRadius = this.performanceMode === "reduced" ? REDUCED_TILE_AUDIO_PREVIEW_RADIUS : 120;
+    this.listenerUpdateInterval = this.performanceMode === "reduced" ? REDUCED_LISTENER_UPDATE_INTERVAL : 0;
+    this.acousticsUpdateInterval = this.performanceMode === "reduced" ? REDUCED_ACOUSTICS_UPDATE_INTERVAL : 0;
+    this.roomUpdateInterval = this.performanceMode === "reduced" ? REDUCED_ROOM_UPDATE_INTERVAL : 0;
     this.master = this.ctx.createGain();
     this.dryBus = this.ctx.createGain();
     this.roomReverbSend = this.ctx.createGain();
@@ -84,6 +126,16 @@ export class AudioEngine {
     this.roomConvolver.connect(this.roomReverbWet);
     this.roomReverbWet.connect(this.master);
     this.master.connect(this.ctx.destination);
+  }
+
+  private createAudioContext(): AudioContext {
+    try {
+      return new AudioContext({
+        latencyHint: this.performanceMode === "reduced" ? "playback" : "interactive",
+      });
+    } catch {
+      return new AudioContext();
+    }
   }
 
   async load(comp: Composition, onProgress?: (progress: AudioLoadProgress) => void): Promise<void> {
@@ -397,6 +449,7 @@ export class AudioEngine {
       maxPerTrack: number;
     };
     activeRoom: { id: string; decay: number; reverbSend: number; impulseDuration: number } | null;
+    performanceMode: AudioPerformanceMode;
   } {
     const instances = this.audioInstanceDebug();
     return {
@@ -407,6 +460,7 @@ export class AudioEngine {
       loopLength: this.loopLength,
       instances,
       activeRoom: this.activeRoomDebug,
+      performanceMode: this.performanceMode,
     };
   }
 
@@ -451,29 +505,60 @@ export class AudioEngine {
     src.start(when, offset, duration);
   }
 
+  private shouldRunTimedUpdate(lastUpdate: number, interval: number, at: number): boolean {
+    return interval <= 0 || at - lastUpdate >= interval;
+  }
+
+  private shouldUpdateListenerParams(position: THREE.Vector3, forward: THREE.Vector3, at: number): boolean {
+    if (this.listenerUpdateInterval <= 0) return true;
+    if (at - this.lastListenerParamUpdate >= this.listenerUpdateInterval) return true;
+    if (position.distanceToSquared(this.lastListenerParamPosition) > 0.08 * 0.08) return true;
+    return forward.distanceToSquared(this.lastListenerParamForward) > 0.035 * 0.035;
+  }
+
+  private setContinuousParam(param: AudioParam, value: number, at: number): void {
+    if (this.performanceMode === "reduced") {
+      param.setTargetAtTime(value, at, 0.018);
+    } else {
+      param.setValueAtTime(value, at);
+    }
+  }
+
   // Called every frame from the camera. Drives the 3D spatialization.
   updateListener(position: THREE.Vector3, forward: THREE.Vector3, up: THREE.Vector3, map?: CompositionMap): void {
     const l = this.ctx.listener;
     const at = this.ctx.currentTime;
     this.map = map ?? this.map;
     this.listenerPosition.copy(position);
-    if (l.positionX) {
-      l.positionX.setValueAtTime(position.x, at);
-      l.positionY.setValueAtTime(position.y, at);
-      l.positionZ.setValueAtTime(position.z, at);
-      l.forwardX.setValueAtTime(forward.x, at);
-      l.forwardY.setValueAtTime(forward.y, at);
-      l.forwardZ.setValueAtTime(forward.z, at);
-      l.upX.setValueAtTime(up.x, at);
-      l.upY.setValueAtTime(up.y, at);
-      l.upZ.setValueAtTime(up.z, at);
-    } else {
-      // Deprecated fallback for older Safari.
-      (l as any).setPosition(position.x, position.y, position.z);
-      (l as any).setOrientation(forward.x, forward.y, forward.z, up.x, up.y, up.z);
+    if (this.shouldUpdateListenerParams(position, forward, at)) {
+      if (l.positionX) {
+        this.setContinuousParam(l.positionX, position.x, at);
+        this.setContinuousParam(l.positionY, position.y, at);
+        this.setContinuousParam(l.positionZ, position.z, at);
+        this.setContinuousParam(l.forwardX, forward.x, at);
+        this.setContinuousParam(l.forwardY, forward.y, at);
+        this.setContinuousParam(l.forwardZ, forward.z, at);
+        this.setContinuousParam(l.upX, up.x, at);
+        this.setContinuousParam(l.upY, up.y, at);
+        this.setContinuousParam(l.upZ, up.z, at);
+      } else {
+        // Deprecated fallback for older Safari.
+        (l as any).setPosition(position.x, position.y, position.z);
+        (l as any).setOrientation(forward.x, forward.y, forward.z, up.x, up.y, up.z);
+      }
+      this.lastListenerParamPosition.copy(position);
+      this.lastListenerParamForward.copy(forward);
+      this.lastListenerParamUpdate = at;
     }
-    for (const t of this.tracks) this.updateTrackAcoustics(t, at);
-    this.updateRoomAcoustics(at);
+
+    if (this.shouldRunTimedUpdate(this.lastAcousticsUpdate, this.acousticsUpdateInterval, at)) {
+      this.lastAcousticsUpdate = at;
+      for (const t of this.tracks) this.updateTrackAcoustics(t, at);
+    }
+    if (this.shouldRunTimedUpdate(this.lastRoomUpdate, this.roomUpdateInterval, at)) {
+      this.lastRoomUpdate = at;
+      this.updateRoomAcoustics(at);
+    }
   }
 
   // --- Live edits: mutate a playing track without restarting anything. ---
@@ -587,7 +672,7 @@ export class AudioEngine {
       this.setPannerPosition(instance.panner, audible.position);
       const level = this.distanceLevel(t.def, audible.position, minVolume, maxVolume);
       const ratio = maxVolume > 0 ? (level / maxVolume) * stackGain : 0;
-      instance.distanceGain.gain.setValueAtTime(ratio, at);
+      this.setContinuousParam(instance.distanceGain.gain, ratio, at);
       this.updateOcclusion(instance, audible.position, at);
     }
   }
@@ -675,7 +760,7 @@ export class AudioEngine {
     const audibleDistanceSq = audibleDistance * audibleDistance;
     const sorted = candidates.sort((a, b) => this.distanceSqToListener(a.position) - this.distanceSqToListener(b.position));
     const audible = sorted.filter((candidate, index) => index === 0 || this.distanceSqToListener(candidate.position) <= audibleDistanceSq);
-    return audible.slice(0, MAX_VIRTUAL_AUDIO_INSTANCES_PER_TRACK);
+    return audible.slice(0, this.maxVirtualAudioInstancesPerTrack);
   }
 
   private distanceSqToListener([x, y, z]: [number, number, number]): number {
@@ -702,9 +787,9 @@ export class AudioEngine {
   private setPannerPosition(p: PannerNode, [x, y, z]: [number, number, number]) {
     const at = this.ctx.currentTime;
     if (p.positionX) {
-      p.positionX.setValueAtTime(x, at);
-      p.positionY.setValueAtTime(y, at);
-      p.positionZ.setValueAtTime(z, at);
+      this.setContinuousParam(p.positionX, x, at);
+      this.setContinuousParam(p.positionY, y, at);
+      this.setContinuousParam(p.positionZ, z, at);
     } else {
       (p as any).setPosition(x, y, z);
     }
@@ -732,7 +817,7 @@ export class AudioEngine {
 
   private createTrackInstance(t: LiveTrack, id: string, position: [number, number, number]): LiveTrackInstance {
     const panner = this.ctx.createPanner();
-    panner.panningModel = "HRTF";
+    panner.panningModel = this.panningModel;
     panner.distanceModel = "inverse";
     panner.refDistance = t.def.refDistance ?? 4;
     panner.maxDistance = t.def.maxDistance ?? 40;
