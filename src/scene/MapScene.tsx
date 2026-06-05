@@ -306,17 +306,23 @@ function Segment({
         <planeGeometry args={[length, segment.width]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
       </mesh>
-      {([-1, 1] as const).map((side) => (
-        <BorderRail
-          key={side}
-          start={borderPoint(segment, segments, "start", side)}
-          startY={startY}
-          end={borderPoint(segment, segments, "end", side)}
-          endY={endY}
-          editMode={editMode}
-          selected={selected}
-        />
-      ))}
+      {([-1, 1] as const).map((side) => {
+        const a = borderPoint(segment, segments, "start", side);
+        const b = borderPoint(segment, segments, "end", side);
+        // Drop the stretch of rail that runs over a crossing path's floor so
+        // intersections read as one shared surface, not two lines crossing.
+        return clipRail(a, b, segment, segments).map(([t0, t1], i) => (
+          <BorderRail
+            key={`${side}-${i}`}
+            start={lerp2(a, b, t0)}
+            startY={startY + (endY - startY) * t0}
+            end={lerp2(a, b, t1)}
+            endY={startY + (endY - startY) * t1}
+            editMode={editMode}
+            selected={selected}
+          />
+        ));
+      })}
       {[segment.start, segment.end].map((point, i) => (
         <group key={i}>
           {(endpointCounts.get(pointKey(point)) ?? 0) === 1 && (
@@ -495,6 +501,88 @@ function makeArm(segment: WalkableSegment, end: SegmentEnd): Arm {
   return { segment, end, dir, angle: Math.atan2(dir[1], dir[0]) };
 }
 
+function lerp2(a: [number, number], b: [number, number], t: number): [number, number] {
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+}
+
+// Split a border rail (a→b) into the spans that stay clear of any *unconnected*
+// crossing path. Connected segments share a joint and are handled by the miter
+// in `borderPoint`, so only paths that physically overlap without a shared
+// endpoint clip the rail.
+function clipRail(a: [number, number], b: [number, number], segment: WalkableSegment, segments: WalkableSegment[]): Array<[number, number]> {
+  const ownKeys = new Set([pointKey(segment.start), pointKey(segment.end)]);
+  const covered: Array<[number, number]> = [];
+  for (const other of segments) {
+    if (other.id === segment.id) continue;
+    if (ownKeys.has(pointKey(other.start)) || ownKeys.has(pointKey(other.end))) continue;
+    const span = railInsideRect(a, b, other);
+    if (span) covered.push(span);
+  }
+  return keptSpans(covered);
+}
+
+// Liang–Barsky clip of the rail param t∈[0,1] against `seg`'s rectangular floor
+// footprint; returns the [t0,t1] where the rail lies inside it, or null.
+function railInsideRect(a: [number, number], b: [number, number], seg: WalkableSegment): [number, number] | null {
+  const sx = seg.start[0];
+  const sz = seg.start[1];
+  const dx = seg.end[0] - sx;
+  const dz = seg.end[1] - sz;
+  const len = Math.hypot(dx, dz);
+  if (len < 1e-6) return null;
+  const ux = dx / len;
+  const uz = dz / len;
+  const hw = seg.width / 2;
+  const au = (a[0] - sx) * ux + (a[1] - sz) * uz;
+  const av = (a[0] - sx) * -uz + (a[1] - sz) * ux;
+  const bu = (b[0] - sx) * ux + (b[1] - sz) * uz;
+  const bv = (b[0] - sx) * -uz + (b[1] - sz) * ux;
+  const du = bu - au;
+  const dv = bv - av;
+
+  let t0 = 0;
+  let t1 = 1;
+  const clip = (p: number, q: number): boolean => {
+    if (Math.abs(p) < 1e-9) return q >= 0;
+    const r = q / p;
+    if (p < 0) {
+      if (r > t1) return false;
+      if (r > t0) t0 = r;
+    } else {
+      if (r < t0) return false;
+      if (r < t1) t1 = r;
+    }
+    return true;
+  };
+  if (clip(-du, au) && clip(du, len - au) && clip(-dv, av + hw) && clip(dv, hw - av) && t1 > t0) {
+    return [t0, t1];
+  }
+  return null;
+}
+
+// Complement of the covered spans within [0,1]: the rail spans we still draw.
+function keptSpans(covered: Array<[number, number]>): Array<[number, number]> {
+  if (!covered.length) return [[0, 1]];
+  const sorted = covered
+    .map(([s, e]): [number, number] => [Math.max(0, s), Math.min(1, e)])
+    .filter(([s, e]) => e - s > 1e-4)
+    .sort((p, q) => p[0] - q[0]);
+  const merged: Array<[number, number]> = [];
+  for (const span of sorted) {
+    const last = merged[merged.length - 1];
+    if (last && span[0] <= last[1] + 1e-4) last[1] = Math.max(last[1], span[1]);
+    else merged.push([span[0], span[1]]);
+  }
+  const kept: Array<[number, number]> = [];
+  let cursor = 0;
+  for (const [s, e] of merged) {
+    if (s - cursor > 1e-3) kept.push([cursor, s]);
+    cursor = Math.max(cursor, e);
+  }
+  if (1 - cursor > 1e-3) kept.push([cursor, 1]);
+  return kept;
+}
+
 function offsetEndpoint(segment: WalkableSegment, end: SegmentEnd, side: -1 | 1): [number, number] {
   const dx = segment.end[0] - segment.start[0];
   const dz = segment.end[1] - segment.start[1];
@@ -576,6 +664,7 @@ function walkableFloorGeometry(map: CompositionMap): THREE.BufferGeometry | null
 function pathSkirtGeometry(map: CompositionMap): THREE.BufferGeometry | null {
   const segments = map.segments;
   if (!segments.length) return null;
+  const counts = countEndpoints(segments);
   const geometry = new THREE.BufferGeometry();
   const vertices: number[] = [];
   const indices: number[] = [];
@@ -585,6 +674,13 @@ function pathSkirtGeometry(map: CompositionMap): THREE.BufferGeometry | null {
     const ey = elevationAt(map, segment.end);
     addSkirtEdge(borderPoint(segment, segments, "start", -1), sy, borderPoint(segment, segments, "end", -1), ey, vertices, indices);
     addSkirtEdge(borderPoint(segment, segments, "end", 1), ey, borderPoint(segment, segments, "start", 1), sy, vertices, indices);
+    // Cap any free end so it reads as the edge of a board, not a hollow tunnel.
+    for (const end of ["start", "end"] as const) {
+      const point = end === "start" ? segment.start : segment.end;
+      if ((counts.get(pointKey(point)) ?? 0) !== 1) continue;
+      const y = end === "start" ? sy : ey;
+      addSkirtEdge(borderPoint(segment, segments, end, -1), y, borderPoint(segment, segments, end, 1), y, vertices, indices);
+    }
   }
 
   if (!vertices.length || !indices.length) return null;
@@ -605,6 +701,17 @@ function addSkirtEdge(a: [number, number], aY: number, b: [number, number], bY: 
     a[0], UNDERFLOOR_HEIGHT + aY, a[1],
   );
   indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+}
+
+function countEndpoints(segments: WalkableSegment[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const segment of segments) {
+    for (const point of [segment.start, segment.end]) {
+      const key = pointKey(point);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+  return counts;
 }
 
 function sharedJoints(segments: WalkableSegment[]): Array<{ point: [number, number]; segments: WalkableSegment[] }> {
