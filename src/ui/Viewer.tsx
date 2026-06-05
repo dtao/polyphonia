@@ -64,7 +64,7 @@ export function Viewer() {
       <Canvas
         camera={{ position: [0, 1.7, 0], fov: 70, near: 0.1, far: 200 }}
         dpr={[1, 1.5]}
-        gl={{ antialias: true, powerPreference: "high-performance" }}
+        gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
       >
         <Scene />
       </Canvas>

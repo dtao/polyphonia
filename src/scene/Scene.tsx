@@ -1,7 +1,8 @@
 import { useFrame, useThree } from "@react-three/fiber";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import * as THREE from "three";
-import { useStore } from "../store";
+import { arWalk, useStore, viewState } from "../store";
 import { TrackMarker } from "./TrackMarker";
 import { Player } from "./Player";
 import { EditControls } from "./EditControls";
@@ -10,6 +11,7 @@ import { ListenerSync } from "./ListenerSync";
 import { EnvironmentScene } from "./EnvironmentScene";
 import { MapScene } from "./MapScene";
 import { DebugSampler } from "./DebugSampler";
+import { ARWalkSession } from "./ARWalkSession";
 import { CompositionMap, LoopPreviewTransform, loopPreviewElevationOffset, tiledMapTransforms, transformLoopPoint } from "../map";
 import { TrackDef } from "../composition";
 import { debugFlag } from "../debug";
@@ -34,7 +36,7 @@ export function Scene() {
   const camera = useThree((s) => s.camera);
   const [viewer, setViewer] = useState<[number, number]>([0, 0]);
   useFrame(() => {
-    const next: [number, number] = [camera.position.x, camera.position.z];
+    const next: [number, number] = arWalk.active ? [viewState.x, viewState.z] : [camera.position.x, camera.position.z];
     setViewer((current) => (Math.hypot(current[0] - next[0], current[1] - next[1]) > VIEWER_SAMPLE_DISTANCE ? next : current));
   });
   const loopPreviewsEnabled = !debugFlag("debugNoLoopPreview");
@@ -47,18 +49,20 @@ export function Scene() {
 
   return (
     <>
-      <EnvironmentScene environment={environment} editMode={mode === "edit"} />
-      {mode === "explore" && loopPreviewsEnabled && <TiledMapPreview viewer={viewer} />}
-      <TileBoundaryOverlay map={map} viewer={viewer} editMode={mode === "edit"} />
-      <MapScene map={map} tracks={tracks} lightTracks={mode === "explore" ? tileLights : tracks} editMode={mode === "edit"} />
+      <ARWorldTransform>
+        <EnvironmentScene environment={environment} editMode={mode === "edit"} />
+        {mode === "explore" && loopPreviewsEnabled && <TiledMapPreview viewer={viewer} />}
+        <TileBoundaryOverlay map={map} viewer={viewer} editMode={mode === "edit"} />
+        <MapScene map={map} tracks={tracks} lightTracks={mode === "explore" ? tileLights : tracks} editMode={mode === "edit"} />
 
-      {tracks.map((t) => {
-        const fade = fadeBaseMarkers ? baseTrackVisibility(map, t, viewer) : 1;
-        if (fade <= PREVIEW_FADE_EPSILON) return null;
-        return (
-          <TrackMarker key={t.id} track={t} fade={fade} debugId={`base:${t.id}`} debugPosition={[t.position[0], t.position[2]]} />
-        );
-      })}
+        {tracks.map((t) => {
+          const fade = fadeBaseMarkers ? baseTrackVisibility(map, t, viewer) : 1;
+          if (fade <= PREVIEW_FADE_EPSILON) return null;
+          return (
+            <TrackMarker key={t.id} track={t} fade={fade} debugId={`base:${t.id}`} debugPosition={[t.position[0], t.position[2]]} />
+          );
+        })}
+      </ARWorldTransform>
 
       {/* Player is mounted even on the entry screen so the enter button's click
           can lock the pointer immediately; its lock selector keeps stray clicks
@@ -73,9 +77,26 @@ export function Scene() {
         </>
       )}
       <ListenerSync />
+      <ARWalkSession />
       <DebugSampler />
     </>
   );
+}
+
+function ARWorldTransform({ children }: { children: ReactNode }) {
+  const group = useRef<THREE.Group>(null);
+  useFrame(() => {
+    const g = group.current;
+    if (!g) return;
+    if (arWalk.active) {
+      g.position.set(arWalk.renderX, arWalk.renderY, arWalk.renderZ);
+      g.rotation.set(0, arWalk.renderYaw, 0);
+    } else {
+      g.position.set(0, 0, 0);
+      g.rotation.set(0, 0, 0);
+    }
+  });
+  return <group ref={group}>{children}</group>;
 }
 
 function TileBoundaryOverlay({ map, viewer, editMode }: { map: CompositionMap; viewer: [number, number]; editMode: boolean }) {

@@ -172,14 +172,11 @@ export function Player() {
 
     const previous: [number, number] = [camera.position.x, camera.position.z];
     if (arWalk.active) {
-      const dx = arWalk.pendingX;
-      const dz = arWalk.pendingZ;
-      arWalk.pendingX = 0;
-      arWalk.pendingZ = 0;
-      camera.position.x += dx;
-      camera.position.z += dz;
-      if (Math.hypot(dx, dz) > 0.03) {
-        const targetYaw = Math.atan2(-dx, -dz);
+      camera.position.x = viewState.x;
+      camera.position.z = viewState.z;
+      camera.position.y = viewState.y + EYE_HEIGHT;
+      if (Math.hypot(viewState.fx, viewState.fz) > 0.03) {
+        const targetYaw = Math.atan2(-viewState.fx, -viewState.fz);
         look.current.targetYaw = turnToward(look.current.targetYaw, targetYaw, AR_HEADING_SMOOTHING);
         look.current.targetPitch = THREE.MathUtils.damp(look.current.targetPitch, 0, 10, dt);
       }
@@ -227,7 +224,7 @@ export function Player() {
     viewState.y = ground;
     viewState.z = camera.position.z;
     const len = Math.hypot(forward.current.x, forward.current.z);
-    if (len > 0) {
+    if (len > 0 && !arWalk.active) {
       viewState.fx = forward.current.x / len;
       viewState.fz = forward.current.z / len;
     }

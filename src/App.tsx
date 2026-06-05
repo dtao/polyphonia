@@ -277,7 +277,7 @@ export default function App() {
         // Cap pixel ratio: full-window 3D at Retina 2x+ tanks the frame rate
         // and makes mouselook feel choppy. 1.5 is a sweet spot of crisp + fast.
         dpr={[1, 1.5]}
-        gl={{ antialias: true, powerPreference: "high-performance" }}
+        gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
         // Clicking empty space in edit mode clears the selection.
         onPointerMissed={() => {
           if (useStore.getState().mode === "edit") select(null);

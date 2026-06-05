@@ -1,55 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { AR_WALK_START_EVENT, AR_WALK_STATUS_EVENT, AR_WALK_STOP_EVENT, ARWalkStatus, idleARWalkStatus } from "../arWalk";
 import { CompositionMap } from "../map";
-import { arWalk, viewState } from "../store";
 import { isTouchDevice } from "./TouchControls";
-
-type ARStatus = "idle" | "checking" | "starting" | "active" | "unsupported" | "error";
-
-type XRSessionMode = "immersive-ar";
-type XRReferenceSpaceType = "local-floor" | "local" | "unbounded";
-type XRFrameRequestCallback = (time: number, frame: XRFrameLike) => void;
-
-interface XRSystemLike {
-  isSessionSupported?: (mode: XRSessionMode) => Promise<boolean>;
-  requestSession: (mode: XRSessionMode, options?: XRSessionInitLike) => Promise<XRSessionLike>;
-}
-
-interface XRSessionInitLike {
-  optionalFeatures?: string[];
-  requiredFeatures?: string[];
-  domOverlay?: { root: Element };
-}
-
-interface XRSessionLike extends EventTarget {
-  end: () => Promise<void>;
-  requestAnimationFrame: (callback: XRFrameRequestCallback) => number;
-  cancelAnimationFrame?: (handle: number) => void;
-  requestReferenceSpace: (type: XRReferenceSpaceType) => Promise<XRReferenceSpaceLike>;
-}
-
-interface XRFrameLike {
-  getViewerPose: (space: XRReferenceSpaceLike) => XRViewerPoseLike | null;
-  session: XRSessionLike;
-}
-
-type XRReferenceSpaceLike = object;
-
-interface XRViewerPoseLike {
-  transform: {
-    position: { x: number; y: number; z: number };
-  };
-}
-
-const MIN_MOVEMENT_METERS = 0.025;
-const FIRST_HEADING_METERS = 0.25;
-const MAX_STEP_METERS = 2;
-const POSITION_SMOOTHING = 0.42;
-const DEFAULT_SCALE = 1;
-
-function xrSystem(): XRSystemLike | null {
-  const xr = (navigator as Navigator & { xr?: XRSystemLike }).xr;
-  return xr ?? null;
-}
 
 function isMobileTouchDevice(): boolean {
   if (!isTouchDevice()) return false;
@@ -59,185 +11,44 @@ function isMobileTouchDevice(): boolean {
 
 export function ARWalkControls({ map }: { map: CompositionMap }) {
   const tiled = map.tiling.type === "square" || map.tiling.type === "hex";
-  const mobile = isMobileTouchDevice();
-  const available = mobile && tiled;
-  const [enabled, setEnabled] = useState(false);
-  const [status, setStatus] = useState<ARStatus>("idle");
-  const session = useRef<XRSessionLike | null>(null);
-  const referenceSpace = useRef<XRReferenceSpaceLike | null>(null);
-  const frameHandle = useRef<number | null>(null);
-  const origin = useRef<[number, number] | null>(null);
-  const smoothed = useRef<[number, number] | null>(null);
-  const rotation = useRef<number | null>(null);
-  const scale = useRef(DEFAULT_SCALE);
-  const mounted = useRef(true);
+  const available = tiled && isMobileTouchDevice();
+  const [status, setStatus] = useState<ARWalkStatus>(idleARWalkStatus);
 
   useEffect(() => {
-    if (!available && enabled) void stopSession();
-  }, [available, enabled]);
-
-  useEffect(() => () => {
-    mounted.current = false;
-    void stopSession(false);
+    const onStatus = (event: Event) => {
+      setStatus((event as CustomEvent<ARWalkStatus>).detail);
+    };
+    window.addEventListener(AR_WALK_STATUS_EVENT, onStatus);
+    return () => window.removeEventListener(AR_WALK_STATUS_EVENT, onStatus);
   }, []);
 
   useEffect(() => {
-    arWalk.active = enabled && status === "active" && available;
-    if (!enabled || !available) resetWalk();
-    return () => {
-      if (!enabled) resetWalk();
-    };
-  }, [available, enabled, status]);
-
-  async function startSession(): Promise<void> {
-    if (!available || enabled) return;
-    const xr = xrSystem();
-    if (!xr) {
-      setStatus("unsupported");
-      return;
-    }
-
-    setStatus("checking");
-    const supported = xr.isSessionSupported ? await xr.isSessionSupported("immersive-ar").catch(() => false) : true;
-    if (!supported) {
-      setStatus("unsupported");
-      return;
-    }
-
-    try {
-      setStatus("starting");
-      const nextSession = await xr.requestSession("immersive-ar", {
-        optionalFeatures: ["local-floor", "unbounded", "dom-overlay"],
-        domOverlay: { root: document.body },
-      });
-      session.current = nextSession;
-      nextSession.addEventListener("end", onSessionEndEvent);
-      referenceSpace.current = await requestBestReferenceSpace(nextSession);
-      setEnabled(true);
-      setStatus("active");
-      frameHandle.current = nextSession.requestAnimationFrame(onFrame);
-    } catch (err) {
-      console.error("AR Walk failed", err);
-      await stopSession();
-      setStatus("error");
-    }
-  }
-
-  async function requestBestReferenceSpace(nextSession: XRSessionLike): Promise<XRReferenceSpaceLike> {
-    try {
-      return await nextSession.requestReferenceSpace("local-floor");
-    } catch {
-      try {
-        return await nextSession.requestReferenceSpace("unbounded");
-      } catch {
-        return nextSession.requestReferenceSpace("local");
-      }
-    }
-  }
-
-  function onFrame(_: number, frame: XRFrameLike): void {
-    const space = referenceSpace.current;
-    const currentSession = session.current;
-    if (!space || !currentSession) return;
-
-    const pose = frame.getViewerPose(space);
-    if (pose) updatePose(pose.transform.position.x, pose.transform.position.z);
-    frameHandle.current = frame.session.requestAnimationFrame(onFrame);
-  }
-
-  function updatePose(rawX: number, rawZ: number): void {
-    if (!origin.current) {
-      origin.current = [rawX, rawZ];
-      smoothed.current = [0, 0];
-      return;
-    }
-
-    const nextLocal: [number, number] = [rawX - origin.current[0], rawZ - origin.current[1]];
-    const previous = smoothed.current ?? nextLocal;
-    const next: [number, number] = [
-      previous[0] + (nextLocal[0] - previous[0]) * POSITION_SMOOTHING,
-      previous[1] + (nextLocal[1] - previous[1]) * POSITION_SMOOTHING,
-    ];
-    smoothed.current = next;
-
-    const realDx = next[0] - previous[0];
-    const realDz = next[1] - previous[1];
-    const distance = Math.hypot(realDx, realDz);
-    if (distance < MIN_MOVEMENT_METERS || distance > MAX_STEP_METERS) return;
-
-    if (rotation.current === null && distance >= FIRST_HEADING_METERS) {
-      const worldAngle = Math.atan2(viewState.fz, viewState.fx);
-      const realAngle = Math.atan2(realDz, realDx);
-      rotation.current = worldAngle - realAngle;
-    }
-
-    const angle = rotation.current ?? 0;
-    const c = Math.cos(angle);
-    const s = Math.sin(angle);
-    arWalk.pendingX += (realDx * c - realDz * s) * scale.current;
-    arWalk.pendingZ += (realDx * s + realDz * c) * scale.current;
-  }
-
-  async function stopSession(updateState = true): Promise<void> {
-    const currentSession = session.current;
-    if (currentSession && frameHandle.current !== null) currentSession.cancelAnimationFrame?.(frameHandle.current);
-    frameHandle.current = null;
-    if (currentSession) {
-      currentSession.removeEventListener("end", onSessionEndEvent);
-      await currentSession.end().catch(() => undefined);
-    }
-    onSessionEnd(updateState);
-  }
-
-  function onSessionEndEvent(): void {
-    onSessionEnd(true);
-  }
-
-  function onSessionEnd(updateState = true): void {
-    session.current = null;
-    referenceSpace.current = null;
-    if (updateState && mounted.current) {
-      setEnabled(false);
-      setStatus("idle");
-    }
-    resetWalk();
-  }
-
-  function resetWalk(): void {
-    arWalk.active = false;
-    arWalk.pendingX = 0;
-    arWalk.pendingZ = 0;
-    origin.current = null;
-    smoothed.current = null;
-    rotation.current = null;
-  }
+    if (!available && status.state === "active") window.dispatchEvent(new Event(AR_WALK_STOP_EVENT));
+  }, [available, status.state]);
 
   if (!available) return null;
 
-  const active = enabled && status === "active";
+  const active = status.state === "active";
   const label = active ? "AR Walk on" : "AR Walk";
   const detail =
-    status === "checking"
+    status.state === "checking"
       ? "checking AR"
-      : status === "starting"
+      : status.state === "starting"
         ? "starting AR"
-        : status === "active"
-          ? "tracking pose"
-          : status === "unsupported"
+        : status.state === "active"
+          ? `frames ${status.frames} · raw ${status.rawMeters.toFixed(2)}m · map ${status.mapMeters.toFixed(2)}m`
+          : status.state === "unsupported"
             ? "AR not supported"
-            : status === "error"
-              ? "AR permission error"
+            : status.state === "error"
+              ? "AR error"
               : `${map.tiling.type} map`;
 
   return (
     <div style={panel}>
       <button
         style={{ ...button, ...(active ? activeButton : null) }}
-        onClick={() => {
-          if (active || enabled) void stopSession();
-          else void startSession();
-        }}
-        title="Use mobile AR pose tracking to move through this square/hex tiled composition"
+        onClick={() => window.dispatchEvent(new Event(active ? AR_WALK_STOP_EVENT : AR_WALK_START_EVENT))}
+        title="Use Android WebXR AR pose tracking to move through this square/hex tiled composition"
       >
         {label}
       </button>
@@ -280,7 +91,7 @@ const activeButton: React.CSSProperties = {
 };
 
 const detailStyle: React.CSSProperties = {
-  maxWidth: 120,
+  maxWidth: 240,
   color: "rgba(255,255,255,0.58)",
   whiteSpace: "nowrap",
 };

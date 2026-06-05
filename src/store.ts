@@ -47,10 +47,18 @@ export const viewState = { x: 0, y: 0, z: 0, fx: 0, fz: -1 };
 // outside React so dragging the joystick never triggers re-renders.
 export const touchMove = { forward: 0, strafe: 0 };
 
-// Experimental mobile explore input: <ARWalkControls> watches WebXR viewer pose,
-// smooths real-world deltas, and accumulates them here for <Player> to consume
-// each frame. Kept non-reactive for the same reason as touchMove.
-export const arWalk = { active: false, pendingX: 0, pendingZ: 0 };
+// Experimental mobile explore input: <ARWalkSession> watches WebXR viewer pose,
+// applies movement directly, and lets <Player> mirror the shared view state.
+// Kept non-reactive for the same reason as touchMove.
+export const arWalk = {
+  active: false,
+  pendingX: 0,
+  pendingZ: 0,
+  renderX: 0,
+  renderY: 0,
+  renderZ: 0,
+  renderYaw: 0,
+};
 
 type Falloff = Pick<TrackDef, "refDistance" | "maxDistance" | "rolloff">;
 

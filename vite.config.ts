@@ -15,4 +15,10 @@ export default defineConfig({
   define: {
     __POLYPHONIA_COMMIT__: JSON.stringify(gitCommit()),
   },
+  server: {
+    allowedHosts: [".trycloudflare.com", ".ngrok-free.app", ".ngrok.io"],
+  },
+  preview: {
+    allowedHosts: [".trycloudflare.com", ".ngrok-free.app", ".ngrok.io"],
+  },
 });

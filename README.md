@@ -14,8 +14,8 @@ these spatial compositions.
   adaptive lower-cost panning on mobile/low-power devices, plus distance
   falloff), room-wall occlusion for muffled obstructed stems, room reverb, and
   every stem kept sample-locked in sync. Square/hex tiled maps can also opt into
-  an experimental **AR Walk** mode that mirrors mobile WebXR pose movement into
-  the composition and turns the listener toward their direction of travel.
+  an experimental **AR Walk** mode that uses Android WebXR pose tracking to move
+  the listener through the composition.
 - **Immersive spaces** — compositions carry environment metadata and can render
   procedural spaces such as a studio void, cavern, forest clearing, or crystal
   hall; editable path maps can define terminal loop points for corridor-like
@@ -62,7 +62,7 @@ Audio quality can be A/B tested with `audioQuality=full` or
 ### Controls
 
 - **Explore:** `WASD` move · mouse look · click the scene to look · `Esc` frees the cursor.
-  On square/hex tiled maps, **AR Walk** can use mobile WebXR pose tracking as the movement source.
+  On square/hex tiled maps, **AR Walk** can use Android WebXR pose tracking as the movement source.
 - **Edit** (toggle with the button or `Tab`): `WASD` pan · drag to
   orbit/turn · scroll to zoom · click a pillar to select, then drag the gizmo to
   move it. Selected stems show Near/Far rings and a rolloff gradient on the
