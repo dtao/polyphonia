@@ -15,6 +15,10 @@ const MIN_MOVEMENT_METERS = 0.001;
 const MAX_STEP_METERS = 2;
 const POSITION_SMOOTHING = 0.65;
 const METRICS_INTERVAL_MS = 200;
+// Physical movement maps 1:1 to meters, but you can only walk a few steps in a
+// room — far too little to traverse a composition. Amplify each physical step
+// so a few real paces cover noticeable in-world ground. Tune to taste.
+const MOVEMENT_GAIN = 10;
 
 function xrSystem(): XRSystemLike | null {
   return ((navigator as Navigator & { xr?: XRSystemLike }).xr ?? null);
@@ -160,7 +164,7 @@ export function ARWalkSession() {
     const rawDistance = Math.hypot(dx, dz);
     if (rawDistance >= MIN_MOVEMENT_METERS && rawDistance <= MAX_STEP_METERS) {
       rawMeters.current += rawDistance;
-      applyMovement(dx, dz);
+      applyMovement(dx * MOVEMENT_GAIN, dz * MOVEMENT_GAIN);
     }
     applyHeading();
     publishStatus();
