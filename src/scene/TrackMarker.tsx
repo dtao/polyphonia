@@ -3,9 +3,9 @@ import { useFrame, ThreeEvent } from "@react-three/fiber";
 import { Billboard, Text } from "@react-three/drei";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
-import { isPointInsideMap } from "../map";
+import { isPointInsideMap, surfaceHeightAt } from "../map";
 import { markerObjects, useStore } from "../store";
-import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
+import { UNDERFLOOR_HEIGHT } from "./mapHeights";
 import { debugFlag } from "../debug";
 import { unregisterMarkerDebug, updateMarkerDebug } from "./markerDebug";
 
@@ -41,12 +41,15 @@ export function TrackMarker({
   const smoothedLevel = useRef(0);
   const visibleFade = useRef(preview ? 0 : fade);
   const seed = useMemo(() => trackSeed(track.id), [track.id]);
-  const [x, , z] = track.position;
+  const [x, stemY, z] = track.position;
   const onWalkablePath = !map.segments.length || isPointInsideMap(map, [x, z]);
-  const footprintHeight = (onWalkablePath ? PATH_HEIGHT : UNDERFLOOR_HEIGHT) + 0.08;
+  // The group rides at the stem's elevation (so the move gizmo's Y handle edits
+  // it). The footprint ring stays on the floor below, so its local offset is the
+  // gap down from the orb to the walkable surface (or the void for off-path).
+  const floorY = onWalkablePath ? surfaceHeightAt(map, [x, z]) : UNDERFLOOR_HEIGHT;
+  const footprintHeight = floorY - stemY + 0.08;
   const volume = track.volume ?? 1;
   const orbRadius = 0.42 + volume * 0.32;
-  const markerTop = 1.1 + orbRadius * 0.9;
   const showPointLight = !preview && !debugFlag("debugNoPointLights");
   const markerDebugId = debugId ?? `base:${track.id}`;
   const markerDebugPosition = debugPosition ?? [x, z];
@@ -140,25 +143,29 @@ export function TrackMarker({
   return (
     <group
       ref={registerGroup}
-      position={[x, 0, z]}
+      position={[x, stemY, z]}
       onClick={handleClick}
       onPointerOver={() => setCursor("pointer")}
       onPointerOut={() => setCursor("auto")}
     >
-      {mode === "edit" && selected && <FalloffMap track={track} />}
+      {mode === "edit" && selected && (
+        <group position={[0, floorY - stemY, 0]}>
+          <FalloffMap track={track} />
+        </group>
+      )}
       <mesh ref={footprint} position={[0, footprintHeight, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[orbRadius * 0.95, orbRadius * 1.55, 48]} />
         <meshBasicMaterial color={track.color} transparent opacity={0.28} toneMapped={false} depthWrite={false} />
       </mesh>
-      <mesh ref={aura} position={[0, markerTop, 0]}>
+      <mesh ref={aura} position={[0, 0, 0]}>
         <sphereGeometry args={[orbRadius, 24, 16]} />
         <meshBasicMaterial color={track.color} transparent opacity={0.18} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
       </mesh>
-      <mesh ref={outerAura} position={[0, markerTop, 0]}>
+      <mesh ref={outerAura} position={[0, 0, 0]}>
         <sphereGeometry args={[orbRadius, 24, 16]} />
         <meshBasicMaterial color={track.color} transparent opacity={0.1} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
       </mesh>
-      <Billboard position={[0, markerTop, 0]}>
+      <Billboard position={[0, 0, 0]}>
         <mesh scale={[orbRadius * 5.6, orbRadius * 5.6, 1]}>
           <planeGeometry args={[1, 1]} />
           <shaderMaterial
@@ -192,20 +199,20 @@ export function TrackMarker({
           />
         </mesh>
       </Billboard>
-      <mesh ref={core} position={[0, markerTop, 0]}>
+      <mesh ref={core} position={[0, 0, 0]}>
         <sphereGeometry args={[orbRadius * 0.62, 32, 20]} />
         <meshBasicMaterial color="white" transparent={preview || fade < 0.999} opacity={preview ? 0 : fade} toneMapped={false} depthWrite={!preview && fade >= 0.999} />
       </mesh>
       {/* selection ring */}
       {selected && (
-        <mesh ref={ring} position={[0, markerTop, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <mesh ref={ring} position={[0, 0, 0]} rotation={[Math.PI / 2, 0, 0]}>
           <torusGeometry args={[1, 0.045, 10, 56]} />
           <meshBasicMaterial color="white" toneMapped={false} />
         </mesh>
       )}
-      {showPointLight && <pointLight ref={glow} position={[0, markerTop, 0]} color={track.color} intensity={6} distance={18} />}
+      {showPointLight && <pointLight ref={glow} position={[0, 0, 0]} color={track.color} intensity={6} distance={18} />}
       {mode === "edit" && (
-        <Billboard position={[0, markerTop + orbRadius + 0.75, 0]}>
+        <Billboard position={[0, orbRadius + 0.75, 0]}>
           <Text fontSize={0.5} color="white" anchorX="center">
             {track.name}
           </Text>

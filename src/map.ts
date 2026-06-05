@@ -52,6 +52,12 @@ export interface CompositionMap {
     start?: RoomAttachment;
     end?: RoomAttachment;
   };
+  /**
+   * Surface height (y) at each branch point, keyed by `mapPointKey`. Segments
+   * ramp linearly between their endpoints' elevations; absent or 0 means flat.
+   * Joints share one height because they share a key.
+   */
+  elevations?: Record<string, number>;
   wallHeight: number;
   start: {
     position: [number, number];
@@ -118,13 +124,33 @@ export function normalizeMap(value: Partial<CompositionMap> | undefined): Compos
   map.loop = normalizeMapLoop(map);
   map.tiling = normalizeMapTiling({ ...tiling, pathLoop: map.loop }, undefined, fallback.tiling);
   map.loop = map.tiling.type === "path-loop" ? map.tiling.pathLoop : undefined;
+  const elevations = normalizeElevations(value?.elevations, map.segments);
   return {
     ...map,
+    // Omit when flat so untiled/older compositions keep an identical shape (and
+    // an identical publish revision hash).
+    ...(Object.keys(elevations).length ? { elevations } : {}),
     start: {
       ...map.start,
       position: clampToMap(map, map.start.position),
     },
   };
+}
+
+// Keep only finite, non-zero heights whose key still matches a segment endpoint,
+// so stale entries don't accumulate as points move or are deleted.
+function normalizeElevations(value: unknown, segments: WalkableSegment[]): Record<string, number> {
+  if (!value || typeof value !== "object") return {};
+  const keys = new Set<string>();
+  for (const segment of segments) {
+    keys.add(mapPointKey(segment.start));
+    keys.add(mapPointKey(segment.end));
+  }
+  const out: Record<string, number> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (keys.has(key) && typeof raw === "number" && Number.isFinite(raw) && raw !== 0) out[key] = raw;
+  }
+  return out;
 }
 
 export function clampToMap(map: CompositionMap, point: [number, number]): [number, number] {
@@ -214,6 +240,45 @@ export function roomWallObstructionCount(map: Pick<CompositionMap, "rooms">, fro
 
 export function mapPointKey(point: [number, number]): string {
   return `${point[0].toFixed(3)},${point[1].toFixed(3)}`;
+}
+
+// --- Elevation (the vertical dimension) ---
+
+export function pointElevation(map: Pick<CompositionMap, "elevations">, key: string): number {
+  const value = map.elevations?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+export function segmentEndElevation(map: Pick<CompositionMap, "elevations">, segment: WalkableSegment, end: SegmentEnd): number {
+  return pointElevation(map, mapPointKey(end === "start" ? segment.start : segment.end));
+}
+
+export function roomElevation(map: Pick<CompositionMap, "segments" | "elevations">, room: MapRoom): number {
+  const point = roomAttachmentPoint(map, room);
+  return point ? pointElevation(map, mapPointKey(point)) : 0;
+}
+
+// The walkable surface height at an XZ point — the single source of truth shared
+// by the floor mesh and the player. Rooms are flat at their attachment height;
+// on a path the height ramps along the nearest segment's length.
+export function surfaceHeightAt(map: Pick<CompositionMap, "segments" | "rooms" | "elevations">, point: [number, number]): number {
+  const room = containingRoom(map, point);
+  if (room) return roomElevation(map, room);
+  let best = 0;
+  let bestDistSq = Infinity;
+  for (const segment of map.segments) {
+    const { t, px, pz } = centerlineProjection(point, segment);
+    const dx = point[0] - px;
+    const dz = point[1] - pz;
+    const distSq = dx * dx + dz * dz;
+    if (distSq < bestDistSq) {
+      bestDistSq = distSq;
+      const startElev = pointElevation(map, mapPointKey(segment.start));
+      const endElev = pointElevation(map, mapPointKey(segment.end));
+      best = startElev + (endElev - startElev) * t;
+    }
+  }
+  return best;
 }
 
 export function endpointCount(map: Pick<CompositionMap, "segments">, key: string): number {
@@ -587,6 +652,13 @@ function closestPointInSegment(point: [number, number], segment: WalkableSegment
 }
 
 function closestPointOnCenterline(point: [number, number], segment: WalkableSegment): [number, number] {
+  const { px, pz } = centerlineProjection(point, segment);
+  return [px, pz];
+}
+
+// Project an XZ point onto a segment's centerline, returning the clamped
+// progress `t` (0 at start, 1 at end) and the projected point.
+function centerlineProjection(point: [number, number], segment: WalkableSegment): { t: number; px: number; pz: number } {
   const ax = segment.start[0];
   const az = segment.start[1];
   const bx = segment.end[0];
@@ -595,7 +667,7 @@ function closestPointOnCenterline(point: [number, number], segment: WalkableSegm
   const dz = bz - az;
   const lenSq = dx * dx + dz * dz;
   const t = lenSq === 0 ? 0 : clamp(((point[0] - ax) * dx + (point[1] - az) * dz) / lenSq, 0, 1);
-  return [ax + dx * t, az + dz * t];
+  return { t, px: ax + dx * t, pz: az + dz * t };
 }
 
 function isMapPreset(value: unknown): value is MapPreset {

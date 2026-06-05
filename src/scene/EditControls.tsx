@@ -3,6 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { useStore, viewState } from "../store";
+import { surfaceHeightAt } from "../map";
 
 // Edit-mode camera: drag to orbit, scroll to zoom, and WASD to glide across
 // the plane (panning the orbit pivot with you). Moving the camera moves the
@@ -10,6 +11,7 @@ import { useStore, viewState } from "../store";
 export function EditControls() {
   const { camera } = useThree();
   const start = useStore((s) => s.composition.map.start);
+  const map = useStore((s) => s.composition.map);
   const controls = useRef<any>(null);
   const keys = useRef<Record<string, boolean>>({});
   const fwd = useRef(new THREE.Vector3());
@@ -26,8 +28,9 @@ export function EditControls() {
     if (!c) return;
     const back = 18; // how far behind the anchor, along -facing
     const height = 14;
-    c.target.set(viewState.x, 1.5, viewState.z);
-    camera.position.set(viewState.x - viewState.fx * back, height, viewState.z - viewState.fz * back);
+    const groundY = viewState.y; // anchor's surface height (0 on flat maps)
+    c.target.set(viewState.x, groundY + 1.5, viewState.z);
+    camera.position.set(viewState.x - viewState.fx * back, groundY + height, viewState.z - viewState.fz * back);
     c.update();
   }, [camera, start.position, start.direction]);
 
@@ -75,6 +78,7 @@ export function EditControls() {
     // where you're looking — including after orbiting to a new direction.
     viewState.x = c.target.x;
     viewState.z = c.target.z;
+    viewState.y = surfaceHeightAt(map, [c.target.x, c.target.z]);
     const len = Math.hypot(fwd.current.x, fwd.current.z);
     if (len > 0) {
       viewState.fx = fwd.current.x / len;

@@ -2,7 +2,9 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { useStore, viewState } from "../store";
-import { clampToMap, wrapLoopPosition } from "../map";
+import { clampToMap, surfaceHeightAt, wrapLoopPosition } from "../map";
+
+const EYE_HEIGHT = 1.7;
 
 // Explore mode: WASD movement on the ground plane + pointer-lock mouse look.
 // (The AudioListener is driven separately by <ListenerSync>, which works in
@@ -22,8 +24,9 @@ export function Player() {
   // across mode switches), at eye height and horizontal.
   useLayoutEffect(() => {
     if (!entered) return;
-    camera.position.set(viewState.x, 1.7, viewState.z);
-    camera.lookAt(viewState.x + viewState.fx, 1.7, viewState.z + viewState.fz);
+    const eye = viewState.y + EYE_HEIGHT;
+    camera.position.set(viewState.x, eye, viewState.z);
+    camera.lookAt(viewState.x + viewState.fx, eye, viewState.z + viewState.fz);
     euler.current.setFromQuaternion(camera.quaternion, "YXZ");
     look.current.pitch = euler.current.x;
     look.current.yaw = euler.current.y;
@@ -127,10 +130,14 @@ export function Player() {
     const [x, z] = clampToMap(map, [camera.position.x, camera.position.z]);
     camera.position.x = x;
     camera.position.z = z;
-    camera.position.y = 1.7; // keep eye height fixed
+    // Follow the walkable surface: ride at a fixed eye height above the floor,
+    // damped so ramps feel smooth rather than snapping the camera.
+    const ground = surfaceHeightAt(map, [x, z]);
+    camera.position.y = THREE.MathUtils.damp(camera.position.y, ground + EYE_HEIGHT, 12, dt);
 
     // Record position + heading so edit mode (and new stems) stay anchored here.
     viewState.x = camera.position.x;
+    viewState.y = ground;
     viewState.z = camera.position.z;
     const len = Math.hypot(forward.current.x, forward.current.z);
     if (len > 0) {

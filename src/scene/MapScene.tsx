@@ -3,7 +3,7 @@ import { TransformControls } from "@react-three/drei";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
-import { canAddBranchAtPoint, clampToMap, CompositionMap, loopRoleForPoint, MapRoom, roomAttachedToPoint, ROOM_WALL_THICKNESS, WalkableSegment } from "../map";
+import { canAddBranchAtPoint, clampToMap, CompositionMap, loopRoleForPoint, MapRoom, roomAttachedToPoint, roomElevation, ROOM_WALL_THICKNESS, surfaceHeightAt, WalkableSegment } from "../map";
 import { useStore } from "../store";
 import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 
@@ -34,13 +34,13 @@ export function MapScene({
     <group>
       {editMode && <StartMarker map={map} editMode={editMode} />}
       <ReflectiveUnderfloor segments={map.segments} tracks={tracks} lightTracks={lightTracks} previewFade={previewFade} />
-      <WalkableFloor segments={map.segments} tracks={lightTracks} editMode={editMode} previewFade={previewFade} />
-      <PathDropSkirt segments={map.segments} />
+      <WalkableFloor map={map} tracks={lightTracks} editMode={editMode} previewFade={previewFade} />
+      <PathDropSkirt map={map} />
       {map.segments.map((segment) => (
         <Segment
           key={segment.id}
           segment={segment}
-          segments={map.segments}
+          map={map}
           editMode={editMode}
           endpointCounts={endpointCounts}
           selected={selectedMapSegmentId === segment.id}
@@ -60,13 +60,13 @@ function Rooms({ map, editMode }: { map: CompositionMap; editMode: boolean }) {
   return (
     <group>
       {map.rooms.map((room) => (
-        <Room key={room.id} room={room} editMode={editMode} selected={editMode && selectedRoomId === room.id} />
+        <Room key={room.id} room={room} elevationY={roomElevation(map, room)} editMode={editMode} selected={editMode && selectedRoomId === room.id} />
       ))}
     </group>
   );
 }
 
-function Room({ room, editMode, selected }: { room: MapRoom; editMode: boolean; selected: boolean }) {
+function Room({ room, elevationY, editMode, selected }: { room: MapRoom; elevationY: number; editMode: boolean; selected: boolean }) {
   const selectRoom = useStore((s) => s.selectRoom);
   const [cx, cz] = room.center;
   const h = room.height;
@@ -78,7 +78,7 @@ function Room({ room, editMode, selected }: { room: MapRoom; editMode: boolean; 
   return (
     <>
       <group
-        position={[cx, 0, cz]}
+        position={[cx, elevationY, cz]}
         rotation={[0, room.rotation, 0]}
         onClick={(e) => {
           if (!editMode) return;
@@ -160,8 +160,8 @@ function ReflectiveUnderfloor({
   );
 }
 
-function PathDropSkirt({ segments }: { segments: WalkableSegment[] }) {
-  const geometry = useMemo(() => pathSkirtGeometry(segments), [segments]);
+function PathDropSkirt({ map }: { map: CompositionMap }) {
+  const geometry = useMemo(() => pathSkirtGeometry(map), [map.segments, map.elevations]);
   if (!geometry) return null;
   return (
     <mesh geometry={geometry}>
@@ -182,6 +182,7 @@ function StartMarker({ map, editMode }: { map: CompositionMap; editMode: boolean
   const gizmoMode = useStore((s) => s.startGizmoMode);
   const [obj, setObj] = useState<THREE.Group | null>(null);
   const [x, z] = map.start.position;
+  const startY = surfaceHeightAt(map, map.start.position);
   const [fx, fz] = map.start.direction;
   const angle = -Math.atan2(fz, fx);
   const active = editMode && selectedStart;
@@ -207,7 +208,7 @@ function StartMarker({ map, editMode }: { map: CompositionMap; editMode: boolean
     <>
       <group
         ref={setObj}
-        position={[x, 0.08, z]}
+        position={[x, startY + 0.08, z]}
         rotation={[0, angle, 0]}
         // Disc click → move mode. Arrow click (below) → rotate mode.
         onClick={(e) => {
@@ -269,28 +270,32 @@ function StartMarker({ map, editMode }: { map: CompositionMap; editMode: boolean
 
 function Segment({
   segment,
-  segments,
+  map,
   editMode,
   endpointCounts,
   selected,
 }: {
   segment: WalkableSegment;
-  segments: WalkableSegment[];
+  map: CompositionMap;
   editMode: boolean;
   endpointCounts: Map<string, number>;
   selected: boolean;
 }) {
   const selectMapSegment = useStore((s) => s.selectMapSegment);
+  const segments = map.segments;
   const dx = segment.end[0] - segment.start[0];
   const dz = segment.end[1] - segment.start[1];
   const length = Math.hypot(dx, dz);
   const angle = -Math.atan2(dz, dx);
+  const startY = elevationAt(map, segment.start);
+  const endY = elevationAt(map, segment.end);
+  const midY = (startY + endY) / 2;
   const mid: [number, number, number] = [(segment.start[0] + segment.end[0]) / 2, 0, (segment.start[1] + segment.end[1]) / 2];
 
   return (
     <group>
       <mesh
-        position={[mid[0], 0.04, mid[2]]}
+        position={[mid[0], midY + 0.04, mid[2]]}
         rotation={[-Math.PI / 2, 0, angle]}
         onClick={(e) => {
           if (!editMode) return;
@@ -306,6 +311,7 @@ function Segment({
           key={side}
           start={borderPoint(segment, segments, "start", side)}
           end={borderPoint(segment, segments, "end", side)}
+          baseY={midY}
           editMode={editMode}
           selected={selected}
         />
@@ -313,7 +319,7 @@ function Segment({
       {[segment.start, segment.end].map((point, i) => (
         <group key={i}>
           {(endpointCounts.get(pointKey(point)) ?? 0) === 1 && (
-            <mesh position={[point[0], 0.047, point[1]]} rotation={[-Math.PI / 2, 0, angle]}>
+            <mesh position={[point[0], (i === 0 ? startY : endY) + 0.047, point[1]]} rotation={[-Math.PI / 2, 0, angle]}>
               <planeGeometry args={[0.16, segment.width]} />
               <meshBasicMaterial
                 color={selected ? "#8fffe8" : editMode ? "#dce7ff" : "#c8d2df"}
@@ -332,17 +338,17 @@ function Segment({
 }
 
 function WalkableFloor({
-  segments,
+  map,
   tracks,
   editMode,
   previewFade,
 }: {
-  segments: WalkableSegment[];
+  map: CompositionMap;
   tracks: TrackDef[];
   editMode: boolean;
   previewFade: number;
 }) {
-  const geometry = useMemo(() => walkableFloorGeometry(segments), [segments]);
+  const geometry = useMemo(() => walkableFloorGeometry(map), [map.segments, map.elevations]);
   if (!geometry) return null;
 
   return (
@@ -390,7 +396,7 @@ function BranchPlacementLayer({ map }: { map: CompositionMap }) {
         <planeGeometry args={[220, 220]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
       </mesh>
-      <mesh position={[startPoint[0], 0.09, startPoint[1]]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh position={[startPoint[0], elevationAt(map, startPoint) + 0.09, startPoint[1]]} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[1.3, 1.55, 48]} />
         <meshBasicMaterial color="#8fffe8" transparent opacity={0.8} toneMapped={false} depthWrite={false} />
       </mesh>
@@ -398,13 +404,13 @@ function BranchPlacementLayer({ map }: { map: CompositionMap }) {
   );
 }
 
-function BorderRail({ start, end, editMode, selected }: { start: [number, number]; end: [number, number]; editMode: boolean; selected: boolean }) {
+function BorderRail({ start, end, baseY = 0, editMode, selected }: { start: [number, number]; end: [number, number]; baseY?: number; editMode: boolean; selected: boolean }) {
   const dx = end[0] - start[0];
   const dz = end[1] - start[1];
   const length = Math.hypot(dx, dz);
   if (length < 0.02) return null;
   const angle = -Math.atan2(dz, dx);
-  const mid: [number, number, number] = [(start[0] + end[0]) / 2, 0.045, (start[1] + end[1]) / 2];
+  const mid: [number, number, number] = [(start[0] + end[0]) / 2, baseY + 0.045, (start[1] + end[1]) / 2];
 
   return (
     <mesh position={mid} rotation={[-Math.PI / 2, 0, angle]}>
@@ -504,33 +510,43 @@ function intersectOffsetRays(
   return [aPoint[0] + a.dir[0] * t, aPoint[1] + a.dir[1] * t];
 }
 
-function walkableFloorGeometry(segments: WalkableSegment[]): THREE.BufferGeometry | null {
+function walkableFloorGeometry(map: CompositionMap): THREE.BufferGeometry | null {
+  const segments = map.segments;
   if (!segments.length) return null;
   const geometry = new THREE.BufferGeometry();
   const vertices: number[] = [];
   const indices: number[] = [];
 
+  // Each segment quad ramps from its start elevation to its end elevation.
   for (const segment of segments) {
+    const sy = elevationAt(map, segment.start);
+    const ey = elevationAt(map, segment.end);
     addFloorPolygon(
       [
-        borderPoint(segment, segments, "start", -1),
-        borderPoint(segment, segments, "end", -1),
-        borderPoint(segment, segments, "end", 1),
-        borderPoint(segment, segments, "start", 1),
+        { point: borderPoint(segment, segments, "start", -1), y: sy },
+        { point: borderPoint(segment, segments, "end", -1), y: ey },
+        { point: borderPoint(segment, segments, "end", 1), y: ey },
+        { point: borderPoint(segment, segments, "start", 1), y: sy },
       ],
       vertices,
       indices,
     );
   }
 
+  // Joints are a single shared height, so their fill patch is flat.
   for (const { point, segments: jointSegments } of sharedJoints(segments)) {
+    const jy = elevationAt(map, point);
     const points: [number, number][] = [];
     for (const segment of jointSegments) {
       const end = pointKey(segment.start) === pointKey(point) ? "start" : "end";
       points.push(borderPoint(segment, segments, end, -1));
       points.push(borderPoint(segment, segments, end, 1));
     }
-    addFloorPolygon(convexHull(uniquePoints(points)), vertices, indices);
+    addFloorPolygon(
+      convexHull(uniquePoints(points)).map((p) => ({ point: p, y: jy })),
+      vertices,
+      indices,
+    );
   }
 
   if (!vertices.length || !indices.length) return null;
@@ -540,15 +556,18 @@ function walkableFloorGeometry(segments: WalkableSegment[]): THREE.BufferGeometr
   return geometry;
 }
 
-function pathSkirtGeometry(segments: WalkableSegment[]): THREE.BufferGeometry | null {
+function pathSkirtGeometry(map: CompositionMap): THREE.BufferGeometry | null {
+  const segments = map.segments;
   if (!segments.length) return null;
   const geometry = new THREE.BufferGeometry();
   const vertices: number[] = [];
   const indices: number[] = [];
 
   for (const segment of segments) {
-    addSkirtEdge(borderPoint(segment, segments, "start", -1), borderPoint(segment, segments, "end", -1), vertices, indices);
-    addSkirtEdge(borderPoint(segment, segments, "end", 1), borderPoint(segment, segments, "start", 1), vertices, indices);
+    const sy = elevationAt(map, segment.start);
+    const ey = elevationAt(map, segment.end);
+    addSkirtEdge(borderPoint(segment, segments, "start", -1), sy, borderPoint(segment, segments, "end", -1), ey, vertices, indices);
+    addSkirtEdge(borderPoint(segment, segments, "end", 1), ey, borderPoint(segment, segments, "start", 1), sy, vertices, indices);
   }
 
   if (!vertices.length || !indices.length) return null;
@@ -558,9 +577,16 @@ function pathSkirtGeometry(segments: WalkableSegment[]): THREE.BufferGeometry | 
   return geometry;
 }
 
-function addSkirtEdge(a: [number, number], b: [number, number], vertices: number[], indices: number[]): void {
+// The skirt top edge follows the (possibly ramped) path; the bottom hangs a
+// fixed depth below it.
+function addSkirtEdge(a: [number, number], aY: number, b: [number, number], bY: number, vertices: number[], indices: number[]): void {
   const base = vertices.length / 3;
-  vertices.push(a[0], PATH_HEIGHT, a[1], b[0], PATH_HEIGHT, b[1], b[0], UNDERFLOOR_HEIGHT, b[1], a[0], UNDERFLOOR_HEIGHT, a[1]);
+  vertices.push(
+    a[0], PATH_HEIGHT + aY, a[1],
+    b[0], PATH_HEIGHT + bY, b[1],
+    b[0], UNDERFLOOR_HEIGHT + bY, b[1],
+    a[0], UNDERFLOOR_HEIGHT + aY, a[1],
+  );
   indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
 }
 
@@ -577,16 +603,28 @@ function sharedJoints(segments: WalkableSegment[]): Array<{ point: [number, numb
   return Array.from(endpoints.values()).filter((joint) => joint.segments.length > 1);
 }
 
-function addFloorPolygon(points: [number, number][], vertices: number[], indices: number[]): void {
-  const polygon = uniquePoints(points);
+function addFloorPolygon(points: Array<{ point: [number, number]; y: number }>, vertices: number[], indices: number[]): void {
+  const polygon = uniqueElevatedPoints(points);
   if (polygon.length < 3) return;
   const base = vertices.length / 3;
-  for (const point of polygon) vertices.push(point[0], 0, point[1]);
+  for (const { point, y } of polygon) vertices.push(point[0], y, point[1]);
   const triangles = THREE.ShapeUtils.triangulateShape(
-    polygon.map((point) => new THREE.Vector2(point[0], point[1])),
+    polygon.map(({ point }) => new THREE.Vector2(point[0], point[1])),
     [],
   );
   for (const triangle of triangles) indices.push(base + triangle[0], base + triangle[1], base + triangle[2]);
+}
+
+function uniqueElevatedPoints(points: Array<{ point: [number, number]; y: number }>): Array<{ point: [number, number]; y: number }> {
+  const seen = new Set<string>();
+  const unique: Array<{ point: [number, number]; y: number }> = [];
+  for (const entry of points) {
+    const key = pointKey(entry.point);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(entry);
+  }
+  return unique;
 }
 
 function uniquePoints(points: [number, number][]): [number, number][] {
@@ -754,15 +792,25 @@ function ReflectiveUnderfloorMaterial({ tracks, previewFade }: { tracks: TrackDe
   );
 }
 
+// Heights (above the branch point's surface) of the floor grab sphere and the
+// floating knob that drags elevation.
+const HANDLE_BASE = 0.58;
+const ELEVATION_KNOB_LIFT = 1.8;
+
 function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpointCounts: Map<string, number> }) {
   const controls = useThree((s) => s.controls as { enabled?: boolean } | undefined);
+  const camera = useThree((s) => s.camera);
   const selectedMapPointKey = useStore((s) => s.selectedMapPointKey);
   const setMap = useStore((s) => s.setMap);
   const selectMapPoint = useStore((s) => s.selectMapPoint);
-  const drag = useRef<{ pointKey: string } | null>(null);
+  const drag = useRef<{ pointKey: string; axis: "xz" | "y" } | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const ground = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), []);
   const hit = useMemo(() => new THREE.Vector3(), []);
+  // Reused scratch objects for the vertical drag plane.
+  const vplane = useMemo(() => new THREE.Plane(), []);
+  const vnormal = useMemo(() => new THREE.Vector3(), []);
+  const vpoint = useMemo(() => new THREE.Vector3(), []);
   const endpoints = useMemo(() => {
     const points = new Map<string, [number, number]>();
     for (const segment of map.segments) {
@@ -779,6 +827,13 @@ function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpoint
     }));
   }, [endpointCounts, map]);
 
+  // Route a drag move to the right axis: ground plane (X/Z) or elevation (Y).
+  function onDragMove(e: ThreeEvent<PointerEvent>) {
+    if (!drag.current) return;
+    if (drag.current.axis === "y") moveElevation(e);
+    else moveEndpoint(e);
+  }
+
   function moveEndpoint(e: ThreeEvent<PointerEvent>) {
     if (!drag.current) return;
     e.stopPropagation();
@@ -788,15 +843,37 @@ function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpoint
     const nextKey = pointKey(next);
     drag.current.pointKey = nextKey;
     setActiveId(nextKey);
+    const currentMap = useStore.getState().composition.map;
     setMap({
       preset: "custom",
-      segments: useStore.getState().composition.map.segments.map((segment) => ({
+      segments: currentMap.segments.map((segment) => ({
         ...segment,
         start: pointKey(segment.start) === activeKey ? next : segment.start,
         end: pointKey(segment.end) === activeKey ? next : segment.end,
       })),
+      // Carry the point's height to its new key so moving a raised point keeps it.
+      elevations: renameElevationKey(currentMap.elevations, activeKey, nextKey),
     });
     selectMapPoint(nextKey);
+  }
+
+  // Drag the floating knob to set the surface height at this branch point. A
+  // vertical plane through the point (facing the camera) turns cursor height
+  // into elevation; the point itself doesn't move, so its key is unchanged.
+  function moveElevation(e: ThreeEvent<PointerEvent>) {
+    if (!drag.current) return;
+    e.stopPropagation();
+    const key = drag.current.pointKey;
+    const point = endpoints.find((p) => p.key === key)?.point ?? findPoint(map, key);
+    if (!point) return;
+    vnormal.set(camera.position.x - point[0], 0, camera.position.z - point[1]);
+    if (vnormal.lengthSq() < 1e-6) vnormal.set(0, 0, 1);
+    vnormal.normalize();
+    vpoint.set(point[0], 0, point[1]);
+    vplane.setFromNormalAndCoplanarPoint(vnormal, vpoint);
+    if (!e.ray.intersectPlane(vplane, hit)) return;
+    const elevation = Math.round((hit.y - HANDLE_BASE - ELEVATION_KNOB_LIFT) * 100) / 100;
+    setMap({ preset: "custom", elevations: { ...(map.elevations ?? {}), [key]: elevation } });
   }
 
   function endDrag(e?: ThreeEvent<PointerEvent>) {
@@ -811,13 +888,24 @@ function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpoint
 
   function startDrag(e: ThreeEvent<PointerEvent>, key: string) {
     e.stopPropagation();
-    drag.current = { pointKey: key };
+    drag.current = { pointKey: key, axis: "xz" };
     setActiveId(key);
     selectMapPoint(key);
     if (controls) controls.enabled = false;
     const target = e.nativeEvent.target as Element | null;
     target?.setPointerCapture?.(e.pointerId);
     document.body.style.cursor = "grabbing";
+  }
+
+  function startElevationDrag(e: ThreeEvent<PointerEvent>, key: string) {
+    e.stopPropagation();
+    drag.current = { pointKey: key, axis: "y" };
+    setActiveId(key);
+    selectMapPoint(key);
+    if (controls) controls.enabled = false;
+    const target = e.nativeEvent.target as Element | null;
+    target?.setPointerCapture?.(e.pointerId);
+    document.body.style.cursor = "ns-resize";
   }
 
   function selectEndpoint(e: ThreeEvent<MouseEvent>, key: string) {
@@ -828,7 +916,7 @@ function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpoint
   return (
     <group onPointerUp={endDrag} onPointerCancel={endDrag}>
       {drag.current && (
-        <mesh position={[0, 0.64, 0]} rotation={[-Math.PI / 2, 0, 0]} onPointerMove={moveEndpoint} onPointerUp={endDrag} onPointerCancel={endDrag}>
+        <mesh position={[0, 0.64, 0]} rotation={[-Math.PI / 2, 0, 0]} onPointerMove={onDragMove} onPointerUp={endDrag} onPointerCancel={endDrag}>
           <planeGeometry args={[240, 240]} />
           <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
         </mesh>
@@ -841,11 +929,11 @@ function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpoint
         return (
           <mesh
             key={id}
-            position={[point[0], 0.58, point[1]]}
+            position={[point[0], HANDLE_BASE + elevationAt(map, point), point[1]]}
             renderOrder={50}
             onPointerDown={(e) => startDrag(e, key)}
             onClick={(e) => selectEndpoint(e, key)}
-            onPointerMove={moveEndpoint}
+            onPointerMove={onDragMove}
             onPointerUp={endDrag}
             onPointerOver={(e) => {
               e.stopPropagation();
@@ -883,11 +971,48 @@ function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpoint
                 <EndpointSelectionRing active={active} color={active ? "#8fffe8" : "#9fb4ff"} />
               </>
             )}
+            {selected && (
+              <>
+                {/* Stick from the point up to the grab knob. */}
+                <mesh position={[0, ELEVATION_KNOB_LIFT / 2, 0]}>
+                  <cylinderGeometry args={[0.05, 0.05, ELEVATION_KNOB_LIFT, 8]} />
+                  <meshBasicMaterial color="#8fffe8" transparent opacity={0.6} toneMapped={false} depthWrite={false} />
+                </mesh>
+                {/* Drag this knob up/down to set the branch point's elevation. */}
+                <mesh
+                  position={[0, ELEVATION_KNOB_LIFT, 0]}
+                  onPointerDown={(e) => startElevationDrag(e, key)}
+                  onPointerMove={onDragMove}
+                  onPointerUp={endDrag}
+                  onPointerOver={(e) => {
+                    e.stopPropagation();
+                    document.body.style.cursor = "ns-resize";
+                  }}
+                  onPointerOut={() => {
+                    if (!drag.current) document.body.style.cursor = "auto";
+                  }}
+                >
+                  <sphereGeometry args={[0.55, 20, 14]} />
+                  <meshBasicMaterial color="#8fffe8" transparent opacity={0.92} toneMapped={false} />
+                </mesh>
+              </>
+            )}
           </mesh>
         );
       })}
     </group>
   );
+}
+
+// Move a point's elevation entry to a new key when the point moves in XZ.
+function renameElevationKey(elevations: Record<string, number> | undefined, fromKey: string, toKey: string): Record<string, number> {
+  const next = { ...(elevations ?? {}) };
+  if (fromKey === toKey) return next;
+  if (fromKey in next) {
+    next[toKey] = next[fromKey];
+    delete next[fromKey];
+  }
+  return next;
 }
 
 function EndpointSelectionRing({ active, color }: { active: boolean; color: string }) {
@@ -924,6 +1049,13 @@ function EndpointSelectionRing({ active, color }: { active: boolean; color: stri
 
 function pointKey(point: [number, number]): string {
   return `${point[0].toFixed(3)},${point[1].toFixed(3)}`;
+}
+
+// Surface height at a branch point (0 = flat). Mirrors map.ts `pointElevation`
+// but keyed off the local `pointKey`.
+function elevationAt(map: CompositionMap, point: [number, number]): number {
+  const value = map.elevations?.[pointKey(point)];
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function findPoint(map: CompositionMap, key: string): [number, number] | null {

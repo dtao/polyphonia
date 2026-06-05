@@ -15,7 +15,7 @@ import {
 } from "./persistence";
 import { newId } from "./id";
 import { EnvironmentSettings, defaultEnvironment, normalizeEnvironment } from "./environment";
-import { attachmentForPoint, canAddBranchAtPoint, canAddRoomAtPoint, CompositionMap, MAP_PRESETS, MapRoom, defaultMap, mapPointKey, normalizeMap, pointInOriginalTile } from "./map";
+import { attachmentForPoint, canAddBranchAtPoint, canAddRoomAtPoint, CompositionMap, MAP_PRESETS, MapRoom, defaultMap, mapPointKey, normalizeMap, pointInOriginalTile, surfaceHeightAt } from "./map";
 import { ArtistIdentity } from "./artist";
 import {
   AuthUser,
@@ -38,7 +38,8 @@ export const markerObjects = new Map<string, THREE.Object3D>();
 // ground anchor (in edit it's the orbit pivot / screen center); `fx,fz` is the
 // unit facing direction on the plane. New stems spawn at the anchor. Kept
 // outside React to avoid per-frame re-renders.
-export const viewState = { x: 0, z: 0, fx: 0, fz: -1 };
+// y is the walkable-surface height at (x, z); the player rides at y + eye height.
+export const viewState = { x: 0, y: 0, z: 0, fx: 0, fz: -1 };
 
 type Falloff = Pick<TrackDef, "refDistance" | "maxDistance" | "rolloff">;
 
@@ -228,6 +229,7 @@ function mapPointExists(segment: { start: [number, number]; end: [number, number
 export function moveViewToMapStart(map: CompositionMap): void {
   viewState.x = map.start.position[0];
   viewState.z = map.start.position[1];
+  viewState.y = surfaceHeightAt(map, map.start.position);
   viewState.fx = map.start.direction[0];
   viewState.fz = map.start.direction[1];
 }
@@ -525,13 +527,15 @@ export const useStore = create<StoreState>((set, get) => ({
     const id = newId();
     // Persist the raw audio so the composition survives a reload.
     stemPut(id, file).catch((err) => console.error("Failed to store stem", err));
+    // Spawn at the center of the view (with a little jitter so repeated adds
+    // don't stack exactly on top of each other), floating above the surface.
+    const spawnX = viewState.x + (Math.random() * 2 - 1) * 0.8;
+    const spawnZ = viewState.z + (Math.random() * 2 - 1) * 0.8;
     const def: TrackDef = {
       id,
       name: stripExt(file.name),
       color: randomColor(),
-      // Spawn at the center of the view (with a little jitter so repeated adds
-      // don't stack exactly on top of each other).
-      position: [viewState.x + (Math.random() * 2 - 1) * 0.8, 1.5, viewState.z + (Math.random() * 2 - 1) * 0.8],
+      position: [spawnX, surfaceHeightAt(get().composition.map, [spawnX, spawnZ]) + 1.5, spawnZ],
       volume: 1,
       source: { kind: "file", url: URL.createObjectURL(file) },
     };
