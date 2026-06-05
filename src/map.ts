@@ -455,6 +455,13 @@ export function transformLoopPoint(preview: LoopPreviewTransform, point: [number
   return [preview.anchor[0] + dx * c + dz * s, preview.anchor[1] - dx * s + dz * c];
 }
 
+// How far to raise/lower a loop preview copy so its source endpoint aligns with
+// the anchor endpoint it sits against. Non-loop tilings (square/hex) stay flat.
+export function loopPreviewElevationOffset(map: Pick<CompositionMap, "elevations" | "tiling">, preview: LoopPreviewTransform): number {
+  if (map.tiling.type !== "path-loop") return 0;
+  return pointElevation(map, mapPointKey(preview.anchor)) - pointElevation(map, mapPointKey(preview.source));
+}
+
 export function pointInOriginalTile(map: Pick<CompositionMap, "tiling">, point: [number, number]): [number, number] {
   if (map.tiling.type === "square") {
     const size = Math.max(1, map.tiling.tileSize);

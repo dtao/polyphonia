@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { Composition, TrackDef } from "../composition";
-import { CompositionMap, MapRoom, containingRoom, roomWallObstructionCount, tiledMapTransforms, transformLoopPoint } from "../map";
+import { CompositionMap, MapRoom, containingRoom, loopPreviewElevationOffset, roomWallObstructionCount, tiledMapTransforms, transformLoopPoint } from "../map";
 import { createPlaceholderStems } from "./synth";
 
 interface LiveTrack {
@@ -655,7 +655,7 @@ export class AudioEngine {
     const candidates: AudibleTrackInstance[] = [{ id: "base", position: base }];
     for (const preview of previews) {
       const [x, z] = transformLoopPoint(preview, [base[0], base[2]]);
-      candidates.push({ id: preview.id, position: [x, base[1], z] });
+      candidates.push({ id: preview.id, position: [x, base[1] + loopPreviewElevationOffset(this.map, preview), z] });
     }
     const far = Math.max(def.maxDistance ?? 40, def.refDistance ?? 4);
     const audibleDistance = Math.max(far, this.tileAudioPreviewRadius);

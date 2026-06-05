@@ -10,7 +10,7 @@ import { ListenerSync } from "./ListenerSync";
 import { EnvironmentScene } from "./EnvironmentScene";
 import { MapScene } from "./MapScene";
 import { DebugSampler } from "./DebugSampler";
-import { CompositionMap, LoopPreviewTransform, mapPointKey, pointElevation, tiledMapTransforms, transformLoopPoint } from "../map";
+import { CompositionMap, LoopPreviewTransform, loopPreviewElevationOffset, tiledMapTransforms, transformLoopPoint } from "../map";
 import { TrackDef } from "../composition";
 import { debugFlag } from "../debug";
 
@@ -113,7 +113,7 @@ function TiledMapPreview({ viewer }: { viewer: [number, number] }) {
         // camera snaps by the matching amount at the wrap (see Player), so the
         // reset is invisible — an endless ascent/descent. Only path-loop endpoints
         // carry elevation; square/hex tiling stays flat.
-        const elevationOffset = previewElevationOffset(map, preview);
+        const elevationOffset = loopPreviewElevationOffset(map, preview);
         return (
           <group key={preview.id} position={[preview.anchor[0], elevationOffset, preview.anchor[1]]} rotation={[0, preview.rotation, 0]}>
             <group position={[-preview.source[0], 0, -preview.source[1]]}>
@@ -223,16 +223,9 @@ function tileLightTracks(map: CompositionMap, tracks: TrackDef[], viewer: [numbe
     ...previews.flatMap((preview) => {
         if (previewTrackVisibility(map, preview, track, viewer) <= PREVIEW_FADE_EPSILON) return [];
         const [x, z] = transformLoopPoint(preview, [track.position[0], track.position[2]]);
-        return [{ ...track, position: [x, track.position[1], z] as [number, number, number] }];
+        return [{ ...track, position: [x, track.position[1] + loopPreviewElevationOffset(map, preview), z] as [number, number, number] }];
       }),
   ]);
-}
-
-// How far to raise/lower a loop preview copy so its source endpoint aligns with
-// the anchor endpoint it sits against. Non-loop tilings (square/hex) stay flat.
-function previewElevationOffset(map: CompositionMap, preview: LoopPreviewTransform): number {
-  if (map.tiling.type !== "path-loop") return 0;
-  return pointElevation(map, mapPointKey(preview.anchor)) - pointElevation(map, mapPointKey(preview.source));
 }
 
 function previewMapVisibility(map: CompositionMap, preview: { anchor: [number, number] }, viewer: [number, number]): number {
