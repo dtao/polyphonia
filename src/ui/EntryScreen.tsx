@@ -6,6 +6,7 @@ import { isSharingConfigured } from "../cloud";
 import { compositionRevision } from "../composition";
 
 type SortMode = "updated" | "library" | "title" | "artist" | "tracks";
+const commitLabel = __POLYPHONIA_COMMIT__ === "unknown" ? "commit unknown" : `commit ${__POLYPHONIA_COMMIT__}`;
 
 // The start screen: pick a composition from the library to enter, start a fresh
 // one, or export/import a portable bundle.
@@ -95,6 +96,7 @@ export function EntryScreen({
   return (
     <div style={overlay}>
       <h1 style={{ fontSize: 44, margin: 0, letterSpacing: 2 }}>POLYPHONIA</h1>
+      <div style={versionTag}>{commitLabel}</div>
 
       {creating ? (
         <div style={form}>
@@ -323,6 +325,17 @@ const overlay: React.CSSProperties = {
   color: "white",
   fontFamily: "system-ui, sans-serif",
   background: "radial-gradient(circle at center, rgba(20,24,48,0.85), rgba(5,6,10,0.97))",
+};
+
+const versionTag: React.CSSProperties = {
+  position: "absolute",
+  right: 16,
+  bottom: 12,
+  color: "rgba(255,255,255,0.38)",
+  fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+  fontSize: 11,
+  letterSpacing: 0,
+  pointerEvents: "none",
 };
 
 const button: React.CSSProperties = {

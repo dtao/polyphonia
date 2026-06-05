@@ -48,6 +48,10 @@ Open the printed URL, pick a composition (the built-in **Journey** demo is
 seeded on first run), and click **Enter**. The app is fully usable offline; only
 publishing/sharing needs the optional Supabase setup.
 
+The start screen shows the short Git commit hash that was present when the app
+bundle was built, so deployed builds can be identified without manually updating
+a version string.
+
 For performance diagnostics, append `?debug=1` to the local URL. This enables a
 small overlay and exportable JSON log. Optional A/B flags include
 `debugNoPointLights=1`, `debugNoLoopPreview=1`, and `debugNoLoopLights=1`.
