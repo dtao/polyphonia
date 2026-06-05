@@ -39,6 +39,11 @@ export function Scene() {
   });
   const loopPreviewsEnabled = !debugFlag("debugNoLoopPreview");
   const tileLights = loopPreviewsEnabled ? tileLightTracks(map, tracks, viewer) : tracks;
+  // On tiled/looped maps the canonical "base" stems are just one copy of the
+  // repeated space, so in explore mode they distance-fade like preview copies
+  // instead of sitting at full opacity on the horizon. Edit mode and untiled
+  // maps keep base stems fully visible.
+  const fadeBaseMarkers = mode === "explore" && loopPreviewsEnabled && map.tiling.type !== "none";
 
   return (
     <>
@@ -47,9 +52,13 @@ export function Scene() {
       <TileBoundaryOverlay map={map} viewer={viewer} editMode={mode === "edit"} />
       <MapScene map={map} tracks={tracks} lightTracks={mode === "explore" ? tileLights : tracks} editMode={mode === "edit"} />
 
-      {tracks.map((t) => (
-        <TrackMarker key={t.id} track={t} debugId={`base:${t.id}`} debugPosition={[t.position[0], t.position[2]]} />
-      ))}
+      {tracks.map((t) => {
+        const fade = fadeBaseMarkers ? baseTrackVisibility(map, t, viewer) : 1;
+        if (fade <= PREVIEW_FADE_EPSILON) return null;
+        return (
+          <TrackMarker key={t.id} track={t} fade={fade} debugId={`base:${t.id}`} debugPosition={[t.position[0], t.position[2]]} />
+        );
+      })}
 
       {/* Player is mounted even on the entry screen so the enter button's click
           can lock the pointer immediately; its lock selector keeps stray clicks
@@ -217,6 +226,13 @@ function previewMapVisibility(map: CompositionMap, preview: { anchor: [number, n
   const distance = Math.hypot(viewer[0] - preview.anchor[0], viewer[1] - preview.anchor[1]);
   const start = map.tiling.type === "path-loop" ? PATH_LOOP_MAP_FADE_START : TILE_MAP_FADE_START;
   const end = map.tiling.type === "path-loop" ? PATH_LOOP_MAP_FADE_END : TILE_MAP_FADE_END;
+  return distanceVisibility(distance, start, end);
+}
+
+function baseTrackVisibility(map: CompositionMap, track: TrackDef, viewer: [number, number]): number {
+  const distance = Math.hypot(viewer[0] - track.position[0], viewer[1] - track.position[2]);
+  const start = map.tiling.type === "path-loop" ? PATH_LOOP_STEM_FADE_START : TILE_STEM_FADE_START;
+  const end = map.tiling.type === "path-loop" ? PATH_LOOP_STEM_FADE_END : TILE_STEM_FADE_END;
   return distanceVisibility(distance, start, end);
 }
 

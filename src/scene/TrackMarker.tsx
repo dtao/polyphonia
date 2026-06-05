@@ -61,7 +61,12 @@ export function TrackMarker({
     const t = clock.elapsedTime;
     const breath = 1 + Math.sin(t * 0.9 + seed + x * 0.2 + z * 0.13) * 0.035;
     const renderedFade = visibleFade.current;
-    const opticalFade = Math.sqrt(renderedFade);
+    // Additive glare layers (aura, flare, rays) read as bright even at low
+    // opacity on the black void, so a linear/sqrt fade makes them appear to
+    // pop in well before the orb is "really" visible. Square the fade so the
+    // bottom of the fade-in is genuinely invisible; the solid white core stays
+    // on the linear fade below.
+    const opticalFade = renderedFade * renderedFade;
     updateMarkerDebug({
       id: markerDebugId,
       trackId: track.id,
@@ -105,7 +110,7 @@ export function TrackMarker({
         Math.sin(t * 0.031 + seed * 4.1) * 0.55;
     }
     if (glow.current) {
-      glow.current.intensity = (selected ? 8 : 4.8) + volume * 3.2 + pulse * 44;
+      glow.current.intensity = ((selected ? 8 : 4.8) + volume * 3.2 + pulse * 44) * renderedFade;
       glow.current.distance = 12 + volume * 8 + pulse * 16;
     }
     if (ring.current) ring.current.rotation.z += dt * 1.5;
