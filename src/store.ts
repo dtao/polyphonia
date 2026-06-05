@@ -41,6 +41,12 @@ export const markerObjects = new Map<string, THREE.Object3D>();
 // y is the walkable-surface height at (x, z); the player rides at y + eye height.
 export const viewState = { x: 0, y: 0, z: 0, fx: 0, fz: -1 };
 
+// Touch-device movement input for explore mode: a virtual-joystick vector where
+// `forward`/`strafe` are each in roughly [-1, 1]. Written by the on-screen
+// joystick (<TouchControls>), read each frame by <Player> alongside WASD. Kept
+// outside React so dragging the joystick never triggers re-renders.
+export const touchMove = { forward: 0, strafe: 0 };
+
 type Falloff = Pick<TrackDef, "refDistance" | "maxDistance" | "rolloff">;
 
 export type Mode = "explore" | "edit";

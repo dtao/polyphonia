@@ -101,4 +101,6 @@ earlier ones.
 - [x] Map button and panel are always over Environment panel - only one should be open at a time.
 - [x] Vertical margin is inconsistent between "Add stem", "Environment", and "Map" buttons.
 
-**Cross-cutting** (interleave opportunistically): mobile / touch controls, loading & error states.
+**Cross-cutting** (interleave opportunistically): mobile / touch controls
+([x] explore-mode touch controls for the shared viewer — drag-to-look + virtual
+movement joystick; editing remains desktop-only), loading & error states.

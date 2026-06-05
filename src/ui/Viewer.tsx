@@ -5,6 +5,7 @@ import { Scene } from "../scene/Scene";
 import { moveViewToMapStart, useStore } from "../store";
 import { fetchPublishedComposition, isSharingConfigured } from "../cloud";
 import { ArtistAvatar, artistPath } from "./galleryStyles";
+import { TouchControls, isTouchDevice } from "./TouchControls";
 
 type Status = "loading" | "ready" | "notfound" | "error";
 
@@ -16,6 +17,7 @@ export function Viewer() {
   const entered = useStore((s) => s.entered);
   const engine = useStore((s) => s.engine);
   const [status, setStatus] = useState<Status>("loading");
+  const touch = isTouchDevice();
 
   useEffect(() => {
     let cancelled = false;
@@ -64,6 +66,8 @@ export function Viewer() {
         <Scene />
       </Canvas>
 
+      {status === "ready" && entered && touch && <TouchControls />}
+
       {status === "ready" && !entered && (
         <div style={overlay}>
           <h1 style={{ fontSize: 36, margin: 0, letterSpacing: 1 }}>{comp.title}</h1>
@@ -74,7 +78,9 @@ export function Viewer() {
           <button id="enter-btn" style={button} onClick={enter}>
             ▶ Enter
           </button>
-          <p style={{ opacity: 0.45, fontSize: 13 }}>WASD to move · mouse to look · Esc to release cursor</p>
+          <p style={{ opacity: 0.45, fontSize: 13 }}>
+            {touch ? "Joystick to move · drag to look around" : "WASD to move · mouse to look · Esc to release cursor"}
+          </p>
         </div>
       )}
 

@@ -7,6 +7,9 @@
     <style>
       html, body, #root { margin: 0; height: 100%; width: 100%; overflow: hidden; background: #05060a; }
       * { box-sizing: border-box; }
+      /* Let the explore controls own touch gestures (drag-to-look, joystick)
+         instead of the browser scrolling/zooming the page. */
+      canvas { touch-action: none; }
     </style>
   </head>
   <body>

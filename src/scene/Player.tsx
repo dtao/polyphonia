@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { useStore, viewState } from "../store";
+import { useStore, viewState, touchMove } from "../store";
 import { clampToMap, surfaceHeightAt, wrapLoopPosition } from "../map";
 
 const EYE_HEIGHT = 1.7;
@@ -96,6 +96,58 @@ export function Player() {
     };
   }, [entered, gl.domElement]);
 
+  // Touch look: drag anywhere on the canvas to turn the camera. Mobile browsers
+  // don't support pointer lock, so this drives the same target yaw/pitch the
+  // mouse path does, independent of the lock state. The movement joystick lives
+  // in its own DOM overlay above the canvas, so its touches never reach here.
+  useEffect(() => {
+    if (!entered) return;
+    const canvas = gl.domElement;
+    const sensitivity = 0.004;
+    let lookTouch: number | null = null;
+    let lastX = 0;
+    let lastY = 0;
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (lookTouch !== null) return;
+      const t = e.changedTouches[0];
+      if (!t) return;
+      lookTouch = t.identifier;
+      lastX = t.clientX;
+      lastY = t.clientY;
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (lookTouch === null) return;
+      for (const t of Array.from(e.changedTouches)) {
+        if (t.identifier !== lookTouch) continue;
+        look.current.targetYaw -= (t.clientX - lastX) * sensitivity;
+        look.current.targetPitch -= (t.clientY - lastY) * sensitivity;
+        look.current.targetPitch = THREE.MathUtils.clamp(look.current.targetPitch, -Math.PI / 2 + 0.01, Math.PI / 2 - 0.01);
+        lastX = t.clientX;
+        lastY = t.clientY;
+        e.preventDefault();
+      }
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      for (const t of Array.from(e.changedTouches)) {
+        if (t.identifier === lookTouch) lookTouch = null;
+      }
+    };
+
+    canvas.addEventListener("touchstart", onTouchStart, { passive: false });
+    canvas.addEventListener("touchmove", onTouchMove, { passive: false });
+    canvas.addEventListener("touchend", onTouchEnd);
+    canvas.addEventListener("touchcancel", onTouchEnd);
+    return () => {
+      canvas.removeEventListener("touchstart", onTouchStart);
+      canvas.removeEventListener("touchmove", onTouchMove);
+      canvas.removeEventListener("touchend", onTouchEnd);
+      canvas.removeEventListener("touchcancel", onTouchEnd);
+    };
+  }, [entered, gl.domElement]);
+
   useFrame((_, dt) => {
     if (!entered) return; // no movement until the experience has started
     const lookSmoothing = 34;
@@ -111,10 +163,16 @@ export function Player() {
     right.current.crossVectors(forward.current, up).normalize();
 
     const previous: [number, number] = [camera.position.x, camera.position.z];
-    if (keys.current["KeyW"]) camera.position.addScaledVector(forward.current, speed);
-    if (keys.current["KeyS"]) camera.position.addScaledVector(forward.current, -speed);
-    if (keys.current["KeyD"]) camera.position.addScaledVector(right.current, speed);
-    if (keys.current["KeyA"]) camera.position.addScaledVector(right.current, -speed);
+    // Combine keyboard (WASD) and touch-joystick input into one move vector so
+    // both input methods drive the same clamped, loop-wrapped movement.
+    let moveForward = touchMove.forward;
+    let moveStrafe = touchMove.strafe;
+    if (keys.current["KeyW"]) moveForward += 1;
+    if (keys.current["KeyS"]) moveForward -= 1;
+    if (keys.current["KeyD"]) moveStrafe += 1;
+    if (keys.current["KeyA"]) moveStrafe -= 1;
+    if (moveForward) camera.position.addScaledVector(forward.current, speed * moveForward);
+    if (moveStrafe) camera.position.addScaledVector(right.current, speed * moveStrafe);
     const wrapped = wrapLoopPosition(map, previous, [camera.position.x, camera.position.z]);
     if (wrapped) {
       camera.position.x = wrapped.position[0];
