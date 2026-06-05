@@ -1,6 +1,19 @@
 # Tiled Orb Pop-In Investigation
 
-Date: 2026-06-03
+Date: 2026-06-03 (updated 2026-06-04)
+
+## Status (2026-06-04)
+
+- **Tiled (square/hex) maps: FIXED** and committed in `3633f30 Fix horizon
+  orb pop-in on tiled and looped maps`.
+- **Path-loop maps: STILL BROKEN.** Multiple targeted attempts (see
+  "Update 2026-06-04" at the end) did not resolve it. Each attempt was based
+  on a hypothesis that appears *correct* but turned out to be *insufficient* —
+  fixing it exposed or preserved a different facet of the same pop. The
+  remaining path-loop work is left as uncommitted changes in the working tree
+  (see that section) pending a different approach.
+
+The full chronological investigation follows; jump to the end for the latest.
 
 ## Summary
 
@@ -524,3 +537,153 @@ layers use a more conservative fade curve. If it confirms that preview ids
 change across the path-loop boundary, the likely architectural fix is to replace
 the split base/preview rendering with a single unified visual instance list and
 stable virtual-instance keys.
+
+---
+
+## Update 2026-06-04
+
+This session landed a real fix for tiled maps and a sequence of path-loop
+attempts that all failed. Recording both, because the failures are instructive:
+the diagnoses were essentially right and *still* didn't fix path-loop.
+
+### What was committed and works (tiled/square/hex)
+
+Commit `3633f30`. Three changes, all no-ops at full visibility (so untiled
+compositions render identically):
+
+1. **Base markers distance-fade in explore mode on tiled/looped maps**
+   (`Scene.tsx`). The canonical "base" tile was being rendered at full opacity
+   with no distance fade — confirmed by the debug export showing
+   `base … fade 1 distance 152.4`. The origin tile is not special on a tiled
+   map, so base markers now fade with the same per-stem curve as previews
+   (`baseTrackVisibility`) and unmount below `PREVIEW_FADE_EPSILON`. Edit mode
+   and untiled maps keep base stems fully visible.
+2. **Additive glare uses a steeper fade curve** (`TrackMarker.tsx`). The
+   optical fade for the additive aura/flare/ray layers went from
+   `Math.sqrt(renderedFade)` (which *brightens* low fades — `0.02 -> 0.14`) to
+   `renderedFade * renderedFade` (which darkens them — `0.02 -> 0.0004`). The
+   solid white core still fades linearly. This is what made the smooth fade-in
+   actually *look* smooth instead of snapping on at ~0.1.
+3. **Point-light intensity is attenuated by fade** (`TrackMarker.tsx`), so a
+   faded-but-still-mounted orb no longer emits a full-intensity light.
+
+The maintainer confirmed tiled maps look correct after this commit.
+
+### Why the tiled fix is not enough for path-loop
+
+Path-loop is fundamentally different from square/hex in one way: **crossing the
+seam teleports the camera a full loop length in a single frame.** Tiled maps
+never teleport, so a one-frame staleness in the sampled viewer is invisible. On
+path-loop it is a whole loop, which is exactly when fades/positions are most
+discontinuous.
+
+A key thing that was *verified*, not just assumed: **the seam is geometrically
+seamless.** `wrapLoopPosition` -> `wrapFromEndpoint` (`map.ts`) computes the
+wrapped position as `inverseTransformLoopPoint(T, attempted)` where `T` is the
+exact same transform used by the "end" loop preview (`loopPreviewTransform`,
+same anchor/source/rotation). Because `T` is a rigid motion, distances are
+preserved across the wrap: an orb you are walking toward (rendered as a preview
+copy beyond END) and its base copy near START sit at the *same apparent screen
+position and the same distance* on either side of the seam, with the yaw delta
+compensating heading. So the correct behavior is a pure identity swap (preview
+copy hands off to base copy at the same spot/brightness). The pop is therefore
+**not** a distance-math error; it is a timing/identity/coverage problem around
+that swap.
+
+### Path-loop attempts this session (all insufficient)
+
+These are the changes currently sitting **uncommitted** in the working tree
+(`Scene.tsx`, `TrackMarker.tsx`). They did not fix path-loop and may be reverted.
+
+**Attempt P1 — live per-marker fade from the camera (kill viewer lag).**
+Diagnosis: `Scene` samples the camera into React state (`viewer`) inside a
+`useFrame` that is subscribed *before* `Player`'s, and React state only applies
+on the next render, so `viewer` trails the camera by one frame. For walking
+that is invisible; at the wrap it is a full loop, so on the wrap frame every
+marker's mount/fade is computed for the pre-wrap position while the camera is
+already post-wrap. Fix attempted: give `TrackMarker` optional `fadeWorld` +
+`fadeRange` props and have it compute its own distance fade each frame from the
+live `camera`, instead of trusting the lagged `fade` prop. Result: did not fix
+it; the user reported the *original* pop came back (distant orbs popping into
+existence on crossing).
+
+**Attempt P2 — keep the path-loop marker set fully mounted.** Diagnosis:
+mount/unmount churn at the seam. For path-loop the transform set is already
+constant (`loopAdjacentTransforms` ignores the viewer), so all base + both
+preview copies are now mounted unconditionally and rely on P1's self-fade.
+Result: no churn, but still popped.
+
+**Attempt P3 — snap instead of damp on teleport.** Diagnosis (this one felt
+strongest): with P1/P2 in place the seam swap is an identity swap that only
+looks continuous if each copy's fade is *instantaneous*. The fade-in damping
+(good for walking) makes the newly-near copy ramp up over ~0.5 s instead of
+inheriting its sibling's brightness, which reads as a pop-in. Fix attempted:
+`TrackMarker` tracks its previous-frame fade *target* and, if the target jumps
+by > 0.15 in one frame (a teleport, vs ~0.003/frame for walking), snaps
+`visibleFade` to it instead of damping. (Comparing consecutive *targets*, not
+target-vs-current, because damping deliberately makes the current value lag the
+target.) Result: still not fixed.
+
+### Why P1–P3 were probably right but insufficient — open theories
+
+All three diagnoses look individually correct, yet the pop persists. Leading
+explanations for the residue, roughly in priority order:
+
+1. **Preview coverage is only +/-1 loop, but the fade radius spans more than one
+   loop.** `loopAdjacentTransforms` renders the base tile plus exactly one loop
+   ahead (end preview) and one loop behind (start preview). The path-loop stem
+   fade runs from `PATH_LOOP_STEM_FADE_START = 72` to
+   `PATH_LOOP_STEM_FADE_END = 180`. The default map's loop length is ~81 units
+   (`map.ts` start `[0,40.5]` -> end `[0,-40.5]`). So the visible horizon
+   (up to 180) can reach ~2.2 loops, but only +/-1 loop of copies exist. Orbs
+   roughly 2 loops out (~160-180 units) have **no copy to render**, then gain
+   one the instant you cross the seam (they fall within +/-1 loop of the new
+   position). That is a structural coverage gap that is independent of fade
+   timing or damping — no amount of self-fade/snap can fade in an instance that
+   was never mounted. This is the most likely remaining root cause and was not
+   addressed by P1-P3. Likely fix: render enough loop copies to cover the full
+   fade radius, i.e. `ceil(PATH_LOOP_STEM_FADE_END / loopLength)` loops in each
+   direction, not just one.
+2. **One-frame ordering lag at the wrap.** Even with P1, `TrackMarker`'s
+   `useFrame` is subscribed before `Player`'s (markers render before `<Player>`
+   in `Scene`), so on the exact wrap frame the markers compute fade from the
+   pre-wrap camera while the frame renders at the post-wrap camera; P3 corrects
+   it the next frame. This is at most a 1-frame flash, so it is unlikely to be
+   the whole story, but it should be eliminated by guaranteeing the wrap runs
+   before the marker fade pass (e.g. move the wrap into a pass that precedes
+   marker `useFrame`s, or drive marker fades from a value updated post-wrap).
+3. **Floor/path lighting still keyed to the lagged viewer.** `MapScene`
+   `previewFade` and `tileLightTracks` are still computed from the React
+   `viewer` sample in `Scene` render, not the live camera. The reported pop is
+   the orb/glare, but the floor glow under it could amplify or accompany the
+   effect at the seam.
+4. **Snap threshold / heuristic.** The 0.15 target-jump heuristic in P3 may miss
+   dimmer handoffs (small brightness orbs whose target jumps < 0.15) or fire
+   imperfectly; an explicit wrap signal (a timestamp set by `Player` on wrap,
+   read by markers) would be more reliable than inferring the teleport from the
+   fade delta.
+
+### Recommended next approach
+
+Stop treating base vs preview as separate and stop relying on the sampled
+`viewer` for path-loop. Concretely:
+
+- **Cover the full fade radius with loop copies** (theory 1 above). This is
+  probably the missing piece: until every orb within `PATH_LOOP_STEM_FADE_END`
+  has a mounted copy on *both* sides of the seam, crossing will always reveal a
+  previously-absent instance.
+- **Unify into one virtual-instance list with stable keys** keyed by a
+  continuous loop coordinate / instance index (hypotheses E and F), transformed
+  to world space and faded live from the camera, so identity is preserved
+  across the wrap and there is no base/preview split.
+- **Guarantee the wrap is applied before fades are computed** (theory 2) to
+  remove the residual one-frame lag.
+- Consider an **explicit wrap event** rather than the fade-delta heuristic
+  (theory 4).
+
+### Working-tree state at pause
+
+`npm run build` passes. Committed: tiled fix `3633f30`. Uncommitted: the P1-P3
+path-loop attempts in `src/scene/Scene.tsx` and `src/scene/TrackMarker.tsx`,
+which do **not** fix path-loop and can be reverted if starting the next attempt
+from the clean tiled-fixed baseline is preferable.
