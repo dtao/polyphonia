@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CompositionMap } from "../map";
 import { geoWalk, viewState } from "../store";
+import { isTouchDevice } from "./TouchControls";
 
 type GeoStatus = "idle" | "starting" | "active" | "unsupported" | "error";
 
@@ -11,8 +12,16 @@ const MAX_STEP_METERS = 18;
 const POSITION_SMOOTHING = 0.28;
 const DEFAULT_SCALE = 1;
 
+function isMobileTouchDevice(): boolean {
+  if (!isTouchDevice()) return false;
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return true;
+  return window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+}
+
 export function GeoWalkControls({ map }: { map: CompositionMap }) {
   const tiled = map.tiling.type !== "none";
+  const mobile = isMobileTouchDevice();
+  const available = mobile && tiled;
   const [enabled, setEnabled] = useState(false);
   const [status, setStatus] = useState<GeoStatus>("idle");
   const [accuracy, setAccuracy] = useState<number | null>(null);
@@ -23,15 +32,15 @@ export function GeoWalkControls({ map }: { map: CompositionMap }) {
   const scale = useRef(DEFAULT_SCALE);
 
   useEffect(() => {
-    if (!tiled && enabled) setEnabled(false);
-  }, [enabled, tiled]);
+    if (!available && enabled) setEnabled(false);
+  }, [available, enabled]);
 
   useEffect(() => {
-    geoWalk.active = enabled && tiled;
-    if (!enabled || !tiled) {
+    geoWalk.active = enabled && available;
+    if (!enabled || !available) {
       stopWatch();
       resetWalk();
-      if (!tiled) setStatus("idle");
+      if (!available) setStatus("idle");
       return;
     }
 
@@ -52,7 +61,7 @@ export function GeoWalkControls({ map }: { map: CompositionMap }) {
       stopWatch();
       resetWalk();
     };
-  }, [enabled, tiled]);
+  }, [available, enabled]);
 
   function stopWatch(): void {
     if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current);
@@ -120,7 +129,7 @@ export function GeoWalkControls({ map }: { map: CompositionMap }) {
     setStatus("error");
   }
 
-  if (!tiled) return null;
+  if (!available) return null;
 
   const active = enabled && status !== "error" && status !== "unsupported";
   const label = active ? "Geo Walk on" : "Geo Walk";
