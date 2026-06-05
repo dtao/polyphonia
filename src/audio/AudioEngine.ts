@@ -27,6 +27,13 @@ interface AudibleTrackInstance {
   position: [number, number, number];
 }
 
+export interface AudioLoadProgress {
+  loaded: number;
+  total: number;
+  trackName?: string;
+  phase: "fetching" | "decoding" | "preparing";
+}
+
 const MAX_VIRTUAL_AUDIO_INSTANCES_PER_TRACK = 4;
 
 // Owns the single AudioContext. The golden rule: every stem is scheduled off
@@ -79,22 +86,28 @@ export class AudioEngine {
     this.master.connect(this.ctx.destination);
   }
 
-  async load(comp: Composition): Promise<void> {
+  async load(comp: Composition, onProgress?: (progress: AudioLoadProgress) => void): Promise<void> {
     // Only synthesize placeholders if some track actually needs them.
     const needsSynth = comp.tracks.some((t) => t.source.kind === "synth");
     const stems = needsSynth ? createPlaceholderStems(this.ctx, comp.bpm, comp.bars ?? 4) : null;
 
     const loaded: Array<{ def: TrackDef; buffer: AudioBuffer }> = [];
-    for (const def of comp.tracks) {
+    const total = comp.tracks.length;
+    for (const [index, def] of comp.tracks.entries()) {
       let buffer: AudioBuffer;
       if (def.source.kind === "file") {
+        onProgress?.({ loaded: index, total, trackName: def.name, phase: "fetching" });
         const res = await fetch(def.source.url);
-        buffer = await this.ctx.decodeAudioData(await res.arrayBuffer());
+        const data = await res.arrayBuffer();
+        onProgress?.({ loaded: index, total, trackName: def.name, phase: "decoding" });
+        buffer = await this.ctx.decodeAudioData(data);
       } else {
+        onProgress?.({ loaded: index, total, trackName: def.name, phase: "preparing" });
         buffer = stems![def.source.preset];
       }
 
       loaded.push({ def, buffer });
+      onProgress?.({ loaded: index + 1, total, trackName: def.name, phase: "preparing" });
     }
 
     // Loop bookkeeping. The musical loop length comes from the composition's

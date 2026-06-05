@@ -28,7 +28,8 @@ these spatial compositions.
 - **Portable** — export a composition as a single self-contained
   `.polyphonia.json` (audio embedded) and re-import it anywhere.
 - **Share** — publish a composition to the cloud and get a stable read-only link
-  (`/c/:id`) anyone can open. *(Requires Supabase config — see below.)*
+  (`/c/:id`) anyone can open, with visible audio-loading progress for first
+  plays. *(Requires Supabase config — see below.)*
 - **Account artist identity** — signed-in accounts keep a primary artist
   profile; new compositions and publishing use that artist automatically.
 - **Discover artists** — browse the public gallery or an artist page

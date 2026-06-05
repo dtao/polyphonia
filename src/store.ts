@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import * as THREE from "three";
 import { Composition, TrackDef, compositionRevision, defaultComposition, normalizeComposition, touchComposition } from "./composition";
-import { AudioEngine } from "./audio/AudioEngine";
+import { AudioEngine, AudioLoadProgress } from "./audio/AudioEngine";
 import {
   SerializedComposition,
   serializeComposition,
@@ -50,12 +50,17 @@ export const touchMove = { forward: 0, strafe: 0 };
 type Falloff = Pick<TrackDef, "refDistance" | "maxDistance" | "rolloff">;
 
 export type Mode = "explore" | "edit";
+export type AudioLoadingState =
+  | { status: "idle" }
+  | ({ status: "loading" } & AudioLoadProgress)
+  | { status: "error"; message: string };
 
 interface StoreState {
   composition: Composition;
   /** All saved compositions (manifests; the current one is also a live copy). */
   library: SerializedComposition[];
   engine: AudioEngine | null;
+  audioLoading: AudioLoadingState;
   undoStack: Composition[];
   redoStack: Composition[];
 
@@ -73,6 +78,7 @@ interface StoreState {
   accountArtist: ArtistIdentity | null; // primary artist identity for signed-in publishing
 
   setEngine: (e: AudioEngine | null) => void;
+  setAudioLoading: (audioLoading: AudioLoadingState) => void;
   setEntered: (entered: boolean) => void;
   resetViewToMapStart: () => void;
   setViewer: (viewer: boolean) => void;
@@ -244,6 +250,7 @@ export const useStore = create<StoreState>((set, get) => ({
   composition: defaultComposition,
   library: [],
   engine: null,
+  audioLoading: { status: "idle" },
   undoStack: [],
   redoStack: [],
   mode: "explore",
@@ -260,6 +267,7 @@ export const useStore = create<StoreState>((set, get) => ({
   accountArtist: null,
 
   setEngine: (engine) => set({ engine }),
+  setAudioLoading: (audioLoading) => set({ audioLoading }),
   setEntered: (entered) => set({ entered }),
   resetViewToMapStart: () => moveViewToMapStart(get().composition.map),
   setViewer: (viewer) => set({ viewer }),
@@ -317,12 +325,21 @@ export const useStore = create<StoreState>((set, get) => ({
   // Boot the audio engine for the current composition (idempotent). Used by both
   // the editor entry and the read-only viewer; needs a prior user gesture.
   startAudio: async () => {
-    if (get().engine) return;
+    if (get().engine || get().audioLoading.status === "loading") return;
     const e = new AudioEngine();
-    await e.ctx.resume();
-    await e.load(get().composition);
-    e.start();
-    set({ engine: e });
+    const total = get().composition.tracks.length;
+    set({ audioLoading: { status: "loading", loaded: 0, total, phase: "preparing" } });
+    try {
+      await e.ctx.resume();
+      await e.load(get().composition, (progress) => set({ audioLoading: { status: "loading", ...progress } }));
+      e.start();
+      set({ engine: e, audioLoading: { status: "idle" } });
+    } catch (err) {
+      e.dispose();
+      const message = err instanceof Error ? err.message : "Audio couldn't be loaded.";
+      set({ audioLoading: { status: "error", message } });
+      throw err;
+    }
   },
 
   // Leaving edit mode clears the selection (the properties panel is edit-only).

@@ -6,6 +6,7 @@ import { moveViewToMapStart, useStore } from "../store";
 import { fetchPublishedComposition, isSharingConfigured } from "../cloud";
 import { ArtistAvatar, artistPath } from "./galleryStyles";
 import { TouchControls, isTouchDevice } from "./TouchControls";
+import { AudioLoadingOverlay } from "./AudioLoadingOverlay";
 
 type Status = "loading" | "ready" | "notfound" | "error";
 
@@ -16,6 +17,7 @@ export function Viewer() {
   const comp = useStore((s) => s.composition);
   const entered = useStore((s) => s.entered);
   const engine = useStore((s) => s.engine);
+  const audioLoading = useStore((s) => s.audioLoading);
   const [status, setStatus] = useState<Status>("loading");
   const touch = isTouchDevice();
 
@@ -23,7 +25,7 @@ export function Viewer() {
     let cancelled = false;
     // Reset any prior in-tab session and mark this as a read-only view.
     useStore.getState().engine?.dispose();
-    useStore.setState({ engine: null, entered: false, selectedId: null, mode: "explore", viewer: true });
+    useStore.setState({ engine: null, audioLoading: { status: "idle" }, entered: false, selectedId: null, mode: "explore", viewer: true });
 
     if (!isSharingConfigured) {
       setStatus("error");
@@ -45,7 +47,7 @@ export function Viewer() {
     return () => {
       cancelled = true;
       useStore.getState().engine?.dispose();
-      useStore.setState({ engine: null, entered: false, viewer: false });
+      useStore.setState({ engine: null, audioLoading: { status: "idle" }, entered: false, viewer: false });
     };
   }, [id]);
 
@@ -53,7 +55,7 @@ export function Viewer() {
     if (useStore.getState().engine) return;
     useStore.getState().resetViewToMapStart();
     useStore.getState().setEntered(true);
-    useStore.getState().startAudio();
+    void useStore.getState().startAudio().catch((e) => console.error("Failed to start audio", e));
   }
 
   return (
@@ -110,6 +112,7 @@ export function Viewer() {
           </Link>
         </div>
       )}
+      <AudioLoadingOverlay loading={audioLoading} />
     </>
   );
 }

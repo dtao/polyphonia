@@ -106,3 +106,5 @@ earlier ones.
 **Cross-cutting** (interleave opportunistically): mobile / touch controls
 ([x] explore-mode touch controls for the shared viewer — drag-to-look + virtual
 movement joystick; editing remains desktop-only), loading & error states.
+- [x] Shared viewer shows a greyed-out audio-loading overlay with stem progress
+  after Enter while published stems download and decode.

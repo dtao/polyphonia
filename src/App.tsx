@@ -12,6 +12,7 @@ import { LoopPanel } from "./ui/LoopPanel";
 import { EnvironmentPanel } from "./ui/EnvironmentPanel";
 import { MapPanel } from "./ui/MapPanel";
 import { DebugPanel } from "./ui/DebugPanel";
+import { AudioLoadingOverlay } from "./ui/AudioLoadingOverlay";
 import { useStore } from "./store";
 import { exportComposition } from "./persistence";
 
@@ -56,6 +57,7 @@ function hudShortcutHint({
 export default function App() {
   const engine = useStore((s) => s.engine);
   const setEngine = useStore((s) => s.setEngine);
+  const audioLoading = useStore((s) => s.audioLoading);
   const entered = useStore((s) => s.entered);
   const comp = useStore((s) => s.composition);
   const mode = useStore((s) => s.mode);
@@ -120,7 +122,7 @@ export default function App() {
     if (useStore.getState().engine || useStore.getState().entered) return;
     useStore.getState().resetViewToMapStart();
     useStore.getState().setEntered(true);
-    useStore.getState().startAudio();
+    void useStore.getState().startAudio().catch((e) => console.error("Failed to start audio", e));
   }
 
   // Create a fresh empty composition and drop straight into edit mode so the
@@ -130,7 +132,7 @@ export default function App() {
     useStore.getState().resetViewToMapStart();
     useStore.getState().setMode("edit");
     useStore.getState().setEntered(true);
-    useStore.getState().startAudio();
+    void useStore.getState().startAudio().catch((e) => console.error("Failed to start audio", e));
   }
 
   // Stop the experience and return to the entry screen. Edits to the
@@ -143,6 +145,7 @@ export default function App() {
     useStore.getState().select(null);
     useStore.getState().setEntered(false);
     setEngine(null);
+    useStore.getState().setAudioLoading({ status: "idle" });
   }
 
   // Tab toggles Explore/Edit. Cmd/Ctrl+Z and Shift+Cmd/Ctrl+Z handle edit
@@ -375,6 +378,7 @@ export default function App() {
           )}
         </>
       )}
+      <AudioLoadingOverlay loading={audioLoading} />
       <DebugPanel />
     </>
   );
