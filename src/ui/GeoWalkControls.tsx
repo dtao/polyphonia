@@ -19,7 +19,7 @@ function isMobileTouchDevice(): boolean {
 }
 
 export function GeoWalkControls({ map }: { map: CompositionMap }) {
-  const tiled = map.tiling.type !== "none";
+  const tiled = map.tiling.type === "square" || map.tiling.type === "hex";
   const mobile = isMobileTouchDevice();
   const available = mobile && tiled;
   const [enabled, setEnabled] = useState(false);
