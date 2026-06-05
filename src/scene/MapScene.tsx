@@ -310,8 +310,9 @@ function Segment({
         <BorderRail
           key={side}
           start={borderPoint(segment, segments, "start", side)}
+          startY={startY}
           end={borderPoint(segment, segments, "end", side)}
-          baseY={midY}
+          endY={endY}
           editMode={editMode}
           selected={selected}
         />
@@ -404,17 +405,33 @@ function BranchPlacementLayer({ map }: { map: CompositionMap }) {
   );
 }
 
-function BorderRail({ start, end, baseY = 0, editMode, selected }: { start: [number, number]; end: [number, number]; baseY?: number; editMode: boolean; selected: boolean }) {
-  const dx = end[0] - start[0];
-  const dz = end[1] - start[1];
-  const length = Math.hypot(dx, dz);
-  if (length < 0.02) return null;
-  const angle = -Math.atan2(dz, dx);
-  const mid: [number, number, number] = [(start[0] + end[0]) / 2, baseY + 0.045, (start[1] + end[1]) / 2];
+function BorderRail({ start, startY = 0, end, endY = 0, editMode, selected }: { start: [number, number]; startY?: number; end: [number, number]; endY?: number; editMode: boolean; selected: boolean }) {
+  const ax = start[0];
+  const az = start[1];
+  const bx = end[0];
+  const bz = end[1];
+  const ay = startY + 0.045;
+  const by = endY + 0.045;
+  // The strip follows the ramp in 3D: its length axis points start→end (tilting
+  // with the slope), its width lies horizontal-perpendicular, normal points up.
+  const orientation = useMemo(() => {
+    const forward = new THREE.Vector3(bx - ax, by - ay, bz - az);
+    const length = forward.length();
+    if (length < 0.02) return null;
+    forward.divideScalar(length);
+    const width = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), forward);
+    if (width.lengthSq() < 1e-6) width.set(1, 0, 0);
+    width.normalize();
+    const normal = new THREE.Vector3().crossVectors(forward, width).normalize();
+    const quaternion = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(forward, width, normal));
+    return { length, quaternion };
+  }, [ax, ay, az, bx, by, bz]);
+  if (!orientation) return null;
+  const mid: [number, number, number] = [(ax + bx) / 2, (ay + by) / 2, (az + bz) / 2];
 
   return (
-    <mesh position={mid} rotation={[-Math.PI / 2, 0, angle]}>
-      <planeGeometry args={[length, 0.16]} />
+    <mesh position={mid} quaternion={orientation.quaternion}>
+      <planeGeometry args={[orientation.length, 0.16]} />
       <meshBasicMaterial
         color={selected ? "#8fffe8" : editMode ? "#dce7ff" : "#c8d2df"}
         transparent
