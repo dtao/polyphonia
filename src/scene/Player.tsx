@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { useStore, viewState, touchMove, geoWalk } from "../store";
+import { useStore, viewState, touchMove, arWalk } from "../store";
 import { MapSupport, mapSupportAt, stepOnMap, surfaceHeightOnSupport, wrapLoopPosition } from "../map";
 
 const EYE_HEIGHT = 1.7;
-const GEO_HEADING_SMOOTHING = 0.45;
+const AR_HEADING_SMOOTHING = 0.45;
 
 function turnToward(current: number, target: number, amount: number): number {
   const delta = Math.atan2(Math.sin(target - current), Math.cos(target - current));
@@ -171,16 +171,16 @@ export function Player() {
     right.current.crossVectors(forward.current, up).normalize();
 
     const previous: [number, number] = [camera.position.x, camera.position.z];
-    if (geoWalk.active) {
-      const dx = geoWalk.pendingX;
-      const dz = geoWalk.pendingZ;
-      geoWalk.pendingX = 0;
-      geoWalk.pendingZ = 0;
+    if (arWalk.active) {
+      const dx = arWalk.pendingX;
+      const dz = arWalk.pendingZ;
+      arWalk.pendingX = 0;
+      arWalk.pendingZ = 0;
       camera.position.x += dx;
       camera.position.z += dz;
       if (Math.hypot(dx, dz) > 0.03) {
         const targetYaw = Math.atan2(-dx, -dz);
-        look.current.targetYaw = turnToward(look.current.targetYaw, targetYaw, GEO_HEADING_SMOOTHING);
+        look.current.targetYaw = turnToward(look.current.targetYaw, targetYaw, AR_HEADING_SMOOTHING);
         look.current.targetPitch = THREE.MathUtils.damp(look.current.targetPitch, 0, 10, dt);
       }
     } else {

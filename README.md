@@ -13,9 +13,8 @@ these spatial compositions.
   realistic 3D audio via the Web Audio API (HRTF panning + distance falloff),
   room-wall occlusion for muffled obstructed stems, room reverb, and every stem
   kept sample-locked in sync. Square/hex tiled maps can also opt into an
-  experimental **Geo Walk** mode that mirrors smoothed device geolocation
-  movement into the composition and turns the listener toward their direction
-  of travel.
+  experimental **AR Walk** mode that mirrors mobile WebXR pose movement into
+  the composition and turns the listener toward their direction of travel.
 - **Immersive spaces** — compositions carry environment metadata and can render
   procedural spaces such as a studio void, cavern, forest clearing, or crystal
   hall; editable path maps can define terminal loop points for corridor-like
@@ -60,7 +59,7 @@ small overlay and exportable JSON log. Optional A/B flags include
 ### Controls
 
 - **Explore:** `WASD` move · mouse look · click the scene to look · `Esc` frees the cursor.
-  On square/hex tiled maps, **Geo Walk** can use device geolocation as the movement source.
+  On square/hex tiled maps, **AR Walk** can use mobile WebXR pose tracking as the movement source.
 - **Edit** (toggle with the button or `Tab`): `WASD` pan · drag to
   orbit/turn · scroll to zoom · click a pillar to select, then drag the gizmo to
   move it. Selected stems show Near/Far rings and a rolloff gradient on the
