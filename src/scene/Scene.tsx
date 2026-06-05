@@ -10,7 +10,7 @@ import { ListenerSync } from "./ListenerSync";
 import { EnvironmentScene } from "./EnvironmentScene";
 import { MapScene } from "./MapScene";
 import { DebugSampler } from "./DebugSampler";
-import { CompositionMap, LoopPreviewTransform, tiledMapTransforms, transformLoopPoint } from "../map";
+import { CompositionMap, LoopPreviewTransform, mapPointKey, pointElevation, tiledMapTransforms, transformLoopPoint } from "../map";
 import { TrackDef } from "../composition";
 import { debugFlag } from "../debug";
 
@@ -108,8 +108,14 @@ function TiledMapPreview({ viewer }: { viewer: [number, number] }) {
         const strongestMarkerFade = markerFades.reduce((max, marker) => Math.max(max, marker.fade), 0);
         const previewFade = Math.max(mapFade, strongestMarkerFade * 0.7);
         if (previewFade <= PREVIEW_FADE_EPSILON) return null;
+        // Lift the copy so its near (source) endpoint meets the anchor endpoint's
+        // height: the path appears to keep climbing/descending past the seam. The
+        // camera snaps by the matching amount at the wrap (see Player), so the
+        // reset is invisible — an endless ascent/descent. Only path-loop endpoints
+        // carry elevation; square/hex tiling stays flat.
+        const elevationOffset = previewElevationOffset(map, preview);
         return (
-          <group key={preview.id} position={[preview.anchor[0], 0, preview.anchor[1]]} rotation={[0, preview.rotation, 0]}>
+          <group key={preview.id} position={[preview.anchor[0], elevationOffset, preview.anchor[1]]} rotation={[0, preview.rotation, 0]}>
             <group position={[-preview.source[0], 0, -preview.source[1]]}>
               <MapScene map={map} tracks={tracks} lightTracks={tileLights} editMode={false} previewFade={previewFade} />
               {markerFades.map(({ track, fade, position }) => (
@@ -220,6 +226,13 @@ function tileLightTracks(map: CompositionMap, tracks: TrackDef[], viewer: [numbe
         return [{ ...track, position: [x, track.position[1], z] as [number, number, number] }];
       }),
   ]);
+}
+
+// How far to raise/lower a loop preview copy so its source endpoint aligns with
+// the anchor endpoint it sits against. Non-loop tilings (square/hex) stay flat.
+function previewElevationOffset(map: CompositionMap, preview: LoopPreviewTransform): number {
+  if (map.tiling.type !== "path-loop") return 0;
+  return pointElevation(map, mapPointKey(preview.anchor)) - pointElevation(map, mapPointKey(preview.source));
 }
 
 function previewMapVisibility(map: CompositionMap, preview: { anchor: [number, number] }, viewer: [number, number]): number {

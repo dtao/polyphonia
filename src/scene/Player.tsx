@@ -131,9 +131,12 @@ export function Player() {
     camera.position.x = x;
     camera.position.z = z;
     // Follow the walkable surface: ride at a fixed eye height above the floor,
-    // damped so ramps feel smooth rather than snapping the camera.
+    // damped so ramps feel smooth rather than snapping the camera. At a loop
+    // seam, snap instead — the canonical elevation resets there, but the lifted
+    // preview copy you were walking toward dropped by the same amount, so the
+    // instantaneous reset is invisible and the climb feels continuous.
     const ground = surfaceHeightAt(map, [x, z]);
-    camera.position.y = THREE.MathUtils.damp(camera.position.y, ground + EYE_HEIGHT, 12, dt);
+    camera.position.y = wrapped ? ground + EYE_HEIGHT : THREE.MathUtils.damp(camera.position.y, ground + EYE_HEIGHT, 12, dt);
 
     // Record position + heading so edit mode (and new stems) stay anchored here.
     viewState.x = camera.position.x;
