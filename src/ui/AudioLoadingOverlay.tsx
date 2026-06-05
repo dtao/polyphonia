@@ -8,7 +8,6 @@ export function AudioLoadingOverlay({ loading }: { loading: AudioLoadingState })
   const total = isLoading ? loading.total : 0;
   const loaded = isLoading ? loading.loaded : 0;
   const percent = isLoading && total > 0 ? Math.min(100, Math.max(6, (loaded / total) * 100)) : 100;
-  const detail = isLoading ? loadingDetail(loading) : loading.message;
 
   return (
     <div style={scrim} role="status" aria-live="polite">
@@ -18,18 +17,10 @@ export function AudioLoadingOverlay({ loading }: { loading: AudioLoadingState })
         <div style={meter} aria-hidden="true">
           <div style={{ ...meterFill, width: `${percent}%` }} />
         </div>
-        <div style={detailText}>{detail}</div>
+        {!isLoading && <div style={detailText}>{loading.message}</div>}
       </div>
     </div>
   );
-}
-
-function loadingDetail(loading: Extract<AudioLoadingState, { status: "loading" }>): string {
-  if (!loading.total) return "Preparing the audio engine...";
-  const name = loading.trackName ? ` "${loading.trackName}"` : "";
-  if (loading.phase === "fetching") return `Downloading${name} (${loading.loaded + 1} of ${loading.total})`;
-  if (loading.phase === "decoding") return `Decoding${name} (${loading.loaded + 1} of ${loading.total})`;
-  return `Preparing stems (${loading.loaded} of ${loading.total})`;
 }
 
 const scrim: React.CSSProperties = {
