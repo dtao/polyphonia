@@ -1,8 +1,11 @@
 # AGENTS.md
 
 Orientation for coding agents working on Polyphonia. Read this, then
-[README.md](README.md) (product/features) and [BACKLOG.md](BACKLOG.md) (roadmap +
-what's done). Keep both updated as you work.
+[README.md](README.md) (product/features) and [BACKLOG.md](BACKLOG.md) (active
+roadmap). Keep README product guidance current when behavior changes. Treat
+BACKLOG as a forward-looking planning list: update existing relevant checkboxes
+when roadmap work is completed or priorities change, but do not add completed
+implementation notes after the fact. Git history is the record of changes.
 
 ## What this is
 
@@ -200,4 +203,4 @@ Netlify (config in `netlify.toml`; SPA fallback in `public/_redirects` so
 `BACKLOG.md` — M1–M4 are done and Milestone 5 is partially complete. Remaining:
 map-shape editing, map-aware stem tools, material-aware ambience, tiling editor
 aids, publish/viewer compatibility sweeps, and the later high-fidelity
-environment pipeline. Update the checkboxes as you complete items.
+environment pipeline. Use it to track remaining work, not as a changelog.
