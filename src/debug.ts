@@ -65,6 +65,11 @@ export function debugFlag(name: string): boolean {
   return value === "1" || value === "true";
 }
 
+export function debugValue(name: string): string | undefined {
+  if (typeof window === "undefined" || !(import.meta as any).env?.DEV) return undefined;
+  return new URLSearchParams(window.location.search).get(name) ?? undefined;
+}
+
 export function recordDebugSample(sample: DebugSample): void {
   latest = sample;
   samples.push(sample);

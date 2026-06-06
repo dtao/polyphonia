@@ -14,7 +14,7 @@ import { DebugSampler } from "./DebugSampler";
 import { ARWalkSession } from "./ARWalkSession";
 import { CompositionMap, LoopPreviewTransform, loopPreviewElevationOffset, tiledMapTransforms, transformLoopPoint } from "../map";
 import { TrackDef } from "../composition";
-import { debugFlag } from "../debug";
+import { debugFlag, debugValue } from "../debug";
 
 const VIEWER_SAMPLE_DISTANCE = 0.75;
 const TILE_PREVIEW_RADIUS = 180;
@@ -57,11 +57,15 @@ export function Scene() {
   // visible copy so the room beyond a seam lights up as you approach it.
   const showEchoLights =
     mode === "explore" && loopPreviewsEnabled && map.tiling.type !== "none" && !debugFlag("debugNoPointLights") && !debugFlag("debugNoEchoLights");
+  const forcedPack = debugValue("environmentPack");
+  const renderedEnvironment = forcedPack
+    ? { ...environment, pack: { id: forcedPack, quality: "high" as const } }
+    : environment;
 
   return (
     <>
       <ARWorldTransform>
-        <EnvironmentScene environment={environment} editMode={mode === "edit"} />
+        <EnvironmentScene environment={renderedEnvironment} map={map} editMode={mode === "edit"} />
         {mode === "explore" && loopPreviewsEnabled && <TiledMapPreview viewer={viewer} groupRef={previewGroup} />}
         <TileBoundaryOverlay map={map} viewer={viewer} editMode={mode === "edit"} />
         <MapScene map={map} tracks={tracks} lightTracks={mode === "explore" ? tileLights : tracks} editMode={mode === "edit"} />

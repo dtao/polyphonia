@@ -4,6 +4,7 @@ import { useMemo, useRef } from "react";
 import * as THREE from "three";
 import { EnvironmentSettings } from "../environment";
 import { AuthoredEnvironmentScene } from "./AuthoredEnvironmentScene";
+import type { CompositionMap } from "../map";
 
 type PropSet = Array<{ position: [number, number, number]; scale: [number, number, number]; rotation?: [number, number, number] }>;
 type TorchSet = Array<{ position: [number, number, number]; rotation: [number, number, number]; color: string }>;
@@ -12,7 +13,15 @@ export function environmentBackgroundColor(type: EnvironmentSettings["type"]): s
   return TONES[type].background as string;
 }
 
-export function EnvironmentScene({ environment, editMode }: { environment: EnvironmentSettings; editMode: boolean }) {
+export function EnvironmentScene({
+  environment,
+  map,
+  editMode,
+}: {
+  environment: EnvironmentSettings;
+  map: CompositionMap;
+  editMode: boolean;
+}) {
   const tone = TONES[environment.type];
 
   return (
@@ -40,7 +49,7 @@ export function EnvironmentScene({ environment, editMode }: { environment: Envir
       {environment.type === "crystal" && <CrystalHall ambience={environment.ambience} />}
       {environment.type === "galaxy" && <Galaxy ambience={environment.ambience} />}
       {environment.type === "studio" && <Studio accents={environment.ambience} />}
-      {environment.pack && <AuthoredEnvironmentScene environment={environment} />}
+      {environment.pack && <AuthoredEnvironmentScene environment={environment} map={map} editMode={editMode} />}
     </>
   );
 }
