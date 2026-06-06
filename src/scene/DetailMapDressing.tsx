@@ -2,6 +2,11 @@ import { useTexture } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
+import type {
+  EnvironmentPackDefinition,
+  EnvironmentPackLandmark,
+  EnvironmentPackMaterial,
+} from "../environmentPacks";
 import type { CompositionMap, MapPlatform, MapRoom, WalkableSegment } from "../map";
 import {
   isPointInsideMap,
@@ -14,15 +19,19 @@ import {
 } from "../map";
 import { arWalk, viewState } from "../store";
 
-type DetailProfile = "cavern" | "forest" | "crystal";
-
 interface DetailPlacement {
   position: [number, number, number];
   rotationY: number;
   scale: [number, number, number];
 }
 
-const packTextureCache = new Map<DetailProfile, THREE.Texture[]>();
+interface PackMaterials {
+  floor: THREE.MeshStandardMaterial;
+  wall: THREE.MeshStandardMaterial;
+  ceiling: THREE.MeshStandardMaterial;
+}
+
+const packTextureCache = new Map<string, THREE.Texture[]>();
 
 // How far out (in world units) adjacent loop copies receive the textured floor
 // shells. Kept near the full-opacity band of the reactive floor copies (which
@@ -38,19 +47,21 @@ const DETAIL_OBJECT_CULL = 130;
 
 export function DetailMapDressing({
   map,
-  detailGeometry,
-  profile,
+  detailLandmarks,
+  pack,
   editMode,
   quality,
 }: {
   map: CompositionMap;
-  detailGeometry: THREE.BufferGeometry;
-  profile: DetailProfile;
+  detailLandmarks: Array<{
+    landmark: EnvironmentPackLandmark;
+    geometry: THREE.BufferGeometry;
+  }>;
+  pack: EnvironmentPackDefinition;
   editMode: boolean;
   quality: "low" | "high";
 }) {
-  const material = usePackMaterial(profile, editMode);
-  const placements = useMemo(() => detailPlacements(map, quality, profile), [map, quality, profile]);
+  const materials = usePackMaterials(pack, editMode);
   const camera = useThree((s) => s.camera);
 
   // Adjacent tile copies of the textured floor/dressing keep the loop boundary
@@ -75,21 +86,9 @@ export function DetailMapDressing({
     [tiled, map, viewer],
   );
 
-  const detailMatrices = useMemo(() => {
-    const matrices = placements.map((p) => transform(p.position, p.scale, p.rotationY));
-    for (const preview of objectPreviews) {
-      const lift = loopPreviewElevationOffset(map, preview);
-      for (const p of placements) {
-        const [tx, tz] = transformLoopPoint(preview, [p.position[0], p.position[2]]);
-        matrices.push(transform([tx, p.position[1] + lift, tz], p.scale, p.rotationY + preview.rotation));
-      }
-    }
-    return matrices;
-  }, [placements, objectPreviews, map]);
-
   return (
     <group>
-      <MapShell map={map} material={material} />
+      <MapShell map={map} materials={materials} />
       {floorPreviews.map((preview) => (
         <group
           key={preview.id}
@@ -97,30 +96,86 @@ export function DetailMapDressing({
           rotation={[0, preview.rotation, 0]}
         >
           <group position={[-preview.source[0], 0, -preview.source[1]]}>
-            <MapShell map={map} material={material} />
+            <MapShell map={map} materials={materials} />
           </group>
         </group>
       ))}
-      <DetailInstances geometry={detailGeometry} material={material} transforms={detailMatrices} quality={quality} profile={profile} />
+      {detailLandmarks.map(({ landmark, geometry }) => (
+        <LandmarkInstances
+          key={landmark.id}
+          geometry={geometry}
+          material={materials.floor}
+          map={map}
+          objectPreviews={objectPreviews}
+          quality={quality}
+          landmark={landmark}
+        />
+      ))}
     </group>
   );
 }
 
+function LandmarkInstances({
+  geometry,
+  material,
+  map,
+  objectPreviews,
+  quality,
+  landmark,
+}: {
+  geometry: THREE.BufferGeometry;
+  material: THREE.Material;
+  map: CompositionMap;
+  objectPreviews: ReturnType<typeof tiledMapTransforms>;
+  quality: "low" | "high";
+  landmark: EnvironmentPackLandmark;
+}) {
+  const placements = useMemo(() => detailPlacements(map, quality, landmark), [landmark, map, quality]);
+  const transforms = useMemo(() => {
+    const matrices = placements.map((placement) =>
+      transform(placement.position, placement.scale, placement.rotationY),
+    );
+    for (const preview of objectPreviews) {
+      const lift = loopPreviewElevationOffset(map, preview);
+      for (const placement of placements) {
+        const [tx, tz] = transformLoopPoint(preview, [placement.position[0], placement.position[2]]);
+        matrices.push(
+          transform(
+            [tx, placement.position[1] + lift, tz],
+            placement.scale,
+            placement.rotationY + preview.rotation,
+          ),
+        );
+      }
+    }
+    return matrices;
+  }, [map, objectPreviews, placements]);
+  return (
+    <DetailInstances
+      geometry={geometry}
+      material={material}
+      transforms={transforms}
+      quality={quality}
+      landmark={landmark}
+    />
+  );
+}
+
 // The static textured shells (floor slabs, walls) for one copy of the map.
-function MapShell({ map, material }: { map: CompositionMap; material: THREE.MeshStandardMaterial }) {
+function MapShell({ map, materials }: { map: CompositionMap; materials: PackMaterials }) {
   return (
     <group>
       {map.segments.length === 0 && map.rooms.length === 0 && map.platforms.length === 0 && (
-        <FallbackFloor map={map} material={material} />
+        <FallbackFloor map={map} material={materials.floor} />
       )}
       {map.segments.map((segment) => (
-        <SegmentShell key={segment.id} map={map} segment={segment} material={material} />
+        <SegmentShell key={segment.id} map={map} segment={segment} materials={materials} />
       ))}
       {map.rooms.map((room) => (
-        <RoomFloor key={room.id} map={map} room={room} material={material} />
+        <RoomFloor key={room.id} map={map} room={room} material={materials.floor} />
       ))}
       {map.platforms.map((platform) => (
-        <PlatformFloor key={platform.id} map={map} platform={platform} material={material} />
+        <PlatformFloor key={platform.id} map={map} platform={platform} material={materials.floor} />
       ))}
       {map.walls.map((wall) => {
         const dx = wall.end[0] - wall.start[0];
@@ -129,7 +184,7 @@ function MapShell({ map, material }: { map: CompositionMap; material: THREE.Mesh
         return (
           <mesh
             key={wall.id}
-            material={material}
+            material={materials.wall}
             position={[(wall.start[0] + wall.end[0]) / 2, wall.height / 2, (wall.start[1] + wall.end[1]) / 2]}
             rotation={[0, Math.atan2(dx, dz), 0]}
             castShadow
@@ -174,11 +229,11 @@ function FallbackFloor({ map, material }: { map: CompositionMap; material: THREE
 function SegmentShell({
   map,
   segment,
-  material,
+  materials,
 }: {
   map: CompositionMap;
   segment: WalkableSegment;
-  material: THREE.MeshStandardMaterial;
+  materials: PackMaterials;
 }) {
   const dx = segment.end[0] - segment.start[0];
   const dz = segment.end[1] - segment.start[1];
@@ -207,13 +262,13 @@ function SegmentShell({
 
   return (
     <group position={position} rotation={[0, yaw, 0]}>
-      <mesh material={material} rotation={[pitch, 0, 0]} castShadow receiveShadow>
+      <mesh material={materials.floor} rotation={[pitch, 0, 0]} castShadow receiveShadow>
         <boxGeometry args={[segment.width, 0.26, length]} />
       </mesh>
       {tunnel && (
         <>
           <mesh
-            material={material}
+            material={materials.wall}
             position={[-segment.width / 2, wallHeight / 2, 0]}
             rotation={[pitch, 0, 0]}
             castShadow
@@ -222,7 +277,7 @@ function SegmentShell({
             <boxGeometry args={[0.45, wallHeight, length]} />
           </mesh>
           <mesh
-            material={material}
+            material={materials.wall}
             position={[segment.width / 2, wallHeight / 2, 0]}
             rotation={[pitch, 0, 0]}
             castShadow
@@ -230,7 +285,13 @@ function SegmentShell({
           >
             <boxGeometry args={[0.45, wallHeight, length]} />
           </mesh>
-          <mesh material={material} position={[0, wallHeight, 0]} rotation={[pitch, 0, 0]} castShadow receiveShadow>
+          <mesh
+            material={materials.ceiling}
+            position={[0, wallHeight, 0]}
+            rotation={[pitch, 0, 0]}
+            castShadow
+            receiveShadow
+          >
             <boxGeometry args={[segment.width + 0.8, 0.45, length]} />
           </mesh>
         </>
@@ -301,15 +362,15 @@ function DetailInstances({
   material,
   transforms,
   quality,
-  profile,
+  landmark,
 }: {
   geometry: THREE.BufferGeometry;
   material: THREE.Material;
   transforms: THREE.Matrix4[];
   quality: "low" | "high";
-  profile: DetailProfile;
+  landmark: EnvironmentPackLandmark;
 }) {
-  const lowGeometry = useMemo(() => lowDetailGeometry(profile), [profile]);
+  const lowGeometry = useMemo(() => lowDetailGeometry(landmark.fallback), [landmark.fallback]);
   const nearMesh = useMemo(() => emptyInstancedMesh(geometry, material, transforms.length), [geometry, material, transforms.length]);
   const farMesh = useMemo(() => emptyInstancedMesh(lowGeometry, material, transforms.length), [lowGeometry, material, transforms.length]);
   const lastUpdate = useRef(-Infinity);
@@ -361,61 +422,111 @@ function emptyInstancedMesh(geometry: THREE.BufferGeometry, material: THREE.Mate
   return mesh;
 }
 
-function usePackMaterial(profile: DetailProfile, editMode: boolean): THREE.MeshStandardMaterial {
-  const config = PROFILE_CONFIG[profile];
-  const loaded = useTexture(config.textures) as THREE.Texture[];
-  const textures = useMemo(
-    () => {
-      const cached = packTextureCache.get(profile);
-      if (cached) return cached;
-
-      const created = loaded.map((source, index) => {
-        const texture = source.clone();
-        texture.wrapS = THREE.RepeatWrapping;
-        texture.wrapT = THREE.RepeatWrapping;
-        texture.repeat.set(config.repeat, config.repeat);
-        if (index === 0) texture.colorSpace = THREE.SRGBColorSpace;
-        if (index === 3) texture.channel = 0;
-        texture.needsUpdate = true;
-        return texture;
-      });
-      packTextureCache.set(profile, created);
-      return created;
+function usePackMaterials(pack: EnvironmentPackDefinition, editMode: boolean): PackMaterials {
+  const definitions = useMemo(
+    () => ({
+      floor: pack.materials.floor,
+      wall: pack.materials.wall ?? pack.materials.floor,
+      ceiling: pack.materials.ceiling ?? pack.materials.wall ?? pack.materials.floor,
+    }),
+    [pack],
+  );
+  const urls = useMemo(
+    () => [...new Set(Object.values(definitions).flatMap(materialTextureUrls))],
+    [definitions],
+  );
+  const loaded = useTexture(urls) as THREE.Texture[];
+  const textures = useMemo(() => {
+    const cacheKey = `${pack.id}:${urls.join("|")}`;
+    const cached = packTextureCache.get(cacheKey);
+    if (cached) return cached;
+    const created = loaded.map((source, index) => {
+      const texture = source.clone();
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.RepeatWrapping;
+      if (urls[index] === definitions.floor.albedo ||
+          urls[index] === definitions.wall.albedo ||
+          urls[index] === definitions.ceiling.albedo) {
+        texture.colorSpace = THREE.SRGBColorSpace;
+      }
+      texture.needsUpdate = true;
+      return texture;
+    });
+    packTextureCache.set(cacheKey, created);
+    return created;
+  }, [definitions, loaded, pack.id, urls]);
+  const textureByUrl = useMemo(
+    () => new Map(urls.map((url, index) => [url, textures[index]])),
+    [textures, urls],
+  );
+  const materials = useMemo(
+    () => ({
+      floor: createPackMaterial(definitions.floor, textureByUrl, editMode),
+      wall: createPackMaterial(definitions.wall, textureByUrl, editMode),
+      ceiling: createPackMaterial(definitions.ceiling, textureByUrl, editMode),
+    }),
+    [definitions, editMode, textureByUrl],
+  );
+  useEffect(
+    () => () => {
+      materials.floor.dispose();
+      if (materials.wall !== materials.floor) materials.wall.dispose();
+      if (materials.ceiling !== materials.floor && materials.ceiling !== materials.wall) materials.ceiling.dispose();
     },
-    [config, loaded, profile],
+    [materials],
   );
-  const material = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        map: textures[0],
-        normalMap: textures[1],
-        normalScale: new THREE.Vector2(0.7, 0.7),
-        roughnessMap: textures[2],
-        roughness: config.roughness,
-        aoMap: textures[3],
-        aoMapIntensity: config.ao,
-        metalness: config.metalness,
-        emissive: config.emissive,
-        emissiveIntensity: config.emissiveIntensity,
-        transparent: editMode,
-        opacity: editMode ? 0.58 : 1,
-        depthWrite: !editMode,
-      }),
-    [config, editMode, textures],
-  );
-
-  // Materials are transient because edit mode changes their transparency.
-  // Textures are stable resources for the three built-in profiles: disposing
-  // them during a pack replacement can invalidate the replacement render while
-  // React is switching suspended asset trees. Keep one cloned set per profile
-  // instead, just as useTexture keeps the loaded sources cached.
-  useEffect(() => () => material.dispose(), [material]);
-
-  return material;
+  return materials;
 }
 
-function detailPlacements(map: CompositionMap, quality: "low" | "high", profile: DetailProfile): DetailPlacement[] {
-  const config = PROFILE_CONFIG[profile];
+function materialTextureUrls(material: EnvironmentPackMaterial): string[] {
+  return [
+    material.albedo,
+    material.normal,
+    material.roughnessMap,
+    material.metalnessMap,
+    material.ao,
+    material.emissiveMap,
+  ].filter((url): url is string => !!url);
+}
+
+function createPackMaterial(
+  definition: EnvironmentPackMaterial,
+  textures: Map<string, THREE.Texture>,
+  editMode: boolean,
+): THREE.MeshStandardMaterial {
+  const texture = (url: string | undefined, repeat = true) => {
+    const found = url ? textures.get(url) : undefined;
+    if (found && repeat) found.repeat.set(definition.repeat, definition.repeat);
+    return found;
+  };
+  const aoMap = texture(definition.ao);
+  if (aoMap) aoMap.channel = 0;
+  return new THREE.MeshStandardMaterial({
+    map: texture(definition.albedo),
+    normalMap: texture(definition.normal),
+    normalScale: new THREE.Vector2(definition.normalScale ?? 0.7, definition.normalScale ?? 0.7),
+    roughnessMap: texture(definition.roughnessMap),
+    roughness: definition.roughness,
+    metalnessMap: texture(definition.metalnessMap),
+    metalness: definition.metalness,
+    aoMap,
+    aoMapIntensity: definition.aoIntensity ?? 1,
+    emissiveMap: texture(definition.emissiveMap),
+    emissive: definition.emissive ?? "#000000",
+    emissiveIntensity: definition.emissiveIntensity ?? 0,
+    transparent: editMode,
+    opacity: editMode ? 0.58 : 1,
+    depthWrite: !editMode,
+  });
+}
+
+function detailPlacements(
+  map: CompositionMap,
+  quality: "low" | "high",
+  landmark: EnvironmentPackLandmark,
+): DetailPlacement[] {
+  const config = landmark.autoPlacement;
+  if (!config) return [];
   const placements: DetailPlacement[] = [];
   for (const segment of map.segments) {
     if (segment.kind === "tunnel") continue;
@@ -442,7 +553,11 @@ function detailPlacements(map: CompositionMap, quality: "low" | "high", profile:
         // offset can land on a connecting path/room/platform, so an object that
         // belongs beside one segment would otherwise sit in the middle of another.
         if (isPointInsideMap(map, [px, pz])) continue;
-        placements.push({ position: [px, y + config.baseY, pz], scale: detailScale(profile, seed), rotationY: seeded(seed, 5) * Math.PI });
+        placements.push({
+          position: [px, y + config.baseY, pz],
+          scale: detailScale(config, seed),
+          rotationY: seeded(seed, 5) * Math.PI,
+        });
       }
     }
   }
@@ -458,30 +573,30 @@ function detailPlacements(map: CompositionMap, quality: "low" | "high", profile:
       const pz = room.center[1] + Math.sin(angle) * radiusZ;
       // Skip ring rocks that fall on a path/platform connected to the room.
       if (isPointInsideMap(map, [px, pz])) continue;
-      placements.push({ position: [px, y, pz], scale: detailScale(profile, hash(`${room.id}:${index}`)), rotationY: angle });
+      placements.push({
+        position: [px, y, pz],
+        scale: detailScale(config, hash(`${room.id}:${index}`)),
+        rotationY: angle,
+      });
     }
   }
 
   return placements;
 }
 
-function lowDetailGeometry(profile: DetailProfile): THREE.BufferGeometry {
-  if (profile === "forest") return new THREE.ConeGeometry(0.8, 4, 7);
-  if (profile === "crystal") return new THREE.OctahedronGeometry(1, 0);
+function lowDetailGeometry(fallback: EnvironmentPackLandmark["fallback"]): THREE.BufferGeometry {
+  if (fallback === "tree") return new THREE.ConeGeometry(0.8, 4, 7);
+  if (fallback === "crystal") return new THREE.OctahedronGeometry(1, 0);
   return new THREE.DodecahedronGeometry(1, 0);
 }
 
-function detailScale(profile: DetailProfile, seed: number): [number, number, number] {
-  if (profile === "forest") {
-    const width = 0.75 + seeded(seed, 2) * 0.65;
-    const height = 0.8 + seeded(seed, 3) * 0.8;
-    return [width, height, width];
-  }
-  if (profile === "crystal") {
-    const width = 0.65 + seeded(seed, 2) * 1.15;
-    return [width, 1 + seeded(seed, 3) * 2.3, width];
-  }
-  return [1.1 + seeded(seed, 2) * 1.5, 0.8 + seeded(seed, 3) * 1.8, 1 + seeded(seed, 4) * 1.3];
+function detailScale(
+  config: NonNullable<EnvironmentPackLandmark["autoPlacement"]>,
+  seed: number,
+): [number, number, number] {
+  return config.scaleMin.map((minimum, index) =>
+    THREE.MathUtils.lerp(minimum, config.scaleMax[index], seeded(seed, index + 2)),
+  ) as [number, number, number];
 }
 
 function transform(position: [number, number, number], scale: [number, number, number], rotationY: number): THREE.Matrix4 {
@@ -505,75 +620,3 @@ function seeded(seed: number, salt: number): number {
   const value = Math.sin(seed * 0.0001 + salt * 91.713) * 43758.5453;
   return value - Math.floor(value);
 }
-
-const PROFILE_CONFIG: Record<
-  DetailProfile,
-  {
-    textures: string[];
-    repeat: number;
-    roughness: number;
-    metalness: number;
-    ao: number;
-    emissive: string;
-    emissiveIntensity: number;
-    spacing: number;
-    edgeOffset: number;
-    edgeJitter: number;
-    baseY: number;
-  }
-> = {
-  cavern: {
-    textures: [
-      "/environments/atlas-cavern/textures/stone-albedo.webp",
-      "/environments/atlas-cavern/textures/stone-normal.webp",
-      "/environments/atlas-cavern/textures/stone-roughness.webp",
-      "/environments/atlas-cavern/textures/stone-ao.webp",
-    ],
-    repeat: 2.5,
-    roughness: 0.92,
-    metalness: 0.02,
-    ao: 0.75,
-    emissive: "#000000",
-    emissiveIntensity: 0,
-    spacing: 4.5,
-    edgeOffset: 0.7,
-    edgeJitter: 1.2,
-    baseY: 0.35,
-  },
-  forest: {
-    textures: [
-      "/environments/verdant-grove/textures/forest-albedo.webp",
-      "/environments/verdant-grove/textures/forest-normal.webp",
-      "/environments/verdant-grove/textures/forest-roughness.webp",
-      "/environments/verdant-grove/textures/forest-ao.webp",
-    ],
-    repeat: 3.2,
-    roughness: 0.96,
-    metalness: 0,
-    ao: 0.9,
-    emissive: "#000000",
-    emissiveIntensity: 0,
-    spacing: 6.5,
-    edgeOffset: 2.2,
-    edgeJitter: 2.6,
-    baseY: 0,
-  },
-  crystal: {
-    textures: [
-      "/environments/prismatic-reach/textures/crystal-albedo.webp",
-      "/environments/prismatic-reach/textures/crystal-normal.webp",
-      "/environments/prismatic-reach/textures/crystal-roughness.webp",
-      "/environments/prismatic-reach/textures/crystal-ao.webp",
-    ],
-    repeat: 2.1,
-    roughness: 0.38,
-    metalness: 0.16,
-    ao: 0.62,
-    emissive: "#183859",
-    emissiveIntensity: 0.34,
-    spacing: 5.2,
-    edgeOffset: 1.1,
-    edgeJitter: 1.7,
-    baseY: 0.2,
-  },
-};

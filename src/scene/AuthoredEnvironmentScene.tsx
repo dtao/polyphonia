@@ -86,28 +86,34 @@ function EnvironmentAsset({
     return clone;
   }, [gltf.scene]);
 
-  const detailGeometry = useMemo(() => {
-    let geometry: THREE.BufferGeometry | undefined;
-    gltf.scene.traverse((object) => {
-      if (!geometry && object instanceof THREE.Mesh && object.name.startsWith(pack.geometryPrefix)) geometry = object.geometry;
-    });
-    return geometry;
-  }, [gltf.scene, pack.geometryPrefix]);
+  const landmarkGeometries = useMemo(
+    () =>
+      pack.landmarks.flatMap((landmark) => {
+        let geometry: THREE.BufferGeometry | undefined;
+        gltf.scene.traverse((object) => {
+          if (!geometry && object instanceof THREE.Mesh && object.name.startsWith(landmark.nodePrefix)) {
+            geometry = object.geometry;
+          }
+        });
+        return geometry ? [{ landmark, geometry }] : [];
+      }),
+    [gltf.scene, pack.landmarks],
+  );
   const hasMapGeometry = map.segments.length > 0 || map.rooms.length > 0 || map.platforms.length > 0 || map.walls.length > 0;
 
   return (
     <>
       {!hasMapGeometry && <AuthoredSceneInstances scene={scene} map={map} editMode={editMode} />}
-      {detailGeometry && (
+      {landmarkGeometries.length > 0 && (
         <DetailMapDressing
           map={map}
-          detailGeometry={detailGeometry}
-          profile={pack.profile}
+          detailLandmarks={landmarkGeometries}
+          pack={pack}
           editMode={editMode}
           quality={quality}
         />
       )}
-      <PackLighting profile={pack.profile} enabled={!editMode} quality={quality} />
+      <PackLighting preset={pack.lighting} enabled={!editMode} quality={quality} />
     </>
   );
 }
@@ -187,16 +193,16 @@ function validateAssetBudget(scene: THREE.Object3D, pack: EnvironmentPackDefinit
 }
 
 function PackLighting({
-  profile,
+  preset,
   enabled,
   quality,
 }: {
-  profile: EnvironmentPackDefinition["profile"];
+  preset: EnvironmentPackDefinition["lighting"];
   enabled: boolean;
   quality: "low" | "high";
 }) {
   if (!enabled) return null;
-  if (profile === "forest") {
+  if (preset === "forest") {
     return (
       <>
         <hemisphereLight args={["#d8efc0", "#172015", quality === "high" ? 1.35 : 0.9]} />
@@ -212,7 +218,7 @@ function PackLighting({
       </>
     );
   }
-  if (profile === "crystal") {
+  if (preset === "crystal") {
     return (
       <>
         <ambientLight color="#7694bd" intensity={quality === "high" ? 1.05 : 0.72} />

@@ -14,7 +14,8 @@ describe("environment pack registry", () => {
   it("resolves registered packs and their preferred assets", () => {
     const pack = environmentPackById("atlas-cavern");
 
-    expect(pack?.profile).toBe("cavern");
+    expect(pack?.materials.floor.albedo).toContain("stone-albedo");
+    expect(pack?.landmarks[0]?.nodePrefix).toBe("WallRock_");
     expect(environmentPackAsset(pack!, "auto")?.quality).toBe("high");
     expect(environmentPackById("missing")).toBeUndefined();
   });

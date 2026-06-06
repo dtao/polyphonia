@@ -14,14 +14,51 @@ export interface EnvironmentPackAsset {
   compressedTextures?: "ktx2";
 }
 
+export interface EnvironmentPackMaterial {
+  albedo: string;
+  normal?: string;
+  roughnessMap?: string;
+  metalnessMap?: string;
+  ao?: string;
+  emissiveMap?: string;
+  repeat: number;
+  normalScale?: number;
+  roughness: number;
+  metalness: number;
+  aoIntensity?: number;
+  emissive?: string;
+  emissiveIntensity?: number;
+}
+
+export interface EnvironmentPackLandmark {
+  id: string;
+  name: string;
+  nodePrefix: string;
+  placement: "floor" | "wall" | "ceiling";
+  fallback: "rock" | "tree" | "crystal";
+  autoPlacement?: {
+    spacing: number;
+    edgeOffset: number;
+    edgeJitter: number;
+    baseY: number;
+    scaleMin: [number, number, number];
+    scaleMax: [number, number, number];
+  };
+}
+
 export interface EnvironmentPackDefinition {
   id: string;
   name: string;
-  profile: "cavern" | "forest" | "crystal";
-  geometryPrefix: string;
   description: string;
   variants: readonly string[];
   assets: readonly EnvironmentPackAsset[];
+  materials: {
+    floor: EnvironmentPackMaterial;
+    wall?: EnvironmentPackMaterial;
+    ceiling?: EnvironmentPackMaterial;
+  };
+  landmarks: readonly EnvironmentPackLandmark[];
+  lighting?: "cavern" | "forest" | "crystal";
   attribution: readonly EnvironmentPackAttribution[];
   budgets: {
     maxTextureSize: number;
@@ -48,8 +85,6 @@ export const ENVIRONMENT_PACKS: readonly EnvironmentPackDefinition[] = [
   {
     id: "atlas-cavern",
     name: "Atlas Cavern",
-    profile: "cavern",
-    geometryPrefix: "WallRock_",
     description: "Authored rock chambers, columns, and overhead formations",
     variants: ["ember"],
     assets: [
@@ -58,6 +93,37 @@ export const ENVIRONMENT_PACKS: readonly EnvironmentPackDefinition[] = [
         quality: "high",
       },
     ],
+    materials: {
+      floor: {
+        albedo: "/environments/atlas-cavern/textures/stone-albedo.webp",
+        normal: "/environments/atlas-cavern/textures/stone-normal.webp",
+        roughnessMap: "/environments/atlas-cavern/textures/stone-roughness.webp",
+        ao: "/environments/atlas-cavern/textures/stone-ao.webp",
+        repeat: 2.5,
+        normalScale: 0.7,
+        roughness: 0.92,
+        metalness: 0.02,
+        aoIntensity: 0.75,
+      },
+    },
+    landmarks: [
+      {
+        id: "wall-rock",
+        name: "Wall rock",
+        nodePrefix: "WallRock_",
+        placement: "floor",
+        fallback: "rock",
+        autoPlacement: {
+          spacing: 4.5,
+          edgeOffset: 0.7,
+          edgeJitter: 1.2,
+          baseY: 0.35,
+          scaleMin: [1.1, 0.8, 1],
+          scaleMax: [2.6, 2.6, 2.3],
+        },
+      },
+    ],
+    lighting: "cavern",
     attribution: [
       {
         title: "Atlas Cavern",
@@ -85,8 +151,6 @@ export const ENVIRONMENT_PACKS: readonly EnvironmentPackDefinition[] = [
   {
     id: "verdant-grove",
     name: "Verdant Grove",
-    profile: "forest",
-    geometryPrefix: "Tree_",
     description: "Moss-covered paths framed by authored evergreen landmarks",
     variants: ["temperate"],
     assets: [
@@ -95,6 +159,37 @@ export const ENVIRONMENT_PACKS: readonly EnvironmentPackDefinition[] = [
         quality: "high",
       },
     ],
+    materials: {
+      floor: {
+        albedo: "/environments/verdant-grove/textures/forest-albedo.webp",
+        normal: "/environments/verdant-grove/textures/forest-normal.webp",
+        roughnessMap: "/environments/verdant-grove/textures/forest-roughness.webp",
+        ao: "/environments/verdant-grove/textures/forest-ao.webp",
+        repeat: 3.2,
+        normalScale: 0.7,
+        roughness: 0.96,
+        metalness: 0,
+        aoIntensity: 0.9,
+      },
+    },
+    landmarks: [
+      {
+        id: "evergreen",
+        name: "Evergreen",
+        nodePrefix: "Tree_",
+        placement: "floor",
+        fallback: "tree",
+        autoPlacement: {
+          spacing: 6.5,
+          edgeOffset: 2.2,
+          edgeJitter: 2.6,
+          baseY: 0,
+          scaleMin: [0.75, 0.8, 0.75],
+          scaleMax: [1.4, 1.6, 1.4],
+        },
+      },
+    ],
+    lighting: "forest",
     attribution: [
       {
         title: "Verdant Grove",
@@ -122,8 +217,6 @@ export const ENVIRONMENT_PACKS: readonly EnvironmentPackDefinition[] = [
   {
     id: "prismatic-reach",
     name: "Prismatic Reach",
-    profile: "crystal",
-    geometryPrefix: "CrystalCluster_",
     description: "Luminous mineral floors and prismatic crystal landmarks",
     variants: ["azure"],
     assets: [
@@ -132,6 +225,39 @@ export const ENVIRONMENT_PACKS: readonly EnvironmentPackDefinition[] = [
         quality: "high",
       },
     ],
+    materials: {
+      floor: {
+        albedo: "/environments/prismatic-reach/textures/crystal-albedo.webp",
+        normal: "/environments/prismatic-reach/textures/crystal-normal.webp",
+        roughnessMap: "/environments/prismatic-reach/textures/crystal-roughness.webp",
+        ao: "/environments/prismatic-reach/textures/crystal-ao.webp",
+        repeat: 2.1,
+        normalScale: 0.7,
+        roughness: 0.38,
+        metalness: 0.16,
+        aoIntensity: 0.62,
+        emissive: "#183859",
+        emissiveIntensity: 0.34,
+      },
+    },
+    landmarks: [
+      {
+        id: "crystal-cluster",
+        name: "Crystal cluster",
+        nodePrefix: "CrystalCluster_",
+        placement: "floor",
+        fallback: "crystal",
+        autoPlacement: {
+          spacing: 5.2,
+          edgeOffset: 1.1,
+          edgeJitter: 1.7,
+          baseY: 0.2,
+          scaleMin: [0.65, 1, 0.65],
+          scaleMax: [1.8, 3.3, 1.8],
+        },
+      },
+    ],
+    lighting: "crystal",
     attribution: [
       {
         title: "Prismatic Reach",
