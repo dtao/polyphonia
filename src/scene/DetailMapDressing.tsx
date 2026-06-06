@@ -51,6 +51,12 @@ const DETAIL_FLOOR_TILE_RADIUS = 92;
 // fall back to low-detail geometry (see DetailInstances) and are culled past
 // this radius.
 const DETAIL_OBJECT_CULL = 130;
+// Rather than pop in at the cull radius, instances scale up over this band as you
+// approach — the equivalent of the stem orbs' distance fade for solid geometry,
+// which shares one material and so can't fade opacity per instance. The band sits
+// well past the near/far LOD split (42) so only distant low-detail copies fade.
+const DETAIL_OBJECT_FADE_START = 100;
+const DETAIL_OBJECT_FADE_END = DETAIL_OBJECT_CULL;
 
 export function DetailMapDressing({
   map,
@@ -465,6 +471,8 @@ function DetailInstances({
   const farMesh = useMemo(() => emptyInstancedMesh(lowGeometry, material, capacity), [lowGeometry, material, capacity]);
   const lastUpdate = useRef(-Infinity);
   const position = useMemo(() => new THREE.Vector3(), []);
+  const fadeMatrix = useMemo(() => new THREE.Matrix4(), []);
+  const fadeScale = useMemo(() => new THREE.Vector3(), []);
 
   const refill = useCallback(() => {
     let nearCount = 0;
@@ -473,8 +481,15 @@ function DetailInstances({
       position.setFromMatrixPosition(matrix);
       const distance = position.distanceTo(camera.position);
       if (distance > DETAIL_OBJECT_CULL) continue;
-      if (quality === "high" && distance < 42) nearMesh.setMatrixAt(nearCount++, matrix);
-      else farMesh.setMatrixAt(farCount++, matrix);
+      // Grow the instance in from a point as it nears the cull radius instead of
+      // popping at full size (P12). Uniform scale is the per-instance lever we
+      // have on a shared material; the band is far enough that the symmetric
+      // shrink reads as a gentle fade.
+      const fade = 1 - THREE.MathUtils.smoothstep(distance, DETAIL_OBJECT_FADE_START, DETAIL_OBJECT_FADE_END);
+      if (fade <= 0.002) continue;
+      const placed = fade < 0.999 ? fadeMatrix.copy(matrix).scale(fadeScale.setScalar(fade)) : matrix;
+      if (quality === "high" && distance < 42) nearMesh.setMatrixAt(nearCount++, placed);
+      else farMesh.setMatrixAt(farCount++, placed);
     }
     nearMesh.count = nearCount;
     farMesh.count = farCount;
@@ -482,7 +497,7 @@ function DetailInstances({
     farMesh.instanceMatrix.needsUpdate = true;
     nearMesh.computeBoundingSphere();
     farMesh.computeBoundingSphere();
-  }, [camera, farMesh, nearMesh, position, quality, transforms]);
+  }, [camera, fadeMatrix, fadeScale, farMesh, nearMesh, position, quality, transforms]);
 
   useEffect(() => {
     nearMesh.castShadow = true;
