@@ -4,6 +4,8 @@ import type { EnvironmentPackDefinition } from "./environmentPacks";
 const MAX_ASSETS = 48;
 const MAX_TOTAL_BYTES = 80 * 1024 * 1024;
 const MAX_MODEL_BYTES = 32 * 1024 * 1024;
+const MAX_LANDMARK_MODEL_BYTES = 256 * 1024 * 1024;
+const MAX_LANDMARK_MODEL_TRIANGLES = 5 * 1000 * 1000;
 const MAX_TEXTURE_BYTES = 16 * 1024 * 1024;
 const MAX_LANDMARKS = 64;
 const ALLOWED_MODEL_TYPES = new Set(["model/gltf-binary", "application/octet-stream"]);
@@ -108,7 +110,7 @@ function validateManifest(
       manifest.budgets.maxTextureSize < 256 ||
       manifest.budgets.maxTextureSize > 4096 ||
       manifest.budgets.maxTriangles < 1 ||
-      manifest.budgets.maxTriangles > 500_000 ||
+      manifest.budgets.maxTriangles > MAX_LANDMARK_MODEL_TRIANGLES ||
       manifest.budgets.maxDrawCalls < 1 ||
       manifest.budgets.maxDrawCalls > 300) {
     throw new Error("Pack performance budgets are missing or outside supported limits.");
@@ -200,12 +202,12 @@ export async function validateLandmarkGlb(file: File): Promise<{ triangles: numb
   if (!file.name.toLowerCase().endsWith(".glb")) {
     throw new Error("Landmarks must be self-contained .glb files.");
   }
-  if (file.size > MAX_MODEL_BYTES) {
-    throw new Error(`Model "${file.name}" exceeds 32 MB.`);
+  if (file.size > MAX_LANDMARK_MODEL_BYTES) {
+    throw new Error(`Model "${file.name}" exceeds 256 MB.`);
   }
   const metrics = inspectGlb(new Uint8Array(await file.arrayBuffer()), file.name);
-  if (metrics.triangles > 500_000) {
-    throw new Error(`Model "${file.name}" exceeds the 500,000 triangle limit.`);
+  if (metrics.triangles > MAX_LANDMARK_MODEL_TRIANGLES) {
+    throw new Error(`Model "${file.name}" exceeds the ${MAX_LANDMARK_MODEL_TRIANGLES} triangle limit.`);
   }
   if (metrics.drawCalls > 300) {
     throw new Error(`Model "${file.name}" exceeds the 300 draw-call limit.`);

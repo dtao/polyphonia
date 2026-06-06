@@ -42,9 +42,10 @@ choice for Three.js.
    needed, then move them with the normal transform control.
 
 Models must embed their buffers and textures. Animated and skinned models are
-not currently supported. A model is limited to 32 MB, 500,000 triangles, and
-300 draw calls. For repeated scenery, substantially smaller assets will perform
-better.
+not currently supported. A standalone landmark model is temporarily limited to
+256 MB, 500,000 triangles, and 300 draw calls. Files near that size can take a
+long time to import, consume substantial memory, and perform poorly on mobile.
+For repeated scenery, substantially smaller assets will perform better.
 
 ## Portability
 
