@@ -3,7 +3,7 @@ import { Line, TransformControls } from "@react-three/drei";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
-import { canAddBranchAtPoint, clampToMap, CompositionMap, doorOpenAmount, isTunnelSegment, loopRoleForPoint, MapPlatform, MapRoom, MapWall, platformElevation, platformLocalPolygon, RoomEntrance, roomAttachedToPoint, roomElevation, ROOM_WALL_THICKNESS, solidWallSpans, surfaceHeightAt, tunnelSideWalls, wallOpenings, WalkableSegment } from "../map";
+import { canAddBranchAtPoint, clampToMap, CompositionMap, doorOpenAmount, isTunnelSegment, loopRoleForPoint, MapPlatform, MapRoom, MapWall, platformElevation, platformLocalPolygon, RoomEntrance, roomAttachedToPoint, roomElevation, ROOM_WALL_THICKNESS, solidWallSpans, surfaceHeightAt, tunnelHeight, tunnelSideWalls, wallOpenings, WalkableSegment } from "../map";
 import { useStore, viewState } from "../store";
 import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 
@@ -188,8 +188,9 @@ function Tunnels({ map, editMode }: { map: CompositionMap; editMode: boolean }) 
 }
 
 function Tunnel({ segment, map, editMode }: { segment: WalkableSegment; map: CompositionMap; editMode: boolean }) {
-  const walls = useMemo(() => tunnelWallGeometry(map, segment), [segment, map.elevations]);
-  const ceiling = useMemo(() => tunnelCeilingGeometry(map, segment), [segment, map.elevations]);
+  const height = tunnelHeight(map, segment, TUNNEL_HEIGHT);
+  const walls = useMemo(() => tunnelWallGeometry(map, segment, height), [segment, map.elevations, height]);
+  const ceiling = useMemo(() => tunnelCeilingGeometry(map, segment, height), [segment, map.elevations, height]);
   return (
     <group>
       <mesh geometry={walls}>
@@ -204,7 +205,7 @@ function Tunnel({ segment, map, editMode }: { segment: WalkableSegment; map: Com
   );
 }
 
-function tunnelWallGeometry(map: CompositionMap, segment: WalkableSegment): THREE.BufferGeometry {
+function tunnelWallGeometry(map: CompositionMap, segment: WalkableSegment, height: number): THREE.BufferGeometry {
   const sy = elevationAt(map, segment.start) + PATH_HEIGHT;
   const ey = elevationAt(map, segment.end) + PATH_HEIGHT;
   const [left, right] = tunnelSideWalls(segment);
@@ -214,8 +215,8 @@ function tunnelWallGeometry(map: CompositionMap, segment: WalkableSegment): THRE
     addQuad(
       [side[0][0], sy, side[0][1]],
       [side[1][0], ey, side[1][1]],
-      [side[1][0], ey + TUNNEL_HEIGHT, side[1][1]],
-      [side[0][0], sy + TUNNEL_HEIGHT, side[0][1]],
+      [side[1][0], ey + height, side[1][1]],
+      [side[0][0], sy + height, side[0][1]],
       vertices,
       indices,
     );
@@ -223,9 +224,9 @@ function tunnelWallGeometry(map: CompositionMap, segment: WalkableSegment): THRE
   return buildBufferGeometry(vertices, indices);
 }
 
-function tunnelCeilingGeometry(map: CompositionMap, segment: WalkableSegment): THREE.BufferGeometry {
-  const sy = elevationAt(map, segment.start) + PATH_HEIGHT + TUNNEL_HEIGHT;
-  const ey = elevationAt(map, segment.end) + PATH_HEIGHT + TUNNEL_HEIGHT;
+function tunnelCeilingGeometry(map: CompositionMap, segment: WalkableSegment, height: number): THREE.BufferGeometry {
+  const sy = elevationAt(map, segment.start) + PATH_HEIGHT + height;
+  const ey = elevationAt(map, segment.end) + PATH_HEIGHT + height;
   const [left, right] = tunnelSideWalls(segment);
   const vertices: number[] = [];
   const indices: number[] = [];

@@ -469,6 +469,21 @@ export function tunnelObstructionCount(map: Pick<CompositionMap, "segments">, fr
   return count;
 }
 
+// When a tunnel meets a room (its endpoint coincides with the room's
+// attachment point), the tunnel takes the room's height so their ceilings line
+// up. Otherwise it uses the given fallback height.
+export function tunnelHeight(map: Pick<CompositionMap, "segments" | "rooms">, segment: WalkableSegment, fallback: number): number {
+  const startKey = mapPointKey(segment.start);
+  const endKey = mapPointKey(segment.end);
+  for (const room of map.rooms) {
+    const point = roomAttachmentPoint(map, room);
+    if (!point) continue;
+    const key = mapPointKey(point);
+    if (key === startKey || key === endKey) return room.height;
+  }
+  return fallback;
+}
+
 // Free-standing walls between listener and stem each muffle the sound.
 export function wallObstructionCount(map: Pick<CompositionMap, "walls">, from: [number, number], to: [number, number]): number {
   let count = 0;
