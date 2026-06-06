@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
 import { newId } from "../id";
-import { canAddBranchAtPoint, clampToMap, CompositionMap, doorOpenAmount, DOOR_DEPTH, entranceLocalCenter, isTunnelSegment, loopRoleForPoint, MapPlatform, MapRoom, MapWall, platformElevation, platformLocalPolygon, pointHasAttachment, RoomEntrance, roomElevation, roomLocalPoint, roomWorldPoint, RoomSide, ROOM_WALL_THICKNESS, solidWallSpans, surfaceHeightAt, tunnelHeight, tunnelSideWalls, wallOpenings, WalkableSegment } from "../map";
+import { canAddBranchAtPoint, clampToMap, CompositionMap, doorOpenAmount, DOOR_DEPTH, entranceLocalCenter, isTunnelSegment, loopRoleForPoint, MapPlatform, MapRoom, MapWall, platformElevation, platformLocalPolygon, pointHasAttachment, RoomEntrance, roomElevation, roomLocalPoint, roomWorldPoint, RoomSide, solidWallSpans, surfaceHeightAt, tunnelHeight, tunnelSideWalls, wallOpenings, wallThickness, WalkableSegment } from "../map";
 import { useStore, viewState } from "../store";
 import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 
@@ -256,7 +256,7 @@ const DOOR_PANEL_CLEARANCE = 0.02;
 function doorPanelData(room: MapRoom, entrance: RoomEntrance): { center: [number, number]; axis: "x" | "z"; width: number; size: [number, number, number] } {
   const hw = room.width / 2;
   const hd = room.depth / 2;
-  const t = ROOM_WALL_THICKNESS;
+  const t = wallThickness(room.wallThickness);
   const h = room.height;
   const w = Math.max(0.1, entrance.width - 0.04);
   const inset = t / 2 + DOOR_PANEL_THICKNESS / 2 + DOOR_PANEL_CLEARANCE;
@@ -276,24 +276,24 @@ function doorPanelData(room: MapRoom, entrance: RoomEntrance): { center: [number
 function roomWallBoxes(room: MapRoom): Array<{ pos: [number, number]; size: [number, number] }> {
   const hw = room.width / 2;
   const hd = room.depth / 2;
-  const t = ROOM_WALL_THICKNESS;
+  const t = wallThickness(room.wallThickness);
   const boxes: Array<{ pos: [number, number]; size: [number, number] }> = [];
-  for (const [s, e] of solidWallSpans(hw, wallOpenings(room, "north"))) boxes.push({ pos: [wallSpanCenter(s, e, hw), -hd], size: [wallSpanLength(s, e, hw), t] });
-  for (const [s, e] of solidWallSpans(hw, wallOpenings(room, "south"))) boxes.push({ pos: [wallSpanCenter(s, e, hw), hd], size: [wallSpanLength(s, e, hw), t] });
-  for (const [s, e] of solidWallSpans(hd, wallOpenings(room, "west"))) boxes.push({ pos: [-hw, wallSpanCenter(s, e, hd)], size: [t, wallSpanLength(s, e, hd)] });
-  for (const [s, e] of solidWallSpans(hd, wallOpenings(room, "east"))) boxes.push({ pos: [hw, wallSpanCenter(s, e, hd)], size: [t, wallSpanLength(s, e, hd)] });
+  for (const [s, e] of solidWallSpans(hw, wallOpenings(room, "north"))) boxes.push({ pos: [wallSpanCenter(s, e, hw, t), -hd], size: [wallSpanLength(s, e, hw, t), t] });
+  for (const [s, e] of solidWallSpans(hw, wallOpenings(room, "south"))) boxes.push({ pos: [wallSpanCenter(s, e, hw, t), hd], size: [wallSpanLength(s, e, hw, t), t] });
+  for (const [s, e] of solidWallSpans(hd, wallOpenings(room, "west"))) boxes.push({ pos: [-hw, wallSpanCenter(s, e, hd, t)], size: [t, wallSpanLength(s, e, hd, t)] });
+  for (const [s, e] of solidWallSpans(hd, wallOpenings(room, "east"))) boxes.push({ pos: [hw, wallSpanCenter(s, e, hd, t)], size: [t, wallSpanLength(s, e, hd, t)] });
   return boxes;
 }
 
-function wallSpanCenter(start: number, end: number, half: number): number {
-  const min = start - (touchesWallEdge(start, -half) ? ROOM_WALL_THICKNESS / 2 : 0);
-  const max = end + (touchesWallEdge(end, half) ? ROOM_WALL_THICKNESS / 2 : 0);
+function wallSpanCenter(start: number, end: number, half: number, thickness: number): number {
+  const min = start - (touchesWallEdge(start, -half) ? thickness / 2 : 0);
+  const max = end + (touchesWallEdge(end, half) ? thickness / 2 : 0);
   return (min + max) / 2;
 }
 
-function wallSpanLength(start: number, end: number, half: number): number {
-  const min = start - (touchesWallEdge(start, -half) ? ROOM_WALL_THICKNESS / 2 : 0);
-  const max = end + (touchesWallEdge(end, half) ? ROOM_WALL_THICKNESS / 2 : 0);
+function wallSpanLength(start: number, end: number, half: number, thickness: number): number {
+  const min = start - (touchesWallEdge(start, -half) ? thickness / 2 : 0);
+  const max = end + (touchesWallEdge(end, half) ? thickness / 2 : 0);
   return max - min;
 }
 
@@ -564,8 +564,6 @@ function platformWorldPoint(platform: MapPlatform, localPoint: [number, number])
 
 // Free-standing walls — sound occluders placed anywhere. Click to select; the
 // selected wall shows draggable endpoint handles.
-const STANDALONE_WALL_THICKNESS = 0.3;
-
 function StandaloneWalls({ map, editMode }: { map: CompositionMap; editMode: boolean }) {
   const selectedWallId = useStore((s) => s.selectedWallId);
   if (!map.walls.length) return null;
@@ -605,7 +603,7 @@ function WallMesh({ wall, editMode, selected }: { wall: MapWall; editMode: boole
         document.body.style.cursor = "auto";
       }}
     >
-      <boxGeometry args={[length, wall.height, STANDALONE_WALL_THICKNESS]} />
+      <boxGeometry args={[length, wall.height, wallThickness(wall.wallThickness)]} />
       <meshStandardMaterial color={selected ? "#8fffe8" : "#9aa6bd"} roughness={0.8} metalness={0.1} transparent={editMode} opacity={editMode ? 0.55 : 1} depthWrite={!editMode} side={THREE.DoubleSide} />
     </mesh>
   );
@@ -1299,7 +1297,7 @@ function clamp01(value: number): number {
 function pointInEntranceThreshold(room: MapRoom, entrance: RoomEntrance, point: [number, number]): boolean {
   const local = roomLocalPoint(room, point);
   const halfDoor = Math.max(0.5, entrance.width) / 2;
-  const halfWall = ROOM_WALL_THICKNESS / 2;
+  const halfWall = wallThickness(room.wallThickness) / 2;
   const hw = room.width / 2;
   const hd = room.depth / 2;
   switch (entrance.side) {

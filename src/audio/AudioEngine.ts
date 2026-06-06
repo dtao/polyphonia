@@ -684,8 +684,8 @@ export class AudioEngine {
       ? roomWallObstructionCount(this.map, from, target) + tunnelObstructionCount(this.map, from, target) + wallObstructionCount(this.map, from, target)
       : 0;
     const strength = Math.min(1, obstructions);
-    const gain = THREE.MathUtils.lerp(1, 0.18, strength);
-    const frequency = THREE.MathUtils.lerp(22000, 420, strength);
+    const gain = THREE.MathUtils.lerp(1, 0.05, strength);
+    const frequency = THREE.MathUtils.lerp(22000, 260, Math.pow(strength, 0.78));
     instance.occlusionGain.gain.setTargetAtTime(gain, at, 0.12);
     instance.occlusionFilter.frequency.setTargetAtTime(frequency, at, 0.12);
   }

@@ -11,6 +11,7 @@ export interface WalkableSegment {
   end: [number, number];
   width: number;
   kind?: SegmentKind; // absent = "path"
+  wallThickness?: number; // tunnel side/ceiling thickness; absent = thin default
   connections?: Partial<Record<SegmentEnd, SegmentEndpointConnection>>;
 }
 
@@ -53,6 +54,7 @@ export interface MapRoom {
   width: number; // interior extent along x
   depth: number; // interior extent along z
   height: number; // wall / ceiling height
+  wallThickness?: number; // wall / ceiling mass; absent = thin default
   elevation?: number; // flat floor height (attached legacy rooms inherit branch height when absent)
   entrances: RoomEntrance[]; // doorways cut into the walls (at least one)
   attachment?: RoomAttachment; // rooms created from path endpoints stay attached to that branch point
@@ -72,6 +74,7 @@ export interface MapWall {
   start: [number, number];
   end: [number, number];
   height: number;
+  wallThickness?: number;
 }
 
 export type PlatformShape = "rect" | "hex" | "circle";
@@ -131,7 +134,10 @@ export type MapSupport =
   | { kind: "room"; roomId: string }
   | { kind: "platform"; platformId: string };
 
-export const ROOM_WALL_THICKNESS = 0.3;
+export const DEFAULT_WALL_THICKNESS = 0.3;
+export const MIN_WALL_THICKNESS = 0.15;
+export const MAX_WALL_THICKNESS = 3;
+export const ROOM_WALL_THICKNESS = DEFAULT_WALL_THICKNESS;
 // How far the walkable doorway "threshold" extends outside the entrance wall, so
 // a room positioned against a path connects to it.
 export const DOOR_DEPTH = 2.6;
@@ -231,6 +237,7 @@ function normalizeSegment(segment: WalkableSegment): WalkableSegment {
   const connections = normalizeSegmentConnections(segment.connections);
   return {
     ...segment,
+    ...(segment.kind === "tunnel" ? { wallThickness: normalizeWallThickness(segment.wallThickness) } : { wallThickness: undefined }),
     ...(connections ? { connections } : {}),
   };
 }
@@ -413,6 +420,19 @@ export function interiorRect(room: MapRoom): Rect {
   return { minX: -hw, maxX: hw, minZ: -hd, maxZ: hd };
 }
 
+export function wallThickness(value: number | undefined): number {
+  return normalizeWallThickness(value);
+}
+
+export function wallOcclusionStrength(value: number | undefined): number {
+  const thickness = normalizeWallThickness(value);
+  if (thickness <= DEFAULT_WALL_THICKNESS) {
+    return lerp(0.32, 0.5, (thickness - MIN_WALL_THICKNESS) / (DEFAULT_WALL_THICKNESS - MIN_WALL_THICKNESS));
+  }
+  const t = (thickness - DEFAULT_WALL_THICKNESS) / (MAX_WALL_THICKNESS - DEFAULT_WALL_THICKNESS);
+  return lerp(0.5, 1, Math.pow(clamp(t, 0, 1), 0.72));
+}
+
 // The walkable doorway threshold for one entrance: a strip the entrance width
 // wide that bridges the wall gap and extends DOOR_DEPTH outside, so the room
 // connects to a path.
@@ -464,7 +484,7 @@ export function roomWorldPoint(room: MapRoom, localPoint: [number, number]): [nu
 
 // Largest doorway width allowed on a given wall.
 export function maxEntranceWidth(room: MapRoom, side: RoomSide): number {
-  return Math.max(1, entranceSpan(side, room.width, room.depth));
+  return Math.max(1, entranceSpan(side, room.width, room.depth, room.wallThickness));
 }
 
 // World point a short distance outside an entrance's doorway. Used to test
@@ -538,7 +558,7 @@ export function containingRoom(map: Pick<CompositionMap, "rooms">, point: [numbe
 }
 
 export function roomWallObstructionCount(map: Pick<CompositionMap, "rooms">, from: [number, number], to: [number, number]): number {
-  let count = 0;
+  let amount = 0;
   for (const room of map.rooms) {
     const a = toRoomLocal(room, from);
     const b = toRoomLocal(room, to);
@@ -546,9 +566,9 @@ export function roomWallObstructionCount(map: Pick<CompositionMap, "rooms">, fro
     const bInside = pointInRect(b, interiorRect(room));
     if (aInside === bInside) continue;
     // `from` is the listener, so closed doors (relative to it) become solid.
-    if (lineHitsSolidRoomWall(room, a, b, from)) count++;
+    if (lineHitsSolidRoomWall(room, a, b, from)) amount += wallOcclusionStrength(room.wallThickness);
   }
-  return count;
+  return amount;
 }
 
 // --- Doors ---
@@ -615,14 +635,14 @@ export function tunnelSideWalls(segment: WalkableSegment): Array<[[number, numbe
 }
 
 export function tunnelObstructionCount(map: Pick<CompositionMap, "segments">, from: [number, number], to: [number, number]): number {
-  let count = 0;
+  let amount = 0;
   for (const segment of map.segments) {
     if (!isTunnelSegment(segment)) continue;
     for (const [a, b] of tunnelSideWalls(segment)) {
-      if (lineSegmentsIntersect(from, to, a, b)) count++;
+      if (lineSegmentsIntersect(from, to, a, b)) amount += wallOcclusionStrength(segment.wallThickness);
     }
   }
-  return count;
+  return amount;
 }
 
 // When a tunnel meets a room (its endpoint coincides with the room's
@@ -642,11 +662,11 @@ export function tunnelHeight(map: Pick<CompositionMap, "segments" | "rooms">, se
 
 // Free-standing walls between listener and stem each muffle the sound.
 export function wallObstructionCount(map: Pick<CompositionMap, "walls">, from: [number, number], to: [number, number]): number {
-  let count = 0;
+  let amount = 0;
   for (const wall of map.walls) {
-    if (lineSegmentsIntersect(from, to, wall.start, wall.end)) count++;
+    if (lineSegmentsIntersect(from, to, wall.start, wall.end)) amount += wallOcclusionStrength(wall.wallThickness);
   }
-  return count;
+  return amount;
 }
 
 // --- Platform geometry ---
@@ -1504,6 +1524,7 @@ function normalizeWall(wall: MapWall): MapWall {
     start: wall.start,
     end: wall.end,
     height: clamp(Number.isFinite(wall.height) ? wall.height : 3, 0.5, 12),
+    wallThickness: normalizeWallThickness(wall.wallThickness),
   };
 }
 
@@ -1532,12 +1553,12 @@ function isRoomSide(value: unknown): value is RoomSide {
 
 // Wall span available for a doorway on a given side (interior extent minus the
 // two corner wall thicknesses).
-function entranceSpan(side: RoomSide, width: number, depth: number): number {
-  return (side === "north" || side === "south" ? width : depth) - ROOM_WALL_THICKNESS * 2;
+function entranceSpan(side: RoomSide, width: number, depth: number, thickness = DEFAULT_WALL_THICKNESS): number {
+  return (side === "north" || side === "south" ? width : depth) - normalizeWallThickness(thickness) * 2;
 }
 
-function normalizeEntrance(entrance: RoomEntrance, width: number, depth: number): RoomEntrance {
-  const span = entranceSpan(entrance.side, width, depth);
+function normalizeEntrance(entrance: RoomEntrance, width: number, depth: number, thickness = DEFAULT_WALL_THICKNESS): RoomEntrance {
+  const span = entranceSpan(entrance.side, width, depth, thickness);
   const entranceWidth = clamp(entrance.width, 1, Math.max(1, span));
   const maxOffset = Math.max(0, span / 2 - entranceWidth / 2);
   const normalized: RoomEntrance = { side: entrance.side, width: entranceWidth, offset: clamp(entrance.offset, -maxOffset, maxOffset) };
@@ -1553,6 +1574,7 @@ function isDoorConfig(value: unknown): value is DoorConfig {
 function normalizeRoom(room: RawMapRoom): MapRoom {
   const width = clamp(room.width, 3, 80);
   const depth = clamp(room.depth, 3, 80);
+  const wallThickness = normalizeWallThickness(room.wallThickness);
   // Prefer the new entrances array; fall back to the legacy single-entrance
   // fields, then to a centered south doorway.
   const rawEntrances: RoomEntrance[] = Array.isArray(room.entrances) && room.entrances.some(isRoomEntrance)
@@ -1565,10 +1587,19 @@ function normalizeRoom(room: RawMapRoom): MapRoom {
     width,
     depth,
     height: clamp(room.height ?? 3.2, 2, 12),
+    wallThickness,
     ...(Number.isFinite(room.elevation) ? { elevation: clamp(room.elevation!, -20, 40) } : {}),
-    entrances: rawEntrances.map((entrance) => normalizeEntrance(entrance, width, depth)),
+    entrances: rawEntrances.map((entrance) => normalizeEntrance(entrance, width, depth, wallThickness)),
     attachment: isRoomAttachment(room.attachment) ? room.attachment : undefined,
   };
+}
+
+function normalizeWallThickness(value: unknown): number {
+  return clamp(typeof value === "number" && Number.isFinite(value) ? value : DEFAULT_WALL_THICKNESS, MIN_WALL_THICKNESS, MAX_WALL_THICKNESS);
+}
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * clamp(t, 0, 1);
 }
 
 function isRoomAttachment(value: unknown): value is RoomAttachment {

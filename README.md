@@ -12,7 +12,8 @@ these spatial compositions.
 - **Explore** — first-person movement (WASD + mouse) through a composition;
   realistic 3D audio via the Web Audio API (HRTF panning on capable devices,
   adaptive lower-cost panning on mobile/low-power devices, plus distance
-  falloff), room-wall occlusion for muffled obstructed stems, room reverb, and
+  falloff), thickness-aware room/tunnel/wall occlusion for muffled obstructed
+  stems, room reverb, and
   every stem kept sample-locked in sync. Square/hex tiled maps can also opt into
   experimental movement modes: **AR Walk** uses Android WebXR pose tracking for
   room-scale walking, while **Geo Drive** uses GPS movement at 100 ft per unit
@@ -26,7 +27,9 @@ these spatial compositions.
   point — like rooms — to add wide walkable areas. Room doorways can
   carry sliding **doors** that open as you approach (from either side or just
   one) and muffle sound while shut, and free-standing **walls** can be placed
-  anywhere to shape occlusion deliberately.
+  anywhere to shape occlusion deliberately. Rooms, tunnels, and walls expose
+  wall thickness controls, so thin barriers lightly darken sound while thick
+  barriers heavily damp it.
 - **Edit** — an overhead edit mode to place tracks in space (drag gizmo), and a
   properties panel to rename, recolor, set volume, and tune distance falloff.
 - **Build from scratch** — create a new composition (title / BPM, plus an

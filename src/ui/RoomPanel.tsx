@@ -1,3 +1,4 @@
+import { DEFAULT_WALL_THICKNESS, MAX_WALL_THICKNESS, MIN_WALL_THICKNESS } from "../map";
 import { useStore } from "../store";
 
 // Bottom-left inspector for the selected room. Entrances are edited in the 3D
@@ -20,6 +21,7 @@ export function RoomPanel() {
       <Slider label="Width" value={room.width} min={3} max={40} step={0.5} onChange={(v) => updateRoom(room.id, { width: v })} />
       <Slider label="Depth" value={room.depth} min={3} max={40} step={0.5} onChange={(v) => updateRoom(room.id, { depth: v })} />
       <Slider label="Height" value={room.height} min={2} max={10} step={0.2} onChange={(v) => updateRoom(room.id, { height: v })} />
+      <Slider label="Wall thickness" value={room.wallThickness ?? DEFAULT_WALL_THICKNESS} min={MIN_WALL_THICKNESS} max={MAX_WALL_THICKNESS} step={0.1} onChange={(v) => updateRoom(room.id, { wallThickness: v })} />
 
       <button style={deleteBtn} onClick={() => deleteRoom(room.id)} title="Delete selected room (Delete)">
         Delete room

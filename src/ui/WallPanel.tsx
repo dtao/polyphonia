@@ -1,3 +1,4 @@
+import { DEFAULT_WALL_THICKNESS, MAX_WALL_THICKNESS, MIN_WALL_THICKNESS } from "../map";
 import { useStore } from "../store";
 
 // Bottom-left inspector for the selected standalone wall (a sound occluder).
@@ -26,6 +27,22 @@ export function WallPanel() {
           step={0.2}
           value={wall.height}
           onChange={(e) => updateWall(wall.id, { height: parseFloat(e.target.value) })}
+          style={{ width: "100%", accentColor: "#5b8cff", cursor: "pointer" }}
+        />
+      </label>
+
+      <label style={{ display: "block", marginBottom: 8 }}>
+        <div style={sliderHead}>
+          <span>Thickness</span>
+          <span>{(wall.wallThickness ?? DEFAULT_WALL_THICKNESS).toFixed(1)}</span>
+        </div>
+        <input
+          type="range"
+          min={MIN_WALL_THICKNESS}
+          max={MAX_WALL_THICKNESS}
+          step={0.1}
+          value={wall.wallThickness ?? DEFAULT_WALL_THICKNESS}
+          onChange={(e) => updateWall(wall.id, { wallThickness: parseFloat(e.target.value) })}
           style={{ width: "100%", accentColor: "#5b8cff", cursor: "pointer" }}
         />
       </label>

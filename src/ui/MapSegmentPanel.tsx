@@ -1,3 +1,4 @@
+import { DEFAULT_WALL_THICKNESS, MAX_WALL_THICKNESS, MIN_WALL_THICKNESS } from "../map";
 import { useStore } from "../store";
 
 // Bottom-left inspector shown when a corridor segment is selected in edit mode.
@@ -22,7 +23,14 @@ export function MapSegmentPanel() {
   function setTunnel(tunnel: boolean) {
     setMap({
       preset: "custom",
-      segments: map.segments.map((s) => (s.id === segmentId ? { ...s, kind: tunnel ? "tunnel" : "path" } : s)),
+      segments: map.segments.map((s) => (s.id === segmentId ? { ...s, kind: tunnel ? "tunnel" : "path", ...(tunnel ? { wallThickness: s.wallThickness ?? DEFAULT_WALL_THICKNESS } : {}) } : s)),
+    });
+  }
+
+  function setWallThickness(wallThickness: number) {
+    setMap({
+      preset: "custom",
+      segments: map.segments.map((s) => (s.id === segmentId ? { ...s, wallThickness } : s)),
     });
   }
 
@@ -54,6 +62,23 @@ export function MapSegmentPanel() {
           Tunnel
         </button>
       </div>
+      {isTunnel && (
+        <label style={{ display: "block", marginTop: 10 }}>
+          <div style={sliderHead}>
+            <span>Wall thickness</span>
+            <span>{(segment.wallThickness ?? DEFAULT_WALL_THICKNESS).toFixed(1)}</span>
+          </div>
+          <input
+            type="range"
+            min={MIN_WALL_THICKNESS}
+            max={MAX_WALL_THICKNESS}
+            step={0.1}
+            value={segment.wallThickness ?? DEFAULT_WALL_THICKNESS}
+            onChange={(e) => setWallThickness(parseFloat(e.target.value))}
+            style={{ width: "100%", accentColor: "#5b8cff", cursor: "pointer" }}
+          />
+        </label>
+      )}
       <div style={hint}>{isTunnel ? "Enclosed: walls + ceiling muffle sound passing in or out the sides." : "Click a path point to edit branches from this segment."}</div>
     </div>
   );
