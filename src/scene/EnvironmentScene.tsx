@@ -2,7 +2,11 @@ import { Grid } from "@react-three/drei";
 import type { EnvironmentSettings } from "../environment";
 import type { CompositionMap } from "../map";
 import { AuthoredEnvironmentScene } from "./AuthoredEnvironmentScene";
-import type { CreatorLandmarkAsset, CreatorMaterialAsset } from "../creatorAssets";
+import {
+  registeredCreatorAssets,
+  type CreatorLandmarkAsset,
+  type CreatorMaterialAsset,
+} from "../creatorAssets";
 import { useStore } from "../store";
 import { CreatorLandmarks } from "./CreatorLandmarks";
 import { SurfaceMapDressing } from "./DetailMapDressing";
@@ -18,7 +22,10 @@ export function EnvironmentScene({
   map: CompositionMap;
   editMode: boolean;
 }) {
-  const creatorAssets = useStore((state) => state.creatorAssets);
+  const localCreatorAssets = useStore((state) => state.creatorAssets);
+  const creatorAssets = [...registeredCreatorAssets(), ...localCreatorAssets].filter(
+    (asset, index, all) => all.findIndex((candidate) => candidate.id === asset.id) === index,
+  );
   const materials = creatorAssets.filter((asset): asset is CreatorMaterialAsset => asset.kind === "material");
   const landmarks = creatorAssets.filter((asset): asset is CreatorLandmarkAsset => asset.kind === "landmark");
   const materialById = new Map(materials.map((asset) => [asset.id, asset.material]));

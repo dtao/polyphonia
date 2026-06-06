@@ -1,5 +1,10 @@
 import type { EnvironmentPackMaterial } from "./environmentPacks";
-import { resolveStoredAssetReference, storeAssetBlob } from "./detailPackStorage";
+import {
+  resolveStoredAssetReference,
+  storeAssetBlob,
+  storedAsset,
+  type DetailPackBundleAsset,
+} from "./detailPackStorage";
 import { validateLandmarkGlb } from "./detailPackValidation";
 import { newId } from "./id";
 import { CREATOR_ASSET_STORE, databaseRequest } from "./localDatabase";
@@ -34,6 +39,22 @@ export interface CreatorLandmarkAsset extends CreatorAssetBase {
 }
 
 export type CreatorAsset = CreatorMaterialAsset | CreatorLandmarkAsset;
+
+export interface CreatorAssetBundle {
+  version: 1;
+  definitions: CreatorAsset[];
+  assets: Record<string, DetailPackBundleAsset>;
+}
+
+let registeredAssets: CreatorAsset[] = [];
+
+export function registerCreatorAssets(assets: CreatorAsset[]): void {
+  registeredAssets = assets;
+}
+
+export function registeredCreatorAssets(): CreatorAsset[] {
+  return registeredAssets;
+}
 
 export interface CreatorMaterialImport {
   name: string;
@@ -139,7 +160,59 @@ export async function getStoredCreatorAssets(): Promise<CreatorAsset[]> {
 }
 
 export async function loadCreatorAssets(): Promise<CreatorAsset[]> {
-  return Promise.all((await getStoredCreatorAssets()).map(resolveCreatorAsset));
+  const assets = await Promise.all((await getStoredCreatorAssets()).map(resolveCreatorAsset));
+  registerCreatorAssets(assets);
+  return assets;
+}
+
+export async function creatorAssetBundleForIds(ids: string[]): Promise<CreatorAssetBundle | undefined> {
+  const wanted = new Set(ids);
+  const definitions = (await getStoredCreatorAssets()).filter((asset) => wanted.has(asset.id));
+  if (!definitions.length) return undefined;
+  const assets: Record<string, DetailPackBundleAsset> = {};
+  for (const reference of [...new Set(definitions.flatMap(creatorAssetReferences))]) {
+    if (!reference.startsWith("asset:")) continue;
+    const hash = reference.slice("asset:".length);
+    const entry = await storedAsset(hash);
+    if (!entry) throw new Error(`Creator asset ${hash} is missing from local storage.`);
+    assets[hash] = {
+      name: entry.name,
+      type: entry.type || entry.blob.type || "application/octet-stream",
+      data: toBase64(await entry.blob.arrayBuffer()),
+    };
+  }
+  return {
+    version: 1,
+    definitions: definitions.map((asset) =>
+      rewriteCreatorAssetUrls(asset, (url) =>
+        url.startsWith("asset:") ? `bundle:${url.slice("asset:".length)}` : url,
+      ),
+    ),
+    assets,
+  };
+}
+
+export async function importCreatorAssetBundle(
+  payload: Partial<CreatorAssetBundle>,
+): Promise<CreatorAsset[]> {
+  if (payload.version !== 1 || !Array.isArray(payload.definitions) || !payload.assets) {
+    throw new Error("Unrecognized creator asset bundle.");
+  }
+  const replacements = new Map<string, string>();
+  for (const [key, entry] of Object.entries(payload.assets)) {
+    if (!entry || typeof entry.data !== "string" || typeof entry.type !== "string") {
+      throw new Error(`Creator asset "${key}" is malformed.`);
+    }
+    replacements.set(
+      `bundle:${key}`,
+      await storeAssetBlob(base64ToBlob(entry.data, entry.type), entry.name || key, entry.type),
+    );
+  }
+  for (const definition of payload.definitions) {
+    const stored = rewriteCreatorAssetUrls(definition, (url) => replacements.get(url) ?? url);
+    await saveCreatorAsset(stored);
+  }
+  return loadCreatorAssets();
 }
 
 export function creatorAssetReferences(asset: CreatorAsset): string[] {
@@ -217,4 +290,20 @@ async function validateTexture(file: File): Promise<void> {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
+}
+
+function base64ToBlob(base64: string, type: string): Blob {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new Blob([bytes], { type });
+}
+
+function toBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+  }
+  return btoa(binary);
 }

@@ -13,6 +13,13 @@ import {
   registerCustomEnvironmentPack,
   type EnvironmentPackDefinition,
 } from "./environmentPacks";
+import {
+  creatorAssetReferences,
+  getStoredCreatorAssets,
+  registerCreatorAssets,
+  rewriteCreatorAssetUrls,
+  type CreatorAsset,
+} from "./creatorAssets";
 
 // Cloud sharing via Supabase: stems go to a public Storage bucket, the manifest
 // (with stems rewritten to public CDN URLs) goes to a Postgres row owned by the
@@ -35,6 +42,7 @@ const BUCKET = "stems";
 const TABLE = "compositions";
 const ARTISTS_TABLE = "artists";
 const DETAIL_PACKS_TABLE = "detail_packs";
+const CREATOR_ASSETS_TABLE = "creator_assets";
 const DETAIL_PACK_ASSET_BUCKET = "environment-assets";
 const isUploaded = (url: string) => url.startsWith("blob:");
 export const normalizePublishedTitle = (title: string) => title.trim().replace(/\s+/g, " ").toLowerCase() || "untitled";
@@ -242,9 +250,11 @@ export async function publishComposition(comp: Composition): Promise<PublishResu
   }
 
   const publishedEnvironment = await publishCustomDetailPack(comp, user.id);
-  const publishedComposition = publishedEnvironment
-    ? { ...comp, environment: publishedEnvironment }
-    : comp;
+  const packComposition = publishedEnvironment ? { ...comp, environment: publishedEnvironment } : comp;
+  const creatorEnvironment = await publishCreatorAssets(packComposition, user.id);
+  const publishedComposition = creatorEnvironment
+    ? { ...packComposition, environment: creatorEnvironment }
+    : packComposition;
 
   // title/artist are denormalized columns (for the gallery); manifest stays canonical.
   const { error } = await sb.from(TABLE).upsert(
@@ -283,7 +293,86 @@ export async function fetchPublishedComposition(id: string): Promise<Composition
     const pack = await fetchPublishedDetailPack(packId);
     if (pack) registerCustomEnvironmentPack(pack);
   }
+  const creatorIds = environmentCreatorAssetIds(composition);
+  if (creatorIds.length) {
+    const { data: creatorAssets, error: creatorError } = await supabase()
+      .from(CREATOR_ASSETS_TABLE)
+      .select("manifest")
+      .in("id", creatorIds);
+    if (creatorError) throw creatorError;
+    registerCreatorAssets(
+      (creatorAssets ?? []).flatMap((row) => row.manifest ? [row.manifest as CreatorAsset] : []),
+    );
+  }
   return composition;
+}
+
+async function publishCreatorAssets(
+  comp: Composition,
+  userId: string,
+): Promise<Composition["environment"] | undefined> {
+  const ids = environmentCreatorAssetIds(comp);
+  if (!ids.length) return undefined;
+  const stored = await getStoredCreatorAssets();
+  const catalog = new Map(stored.map((asset) => [asset.id, asset]));
+  const remoteIds = new Map<string, string>();
+  for (const id of ids) {
+    const asset = catalog.get(id);
+    if (!asset) continue;
+    const version = (await sha256Text(`${userId}:${id}:${JSON.stringify(asset)}`)).slice(0, 32);
+    const remoteId = `asset-${version}`;
+    const urls = new Map<string, string>();
+    for (const reference of [...new Set(creatorAssetReferences(asset))]) {
+      if (!reference.startsWith("asset:")) continue;
+      const hash = reference.slice("asset:".length);
+      const entry = await storedAsset(hash);
+      if (!entry) throw new Error(`Creator asset ${hash} is missing from local storage.`);
+      const safeName = (entry.name || "asset").replace(/[^\w.-]+/g, "_");
+      const path = `${userId}/${remoteId}/${hash}/${safeName}`;
+      const bucket = supabase().storage.from(DETAIL_PACK_ASSET_BUCKET);
+      const publicUrl = bucket.getPublicUrl(path).data.publicUrl;
+      const { error } = await bucket.upload(path, entry.blob, {
+        contentType: entry.type || entry.blob.type || "application/octet-stream",
+        upsert: true,
+      });
+      if (error) throw error;
+      urls.set(reference, publicUrl);
+    }
+    const manifest = rewriteCreatorAssetUrls(
+      { ...asset, id: remoteId },
+      (url) => urls.get(url) ?? url,
+    );
+    const { error } = await supabase()
+      .from(CREATOR_ASSETS_TABLE)
+      .upsert({ id: remoteId, owner: userId, manifest });
+    if (error) throw error;
+    remoteIds.set(id, remoteId);
+  }
+  if (!remoteIds.size) return undefined;
+  return {
+    ...comp.environment,
+    ...(comp.environment.surfaces ? {
+      surfaces: Object.fromEntries(
+        Object.entries(comp.environment.surfaces).map(([surface, id]) => [
+          surface,
+          remoteIds.get(id) ?? id,
+        ]),
+      ),
+    } : {}),
+    ...(comp.environment.landmarks ? {
+      landmarks: comp.environment.landmarks.map((landmark) => ({
+        ...landmark,
+        assetId: remoteIds.get(landmark.assetId) ?? landmark.assetId,
+      })),
+    } : {}),
+  };
+}
+
+function environmentCreatorAssetIds(comp: Composition): string[] {
+  return [...new Set([
+    ...Object.values(comp.environment.surfaces ?? {}).filter((id): id is string => !!id),
+    ...(comp.environment.landmarks ?? []).map((landmark) => landmark.assetId),
+  ])];
 }
 
 async function publishCustomDetailPack(

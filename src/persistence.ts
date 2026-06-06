@@ -7,6 +7,11 @@ import {
 import { newId } from "./id";
 import { databaseRequest, STEM_STORE } from "./localDatabase";
 import { normalizeMap } from "./map";
+import {
+  creatorAssetBundleForIds,
+  importCreatorAssetBundle,
+  type CreatorAssetBundle,
+} from "./creatorAssets";
 
 // Local-first persistence. A *library* of composition manifests (small JSON)
 // lives in localStorage; uploaded stem audio (large binary) lives in IndexedDB,
@@ -128,7 +133,7 @@ export async function copyComposition(s: SerializedComposition): Promise<Seriali
 
 // ===== Export / import: one self-contained composition + media bundle =====
 
-const BUNDLE_VERSION = 2;
+const BUNDLE_VERSION = 3;
 
 function toBase64(buf: ArrayBuffer): string {
   const bytes = new Uint8Array(buf);
@@ -168,11 +173,13 @@ export async function exportComposition(comp: Composition): Promise<void> {
   const detailPack = normalized.environment.pack?.id
     ? await detailPackBundleForId(normalized.environment.pack.id)
     : undefined;
+  const creatorAssets = await creatorAssetBundleForIds(environmentCreatorAssetIds(normalized));
   const payload = {
     version: BUNDLE_VERSION,
     composition: { ...normalized, tracks },
     stems,
     ...(detailPack ? { detailPack } : {}),
+    ...(creatorAssets ? { creatorAssets } : {}),
   };
   const url = URL.createObjectURL(new Blob([JSON.stringify(payload)], { type: "application/json" }));
   const a = document.createElement("a");
@@ -186,11 +193,14 @@ export async function exportComposition(comp: Composition): Promise<void> {
 // in-memory composition (with object URLs) ready to become the current one.
 export async function importComposition(file: File): Promise<Composition> {
   const payload = JSON.parse(await file.text());
-  if (payload?.version !== 1 && payload?.version !== BUNDLE_VERSION) {
+  if (payload?.version !== 1 && payload?.version !== 2 && payload?.version !== BUNDLE_VERSION) {
     throw new Error("Unrecognized or unsupported Polyphonia file.");
   }
   if (payload.detailPack) {
     await importDetailPackPayload(payload.detailPack as Partial<DetailPackBundle>);
+  }
+  if (payload.creatorAssets) {
+    await importCreatorAssetBundle(payload.creatorAssets as Partial<CreatorAssetBundle>);
   }
   const saved: SerializedComposition = payload.composition;
   const stems: Record<string, StemEntry> = payload.stems ?? {};
@@ -210,4 +220,11 @@ export async function importComposition(file: File): Promise<Composition> {
   }
   const now = new Date().toISOString();
   return normalizeComposition({ ...saved, id: newId(), tracks, publishedId: undefined, publishedRevision: undefined, publishedAt: undefined, createdAt: now, updatedAt: now });
+}
+
+function environmentCreatorAssetIds(comp: Composition): string[] {
+  return [
+    ...Object.values(comp.environment.surfaces ?? {}).filter((id): id is string => !!id),
+    ...(comp.environment.landmarks ?? []).map((landmark) => landmark.assetId),
+  ];
 }
