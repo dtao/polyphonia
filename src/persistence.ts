@@ -1,5 +1,6 @@
 import { Composition, TrackDef, defaultComposition, normalizeComposition } from "./composition";
 import { newId } from "./id";
+import { databaseRequest, STEM_STORE } from "./localDatabase";
 import { normalizeMap } from "./map";
 
 // Local-first persistence. A *library* of composition manifests (small JSON)
@@ -10,31 +11,8 @@ import { normalizeMap } from "./map";
 
 // ===== IndexedDB blob store (tiny, dependency-free) =====
 
-const DB_NAME = "polyphonia";
-const STORE_NAME = "stems";
-let dbPromise: Promise<IDBDatabase> | null = null;
-
-function getDB(): Promise<IDBDatabase> {
-  if (!dbPromise) {
-    dbPromise = new Promise((resolve, reject) => {
-      const req = indexedDB.open(DB_NAME, 1);
-      req.onupgradeneeded = () => req.result.createObjectStore(STORE_NAME);
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-  }
-  return dbPromise;
-}
-
 function idbRequest<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore) => IDBRequest): Promise<T> {
-  return getDB().then(
-    (db) =>
-      new Promise<T>((resolve, reject) => {
-        const req = fn(db.transaction(STORE_NAME, mode).objectStore(STORE_NAME));
-        req.onsuccess = () => resolve(req.result as T);
-        req.onerror = () => reject(req.error);
-      }),
-  );
+  return databaseRequest<T>(STEM_STORE, mode, fn);
 }
 
 export const stemPut = (key: string, blob: Blob) => idbRequest<void>("readwrite", (s) => s.put(blob, key));

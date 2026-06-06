@@ -28,6 +28,40 @@ require custom gameplay geometry to make a composition usable.
 - PBR channels: base color, normal, roughness, metalness, ambient occlusion,
   and emissive.
 
+Custom packs can be imported locally as a self-contained
+`.polyphonia-pack.json` bundle:
+
+```json
+{
+  "version": 1,
+  "manifest": {
+    "id": "creator-pack",
+    "name": "Creator Pack",
+    "assets": [{ "url": "bundle:scene", "quality": "high" }],
+    "materials": {
+      "floor": {
+        "albedo": "bundle:floor-albedo",
+        "normal": "bundle:floor-normal",
+        "repeat": 2,
+        "roughness": 0.8,
+        "metalness": 0
+      }
+    },
+    "landmarks": []
+  },
+  "assets": {
+    "scene": {
+      "name": "scene.glb",
+      "type": "model/gltf-binary",
+      "data": "<base64>"
+    }
+  }
+}
+```
+
+Every `bundle:<key>` reference resolves to an entry in `assets`. Imports are
+content-hashed, deduplicated in IndexedDB, and restored as local object URLs.
+
 Prefer one GLB per quality tier. Register both assets under the same pack id:
 
 ```ts

@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import { environmentPackById, ENVIRONMENT_PACKS } from "../environmentPacks";
 import { useStore } from "../store";
 
@@ -5,7 +6,13 @@ export function EnvironmentPanel({ open, onOpen, onClose }: { open: boolean; onO
   const environment = useStore((s) => s.composition.environment);
   const setEnvironment = useStore((s) => s.setEnvironment);
   const addLandmark = useStore((s) => s.addLandmark);
+  const customPacks = useStore((s) => s.customDetailPacks);
+  const importDetailPack = useStore((s) => s.importDetailPack);
+  const removeDetailPack = useStore((s) => s.removeDetailPack);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [importError, setImportError] = useState("");
   const selectedPack = environmentPackById(environment.pack?.id);
+  const packs = [...ENVIRONMENT_PACKS, ...customPacks];
 
   if (!open) {
     return (
@@ -38,7 +45,7 @@ export function EnvironmentPanel({ open, onOpen, onClose }: { open: boolean; onO
           style={select}
         >
           <option value="">None</option>
-          {ENVIRONMENT_PACKS.map((pack) => (
+          {packs.map((pack) => (
             <option key={pack.id} value={pack.id}>
               {pack.name}
             </option>
@@ -91,8 +98,40 @@ export function EnvironmentPanel({ open, onOpen, onClose }: { open: boolean; onO
               ))}
             </div>
           )}
+
+          {customPacks.some((pack) => pack.id === selectedPack.id) && (
+            <button
+              style={removePackButton}
+              onClick={() => void removeDetailPack(selectedPack.id)}
+            >
+              Remove local pack
+            </button>
+          )}
         </>
       )}
+
+      <div style={importSection}>
+        <input
+          ref={fileInput}
+          type="file"
+          accept=".json,.polyphonia-pack.json,application/json"
+          style={{ display: "none" }}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.currentTarget.value = "";
+            if (!file) return;
+            setImportError("");
+            void importDetailPack(file).catch((error) =>
+              setImportError(error instanceof Error ? error.message : "The detail pack could not be imported."),
+            );
+          }}
+        />
+        <button style={importButton} onClick={() => fileInput.current?.click()}>
+          <span aria-hidden>⇧</span>
+          <span>Import pack</span>
+        </button>
+        {importError && <div style={errorText}>{importError}</div>}
+      </div>
     </div>
   );
 }
@@ -199,4 +238,34 @@ const landmarkButton: React.CSSProperties = {
   color: "white",
   cursor: "pointer",
   fontSize: 12,
+};
+
+const importSection: React.CSSProperties = {
+  marginTop: 12,
+  paddingTop: 10,
+  borderTop: "1px solid rgba(255,255,255,0.1)",
+};
+
+const importButton: React.CSSProperties = {
+  ...landmarkButton,
+  marginTop: 0,
+};
+
+const removePackButton: React.CSSProperties = {
+  width: "100%",
+  marginTop: 10,
+  padding: 7,
+  borderRadius: 6,
+  border: "1px solid rgba(255,122,107,0.3)",
+  background: "rgba(255,122,107,0.1)",
+  color: "#ffaaa0",
+  cursor: "pointer",
+  fontSize: 11,
+};
+
+const errorText: React.CSSProperties = {
+  marginTop: 7,
+  color: "#ffaaa0",
+  fontSize: 10,
+  lineHeight: 1.35,
 };

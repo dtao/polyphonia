@@ -284,8 +284,21 @@ export const ENVIRONMENT_PACKS: readonly EnvironmentPackDefinition[] = [
   },
 ];
 
+const customEnvironmentPacks = new Map<string, EnvironmentPackDefinition>();
+
+export function registerCustomEnvironmentPacks(packs: readonly EnvironmentPackDefinition[]): void {
+  customEnvironmentPacks.clear();
+  for (const pack of packs) customEnvironmentPacks.set(pack.id, pack);
+}
+
+export function allEnvironmentPacks(): EnvironmentPackDefinition[] {
+  return [...ENVIRONMENT_PACKS, ...customEnvironmentPacks.values()];
+}
+
 export function environmentPackById(id: string | undefined): EnvironmentPackDefinition | undefined {
-  return id ? ENVIRONMENT_PACKS.find((pack) => pack.id === id) : undefined;
+  return id
+    ? ENVIRONMENT_PACKS.find((pack) => pack.id === id) ?? customEnvironmentPacks.get(id)
+    : undefined;
 }
 
 export function environmentPackAsset(

@@ -33,6 +33,15 @@ import {
   publishComposition,
   unpublish as cloudUnpublish,
 } from "./cloud";
+import {
+  importDetailPackBundle,
+  loadStoredDetailPacks,
+  removeStoredDetailPack,
+} from "./detailPackStorage";
+import {
+  EnvironmentPackDefinition,
+  registerCustomEnvironmentPacks,
+} from "./environmentPacks";
 
 // Non-reactive registry of each track marker's 3D object, so the move-gizmo
 // can attach to the selected track's object without prop-drilling refs.
@@ -97,6 +106,7 @@ interface StoreState {
   audioLoading: AudioLoadingState;
   undoStack: Composition[];
   redoStack: Composition[];
+  customDetailPacks: EnvironmentPackDefinition[];
 
   mode: Mode;
   selectedId: string | null;
@@ -121,6 +131,8 @@ interface StoreState {
   resetViewToMapStart: () => void;
   setViewer: (viewer: boolean) => void;
   startAudio: () => Promise<void>;
+  importDetailPack: (file: File) => Promise<void>;
+  removeDetailPack: (id: string) => Promise<void>;
 
   // Auth (for publishing). Editing/playing never requires an account.
   initAuth: () => void;
@@ -566,6 +578,7 @@ export const useStore = create<StoreState>((set, get) => ({
   audioLoading: { status: "idle" },
   undoStack: [],
   redoStack: [],
+  customDetailPacks: [],
   mode: "explore",
   selectedId: null,
   selectedMapPointKey: null,
@@ -588,6 +601,32 @@ export const useStore = create<StoreState>((set, get) => ({
   setEntered: (entered) => set({ entered }),
   resetViewToMapStart: () => moveViewToMapStart(get().composition.map),
   setViewer: (viewer) => set({ viewer }),
+  importDetailPack: async (file) => {
+    const pack = await importDetailPackBundle(file);
+    const customDetailPacks = [
+      ...get().customDetailPacks.filter((candidate) => candidate.id !== pack.id),
+      pack,
+    ];
+    registerCustomEnvironmentPacks(customDetailPacks);
+    set({ customDetailPacks });
+  },
+  removeDetailPack: async (id) => {
+    await removeStoredDetailPack(id);
+    const customDetailPacks = get().customDetailPacks.filter((pack) => pack.id !== id);
+    registerCustomEnvironmentPacks(customDetailPacks);
+    set((state) => ({
+      customDetailPacks,
+      ...(state.composition.environment.pack?.id === id
+        ? {
+            composition: {
+              ...touchComposition(state.composition),
+              environment: {},
+            },
+            selectedLandmarkId: null,
+          }
+        : {}),
+    }));
+  },
 
   initAuth: () => {
     getCurrentUser().then(async (user) => {
@@ -1253,12 +1292,14 @@ export const useStore = create<StoreState>((set, get) => ({
 
   // Load the saved library (or seed/migrate) and resolve the current composition.
   initLibrary: async () => {
+    const customDetailPacks = await loadStoredDetailPacks();
+    registerCustomEnvironmentPacks(customDetailPacks);
     const { library, currentId } = loadLibrary();
     const current = library.find((c) => c.id === currentId) ?? library[0];
     const composition = current ? await resolveComposition(current) : get().composition;
     moveViewToMapStart(composition.map);
     clearHistoryMarkers();
-    set({ library, composition, undoStack: [], redoStack: [] });
+    set({ library, composition, customDetailPacks, undoStack: [], redoStack: [] });
   },
 
   // Switch the current composition. The outgoing one is flushed back into the
