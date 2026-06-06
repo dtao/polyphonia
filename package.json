@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -24,6 +26,7 @@
     "@types/three": "^0.161.2",
     "@vitejs/plugin-react": "^4.2.1",
     "typescript": "^5.3.3",
-    "vite": "^5.1.3"
+    "vite": "^5.1.3",
+    "vitest": "^4.1.7"
   }
 }

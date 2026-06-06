@@ -72,3 +72,14 @@ depends only on earlier ones.
 - [ ] **Turn in Edit mode** — you can move (pan) in edit mode but not turn/rotate the view. Add the ability to turn while keeping the elevated perspective.
 
 **Cross-cutting** (interleave opportunistically): mobile / touch controls, undo / redo, loading & error states.
+
+## Automated test coverage
+
+- [x] Add Vitest and document what belongs in automated vs. manual testing.
+- [x] Artist slug/path helpers.
+- [x] Environment and map normalization/backwards compatibility.
+- [x] Local library migration and serializable uploaded-stem markers.
+- [x] Published composition row/title-key payload shape.
+- [ ] Store actions that sync data changes to the audio engine.
+- [ ] Export/import bundle round trips with embedded stem data.
+- [ ] Publish flow with local fakes for changed vs. unchanged stem uploads.

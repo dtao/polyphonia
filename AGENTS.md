@@ -18,14 +18,22 @@ Zustand · Web Audio API · Supabase · React Router.
 ```bash
 npm run dev       # local dev server (Vite)
 npm run build     # tsc --noEmit equivalent + vite build  — RUN THIS to verify
+npm test          # deterministic unit/business-logic tests (Vitest)
+npm run test:watch # watch-mode Vitest while developing logic-heavy changes
 npx tsc --noEmit  # type-check only
 ```
 
-**There is no automated test suite.** Verify changes with `npm run build` (it
-type-checks via `tsc`) and by reasoning through behavior. The maintainer prefers
-to **test runtime behavior manually** — when you finish a change, hand off a
-short "to test" checklist rather than assuming you can drive the browser. Don't
-add a test framework unless asked.
+Verify changes with `npm run build` (it type-checks via `tsc`) and, when the
+change touches deterministic business logic, `npm test`. Automated tests should
+cover stable rules and contracts: normalization/migration, persistence/export
+shape, store actions, artist/title identity, and frontend-to-Supabase payloads.
+Prefer small Vitest module tests with local fakes over browser automation.
+
+Keep subjective or browser-feel checks manual: audio quality, spatial
+perception, camera/pointer-lock feel, visual polish, and "does this experience
+feel right?" When you finish a change that affects runtime behavior, hand off a
+short "to test" checklist rather than assuming you can fully judge the browser
+experience from automation.
 
 ## Architecture & key files
 

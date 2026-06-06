@@ -24,7 +24,7 @@ const BUCKET = "stems";
 const TABLE = "compositions";
 const ARTISTS_TABLE = "artists";
 const isUploaded = (url: string) => url.startsWith("blob:");
-const normalizeTitle = (title: string) => title.trim().replace(/\s+/g, " ").toLowerCase() || "untitled";
+export const normalizePublishedTitle = (title: string) => title.trim().replace(/\s+/g, " ").toLowerCase() || "untitled";
 
 // SHA-256 of a blob's bytes, as hex — used to detect when a stem's audio changed.
 async function sha256(blob: Blob): Promise<string> {
@@ -137,7 +137,7 @@ async function assertUniqueTitleForArtist(artistId: string, title: string, publi
     .from(TABLE)
     .select("id")
     .eq("artist_id", artistId)
-    .eq("title_key", normalizeTitle(title))
+    .eq("title_key", normalizePublishedTitle(title))
     .neq("id", publishedId)
     .limit(1);
   if (error) throw error;
@@ -146,6 +146,43 @@ async function assertUniqueTitleForArtist(artistId: string, title: string, publi
 
 export interface PublishResult extends ArtistIdentity {
   id: string;
+}
+
+interface CompositionRow {
+  id: string;
+  manifest: Composition;
+  owner: string;
+  artist_id: string | undefined;
+  title: string;
+  title_key: string;
+  artist: string;
+  artist_slug: string | undefined;
+  artist_avatar_url: string | null;
+  artist_avatar_email_hash: string | null;
+}
+
+export function buildPublishedCompositionRow(args: {
+  comp: Composition;
+  tracks: Composition["tracks"];
+  id: string;
+  userId: string;
+  artist: ArtistIdentity;
+  title: string;
+}): CompositionRow {
+  const { comp, tracks, id, userId, artist, title } = args;
+  const manifest: Composition = normalizeComposition({ ...comp, ...artist, title, tracks, publishedId: id });
+  return {
+    id,
+    manifest,
+    owner: userId,
+    artist_id: artist.artistId,
+    title,
+    title_key: normalizePublishedTitle(title),
+    artist: artist.artist,
+    artist_slug: artist.artistSlug,
+    artist_avatar_url: artist.artistAvatarUrl ?? null,
+    artist_avatar_email_hash: artist.artistAvatarEmailHash ?? null,
+  };
 }
 
 // Publish (or re-publish) a composition (requires sign-in). Uploads uploaded
@@ -187,20 +224,8 @@ export async function publishComposition(comp: Composition): Promise<PublishResu
     }
   }
 
-  const manifest: Composition = normalizeComposition({ ...comp, ...artist, title, tracks, publishedId: id });
   // title/artist are denormalized columns (for the gallery); manifest stays canonical.
-  const { error } = await sb.from(TABLE).upsert({
-    id,
-    manifest,
-    owner: user.id,
-    artist_id: artist.artistId,
-    title,
-    title_key: normalizeTitle(title),
-    artist: artist.artist,
-    artist_slug: artist.artistSlug,
-    artist_avatar_url: artist.artistAvatarUrl ?? null,
-    artist_avatar_email_hash: artist.artistAvatarEmailHash ?? null,
-  });
+  const { error } = await sb.from(TABLE).upsert(buildPublishedCompositionRow({ comp, tracks, id, userId: user.id, artist, title }));
   if (error) throw error;
   return { id, ...artist };
 }
