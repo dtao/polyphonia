@@ -6,6 +6,14 @@ describe("environment normalization", () => {
     expect(normalizeEnvironment(undefined)).toEqual(defaultEnvironment);
   });
 
+  it("normalizes reusable surface material references", () => {
+    expect(normalizeEnvironment({
+      surfaces: { floor: " stone ", wall: "", ceiling: "crystal" },
+    })).toEqual({
+      surfaces: { floor: "stone", ceiling: "crystal" },
+    });
+  });
+
   it("normalizes authored pack selections", () => {
     expect(
       normalizeEnvironment({

@@ -37,11 +37,10 @@ export async function importDetailPackPayload(
       throw new Error(`Detail-pack asset "${key}" is malformed.`);
     }
     const blob = base64ToBlob(entry.data, entry.type);
-    const hash = await sha256(blob);
-    await databaseRequest<void>(ASSET_STORE, "readwrite", (store) =>
-      store.put({ blob, name: entry.name || key, type: entry.type }, hash),
+    replacements.set(
+      `bundle:${key}`,
+      await storeAssetBlob(blob, entry.name || key, entry.type),
     );
-    replacements.set(`bundle:${key}`, `asset:${hash}`);
   }
 
   const stored = rewritePackUrls(payload.manifest, (url) => replacements.get(url) ?? url);
@@ -155,6 +154,31 @@ export async function storedAsset(hash: string): Promise<{ blob: Blob; name: str
   return databaseRequest(ASSET_STORE, "readonly", (store) => store.get(hash));
 }
 
+export async function storeAssetBlob(
+  blob: Blob,
+  name: string,
+  type = blob.type || "application/octet-stream",
+): Promise<string> {
+  const hash = await sha256(blob);
+  await databaseRequest<void>(ASSET_STORE, "readwrite", (store) =>
+    store.put({ blob, name, type }, hash),
+  );
+  return `asset:${hash}`;
+}
+
+export async function resolveStoredAssetReference(reference: string): Promise<string> {
+  if (!reference.startsWith("asset:")) return reference;
+  const hash = reference.slice("asset:".length);
+  let url = objectUrls.get(hash);
+  if (!url) {
+    const entry = await storedAsset(hash);
+    if (!entry) throw new Error(`Asset ${hash} is missing from local storage.`);
+    url = URL.createObjectURL(entry.blob);
+    objectUrls.set(hash, url);
+  }
+  return url;
+}
+
 export function rewritePackUrls(
   pack: EnvironmentPackDefinition,
   rewrite: (url: string) => string,
@@ -184,13 +208,7 @@ async function resolveStoredDetailPack(pack: EnvironmentPackDefinition): Promise
   const resolved = new Map<string, string>();
   for (const reference of urls) {
     const hash = reference.slice("asset:".length);
-    let url = objectUrls.get(hash);
-    if (!url) {
-      const entry = await storedAsset(hash);
-      if (!entry) throw new Error(`Detail-pack asset ${hash} is missing from local storage.`);
-      url = URL.createObjectURL(entry.blob);
-      objectUrls.set(hash, url);
-    }
+    const url = await resolveStoredAssetReference(reference);
     resolved.set(reference, url);
   }
   return rewritePackUrls(pack, (url) => resolved.get(url) ?? url);

@@ -19,6 +19,12 @@ export interface EnvironmentSettings {
   pack?: EnvironmentPackSelection;
   /** Creator-authored visual instances. They never affect movement or acoustics. */
   landmarks?: EnvironmentLandmarkPlacement[];
+  /** Reusable creator material ids assigned independently to map surfaces. */
+  surfaces?: {
+    floor?: string;
+    wall?: string;
+    ceiling?: string;
+  };
 }
 
 export const defaultEnvironment: EnvironmentSettings = {};
@@ -34,10 +40,24 @@ export function normalizeEnvironment(value: Partial<EnvironmentSettings> | undef
         return normalized ? [normalized] : [];
       })
     : [];
+  const surfaces = normalizeSurfaces(value?.surfaces);
   return {
     ...(pack ? { pack } : {}),
     ...(landmarks.length ? { landmarks } : {}),
+    ...(surfaces ? { surfaces } : {}),
   };
+}
+
+function normalizeSurfaces(value: EnvironmentSettings["surfaces"]): EnvironmentSettings["surfaces"] {
+  if (!value || typeof value !== "object") return undefined;
+  const surface = (candidate: unknown) =>
+    typeof candidate === "string" && candidate.trim() ? candidate.trim() : undefined;
+  const floor = surface(value.floor);
+  const wall = surface(value.wall);
+  const ceiling = surface(value.ceiling);
+  return floor || wall || ceiling
+    ? { ...(floor ? { floor } : {}), ...(wall ? { wall } : {}), ...(ceiling ? { ceiling } : {}) }
+    : undefined;
 }
 
 function normalizePack(value: EnvironmentPackSelection | undefined): EnvironmentPackSelection | undefined {

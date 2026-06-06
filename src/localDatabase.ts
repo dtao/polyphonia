@@ -1,9 +1,10 @@
 const DB_NAME = "polyphonia";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 export const STEM_STORE = "stems";
 export const ASSET_STORE = "assets";
 export const DETAIL_PACK_STORE = "detail-packs";
+export const CREATOR_ASSET_STORE = "creator-assets";
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -21,6 +22,9 @@ export function polyphoniaDatabase(): Promise<IDBDatabase> {
         }
         if (!database.objectStoreNames.contains(DETAIL_PACK_STORE)) {
           database.createObjectStore(DETAIL_PACK_STORE);
+        }
+        if (!database.objectStoreNames.contains(CREATOR_ASSET_STORE)) {
+          database.createObjectStore(CREATOR_ASSET_STORE);
         }
       };
       request.onsuccess = () => resolve(request.result);
