@@ -33,40 +33,48 @@ add a test framework unless asked.
 ## Architecture & key files
 
 - **The seam:** a *composition* is plain data (`src/composition.ts`) — tracks =
-  stems + 3D position + properties, plus environment, map, start-position, and
-  tiling metadata. The engine/scene render any manifest. This is why "one demo"
-  scales to "a platform."
+  stems + 3D position + properties, plus loop, environment-pack, map,
+  start-position, elevation, and tiling metadata. The engine/scene render any
+  normalized manifest. This is why "one demo" scales to "a platform."
 - **State hub:** `src/store.ts` — a Zustand store is the single source of truth
   (current `composition`, `library`, `mode`, `selectedId`, `engine`, `user`,
-  `accountArtist`, `entered`, `viewer`, map/room/start selections, undo/redo
+  `accountArtist`, `entered`, `viewer`, all editor selections, and undo/redo
   stacks). The scene renders from it; edits flow back into it and out to the
-  engine. Also holds two **non-reactive module
-  singletons** to avoid per-frame re-renders: `markerObjects` (id → 3D object,
-  for the move gizmo) and `viewState` (`{x,z,fx,fz}` shared camera
-  position+heading across modes).
+  engine. It also owns **non-reactive module singletons** for frame-sensitive
+  state: `markerObjects`, `viewState`, `loopWrap`, `touchMove`, `arWalk`, and
+  `geoWalk`.
 - **Audio:** `src/audio/AudioEngine.ts` — owns ONE `AudioContext`. All stems are
   scheduled off the same clock and started together so they never drift; each
   feeds one or more HRTF `PannerNode` instances while the camera drives the
-  `AudioListener`. It also applies room reverb, room-wall occlusion, and
-  square/hex/path-loop virtual audio instances. See gotchas below.
-  `src/audio/synth.ts` is a procedural placeholder generator (fallback; the live
-  demo uses real files in `public/stems`).
-- **Scene (R3F):** `src/scene/` — `Scene` (composes it), `EnvironmentScene`
-  (procedural void/studio/cavern/forest/crystal/galaxy presets), `MapScene`
-  (walkable paths, endpoints, rooms, start marker, tile boundaries/previews),
-  `Player` (explore: WASD + pointer-lock look, map clamping and path-loop
-  wrapping), `EditControls` (orbit/pan/turn camera), `TrackGizmo`
-  (drag-to-move selected track or map start), `TrackMarker` (pillar + billboard
-  label; selected edit-mode marker also shows Near/Far rings, rolloff gradient,
-  and volume-scaled pillar), `ListenerSync` (drives the AudioListener in both
-  modes), `DebugSampler` (dev performance/audio/map samples).
+  `AudioListener`. It also applies adaptive audio quality, room reverb,
+  thickness-aware room/tunnel/door/wall occlusion, and square/hex/path-loop
+  virtual audio instances. See gotchas below. `src/audio/synth.ts` is the
+  procedural fallback.
+- **Scene (R3F):** `src/scene/` — `Scene` composes the runtime and tiled
+  previews; `EnvironmentScene` renders the neutral base while
+  `AuthoredEnvironmentScene` and `DetailMapDressing` add optional authored
+  packs; `EnvironmentEffects` owns pack-aware postprocessing; `MapScene`
+  renders and edits paths, tunnels, rooms, entrances/doors, platforms, walls,
+  the start marker, elevations, and tile boundaries. `Player` handles keyboard,
+  touch, AR, and geo movement while preserving map support and loop wrapping.
+  `EditControls`, `TrackGizmo`, and `TrackMarker` provide editing;
+  `ListenerSync` drives audio; `DebugSampler` captures diagnostics.
+- **Environment packs:** `src/environment.ts` stores only the selected pack,
+  variant, and quality. `src/environmentPacks.ts` is the runtime registry for
+  assets, profiles, quality budgets, attribution, and postprocessing. The map
+  remains authoritative for movement and acoustics; packs dress it.
+- **Map model:** `src/map.ts` defines path/tunnel segments, shared branch points
+  and elevations, rooms with multiple entrances and optional doors, open
+  platforms, standalone acoustic walls, start position/facing, support-aware
+  movement, collision/occlusion geometry, and
+  `none`/`path-loop`/`square`/`hex` tiling.
 - **UI (DOM overlays):** `src/ui/` — `EntryScreen` (start screen: library
   chooser, new/export/import, sign-in, gallery link), `PropertiesPanel`,
-  `AddStem`, `EnvironmentPanel` (preset + ambience picker), `LoopPanel`
-  (composition loop on/off, seam audition, trim, crossfade), `MapPanel`,
-  `MapPointPanel`, `MapSegmentPanel`, `RoomPanel`, `DebugPanel`,
-  `PublishControl`, `Account` (auth + account artist), `Viewer` (read-only
-  `/c/:id`), `Gallery` (`/gallery`), `ArtistPage` (`/artist/:slug`).
+  `AddStem`, composition-level Environment/Map/Loop panels, and contextual
+  inspectors for map points, segments, rooms, entrances, platforms, and walls.
+  `ARWalkControls`, `GeoWalkControls`, and `TouchControls` provide alternate
+  Explore inputs. Sharing surfaces are `PublishControl`, `Account`, `Viewer`,
+  `Gallery`, and `ArtistPage`.
 - **Persistence (local-first):** `src/persistence.ts` — composition manifests in
   `localStorage` (a *library*, schema v2, with migration from the old single
   slot); uploaded stem audio in **IndexedDB** (localStorage can't hold audio).
@@ -75,11 +83,13 @@ add a test framework unless asked.
   load/create, publish (uploads stems to Storage, manifest to Postgres), fetch,
   unpublish, gallery list, artist page list. No custom server — RLS does the
   gating. DB schema lives in `supabase/migrations`.
-- **Environments and maps:** `src/environment.ts` defines visual/acoustic
-  ambience presets. `src/map.ts` defines walkable paths, attached rooms, start
-  position/facing, and tiling (`none`, `path-loop`, `square`, `hex`). Older
-  manifests are normalized through `normalizeComposition`, `normalizeEnvironment`,
-  and `normalizeMap` so missing fields get safe defaults.
+- **Diagnostics:** `src/debug.ts`, `src/scene/DebugSampler.tsx`, and
+  `src/ui/DebugPanel.tsx` implement URL-controlled A/B flags, runtime sampling,
+  and JSON export. Dev builds also expose `window.polyStore`.
+- **Compatibility boundary:** older manifests are normalized through
+  `normalizeComposition`, `normalizeEnvironment`, and `normalizeMap`. Keep
+  backward-compatible defaults there instead of scattering legacy checks
+  through rendering and audio code.
 - **Routing:** `src/main.tsx` — `/` editor (`App`), `/c/:id` viewer, `/gallery`,
   `/artist/:slug`. StrictMode is intentionally OFF (see gotchas).
 
@@ -109,6 +119,64 @@ add a test framework unless asked.
   history (`withHistory`/`undo`/`redo`). Keep map, room, environment, loop,
   metadata, and stem edits in that path unless there is a deliberate reason not
   to.
+
+## Editor UX conventions
+
+- **Composition controls live at the top left.** Reserve that area for settings
+  that affect the composition as a whole, currently Environment, Map, and Loop.
+  Add new composition-level configuration to that stack/drawer pattern rather
+  than introducing another floating location.
+- **Selected-object inspectors live at the bottom left.** Stems, path points,
+  path segments, rooms, entrances, platforms, and walls are selected directly
+  in the 3D view and expose one contextual inspector in the same bottom-left
+  slot. Selection is mutually exclusive; selecting one object clears the
+  others. Clicking empty canvas or pressing Escape clears the selection.
+- **Direct manipulation comes first.** Move spatial objects in the map view,
+  with inspectors reserved for properties and actions. Use the established
+  affordance for each object: a transform gizmo for stems and detached
+  rooms/platforms, shared endpoint handles for paths, doorway handles for
+  entrances, endpoint handles for walls, and move/rotate modes for the start
+  marker. Keep camera controls disabled while dragging.
+- **Connectivity is visible behavior, not just metadata.** A path is a
+  centerline segment plus width; coincident endpoints are one logical branch
+  point. Joints can grow more branches. Terminal points can grow a branch or
+  become an attached room/platform; path-loop endpoints must also be terminal
+  and unattached. Tunnels are enclosed path segments, not a separate movement
+  system.
+- **Rooms and platforms are destinations in the same path graph.** Rooms are
+  enclosed, may have multiple entrances, and may have sliding doors. Platforms
+  are open walkable areas. Both can attach to terminal path points, and paths
+  can grow outward from room entrances or platform edges. Moving connected
+  structures should preserve connections and shared elevation; moving an
+  attached room/platform independently requires deliberate detachment.
+- **Walkability and acoustics are related but distinct.** Paths, rooms, and
+  platforms define where the listener can move. Room/tunnel/door geometry and
+  standalone walls shape occlusion; standalone walls do not block movement.
+  Authored packs are visual dressing, not movement or acoustic geometry.
+- **Preserve editing context.** Select new objects immediately, and have growth
+  actions select the new endpoint/object so the next likely action is ready.
+  Map edits remain undoable and older manifests must normalize into valid
+  topology.
+
+## Bug investigation escalation
+
+If two attempted fixes have not resolved the same bug, stop making speculative
+patches and turn the next step into an investigation:
+
+1. Create or update `docs/investigations/<bug-name>.md` with the symptom,
+   reproduction conditions, attempts made, observed evidence, current
+   hypotheses, and next discriminating checks. Include relevant device,
+   browser, map/environment, and composition details.
+2. Add a narrowly scoped debug option when the suspected subsystem can be
+   isolated or measured by the user. Prefer URL flags using `debugFlag` /
+   `debugValue`, samples in the `?debug=1` export, or another reversible
+   diagnostic that does not change normal behavior.
+3. Hand the user a short troubleshooting checklist stating exactly which
+   flags/build to run and which observations or exported data to return.
+
+The investigation note is not a substitute for fixing an understood bug. Resume
+implementation once evidence distinguishes the likely causes, and keep the
+investigation document current with the result.
 
 ### Commit message mechanics
 
