@@ -1158,6 +1158,8 @@ function walkableFloorGeometry(map: CompositionMap): THREE.BufferGeometry | null
   for (const segment of segments) {
     addRoomDoorwayConnector(map, segment, "start", vertices, indices);
     addRoomDoorwayConnector(map, segment, "end", vertices, indices);
+    addPlatformConnector(map, segment, "start", vertices, indices);
+    addPlatformConnector(map, segment, "end", vertices, indices);
   }
 
   // Joints are a single shared height, so their fill patch is flat.
@@ -1198,6 +1200,80 @@ function addRoomDoorwayConnector(map: CompositionMap, segment: WalkableSegment, 
       return;
     }
   }
+}
+
+function addPlatformConnector(map: CompositionMap, segment: WalkableSegment, end: SegmentEnd, vertices: number[], indices: number[]): void {
+  const connection = segment.connections?.[end];
+  if (connection?.kind !== "platform") return;
+  const platform = map.platforms.find((p) => p.id === connection.platformId);
+  if (!platform) return;
+  const platformEdge = platformConnectorEdgePoints(platform, connection.localPoint, segment.width);
+  if (!platformEdge) return;
+  const y = platformElevation(map, platform);
+  addFloorPolygon(
+    convexHull([borderPoint(segment, map.segments, end, -1), borderPoint(segment, map.segments, end, 1), ...platformEdge]).map((p) => ({ point: p, y })),
+    vertices,
+    indices,
+  );
+}
+
+function platformConnectorEdgePoints(platform: MapPlatform, localPoint: [number, number], width: number): [[number, number], [number, number]] | null {
+  const half = Math.max(0.5, width / 2);
+  if (platform.shape === "circle") {
+    const radius = platform.width / 2;
+    const distance = Math.hypot(localPoint[0], localPoint[1]) || 1;
+    const center: [number, number] = [(localPoint[0] / distance) * radius, (localPoint[1] / distance) * radius];
+    const tangent: [number, number] = [-center[1] / radius, center[0] / radius];
+    return [
+      platformWorldPoint(platform, [center[0] - tangent[0] * half, center[1] - tangent[1] * half]),
+      platformWorldPoint(platform, [center[0] + tangent[0] * half, center[1] + tangent[1] * half]),
+    ];
+  }
+
+  const edge = nearestPolygonEdge(platformLocalPolygon(platform), localPoint);
+  if (!edge) return null;
+  const edgeLength = Math.hypot(edge.b[0] - edge.a[0], edge.b[1] - edge.a[1]);
+  if (edgeLength < 1e-6) return null;
+  const ux = (edge.b[0] - edge.a[0]) / edgeLength;
+  const uz = (edge.b[1] - edge.a[1]) / edgeLength;
+  const centerT = clamp01(((edge.closest[0] - edge.a[0]) * ux + (edge.closest[1] - edge.a[1]) * uz) / edgeLength);
+  const span = Math.min(half / edgeLength, 0.5);
+  const t0 = clamp01(centerT - span);
+  const t1 = clamp01(centerT + span);
+  return [
+    platformWorldPoint(platform, [edge.a[0] + (edge.b[0] - edge.a[0]) * t0, edge.a[1] + (edge.b[1] - edge.a[1]) * t0]),
+    platformWorldPoint(platform, [edge.a[0] + (edge.b[0] - edge.a[0]) * t1, edge.a[1] + (edge.b[1] - edge.a[1]) * t1]),
+  ];
+}
+
+function nearestPolygonEdge(polygon: Array<[number, number]>, point: [number, number]): { a: [number, number]; b: [number, number]; closest: [number, number] } | null {
+  let best: { a: [number, number]; b: [number, number]; closest: [number, number] } | null = null;
+  let bestDistanceSq = Infinity;
+  for (let i = 0; i < polygon.length; i++) {
+    const a = polygon[i];
+    const b = polygon[(i + 1) % polygon.length];
+    const closest = closestPointOnLineSegment(point, a, b);
+    const dx = point[0] - closest[0];
+    const dz = point[1] - closest[1];
+    const distanceSq = dx * dx + dz * dz;
+    if (distanceSq < bestDistanceSq) {
+      best = { a, b, closest };
+      bestDistanceSq = distanceSq;
+    }
+  }
+  return best;
+}
+
+function closestPointOnLineSegment(point: [number, number], a: [number, number], b: [number, number]): [number, number] {
+  const dx = b[0] - a[0];
+  const dz = b[1] - a[1];
+  const lenSq = dx * dx + dz * dz;
+  const t = lenSq === 0 ? 0 : clamp01(((point[0] - a[0]) * dx + (point[1] - a[1]) * dz) / lenSq);
+  return [a[0] + dx * t, a[1] + dz * t];
+}
+
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
 }
 
 function pointInEntranceThreshold(room: MapRoom, entrance: RoomEntrance, point: [number, number]): boolean {
