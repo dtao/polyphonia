@@ -84,4 +84,4 @@ earlier ones.
 - [x] P10 Environmental objects (trees, crystals, etc.) should repeat on tiled maps just as stem orbs do.
 - [x] P11 Floor textures have a visible gap at joints - where path segments connect at an angle.
 - [x] P12 Environmental objects (trees, crystals, etc.) should fade in from the distance as you approach rather than abruptly appear - same as stem orbs.
-- [ ] P13 Environmental (trees, etc.) show visible flicker as player crosses the loop boundary on path-loop maps.
+- [x] P13 Environmental (trees, etc.) show visible flicker as player crosses the loop boundary on path-loop maps.

@@ -72,6 +72,14 @@ export const viewState = { x: 0, y: 0, z: 0, fx: 0, fz: -1 };
 // frame. Kept non-reactive so the bump never triggers a re-render.
 export const loopWrap = { generation: 0 };
 
+// Tiled-preview groups whose contents are positioned from React state that lags
+// the camera by a frame (e.g. <DetailMapDressing>'s loop floor shells and
+// environmental-object copies). They live below <EnvironmentScene>, which mounts
+// before <Player>, so they can't run their own after-wrap guard. Instead they
+// register here and <Scene>'s LoopWrapBlipGuard — mounted after <Player> — hides
+// every registered group on the teleport frame, the same way it hides its own.
+export const loopPreviewGroups = new Set<THREE.Object3D>();
+
 // Touch-device movement input for explore mode: a virtual-joystick vector where
 // `forward`/`strafe` are each in roughly [-1, 1]. Written by the on-screen
 // joystick (<TouchControls>), read each frame by <Player> alongside WASD. Kept

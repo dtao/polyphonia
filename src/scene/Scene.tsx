@@ -2,7 +2,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import * as THREE from "three";
-import { arWalk, loopWrap, useStore, viewState } from "../store";
+import { arWalk, loopPreviewGroups, loopWrap, useStore, viewState } from "../store";
 import { TrackMarker } from "./TrackMarker";
 import { Player } from "./Player";
 import { EditControls } from "./EditControls";
@@ -224,14 +224,16 @@ function TiledMapPreview({ viewer, groupRef }: { viewer: [number, number]; group
 function LoopWrapBlipGuard({ groupRef }: { groupRef: React.RefObject<THREE.Group> }) {
   const seen = useRef(loopWrap.generation);
   useFrame(() => {
+    // Also blank any preview groups registered from below <EnvironmentScene>
+    // (e.g. <DetailMapDressing>'s loop floor shells and environmental objects),
+    // which can't host their own after-wrap guard because they mount before
+    // <Player>. This component mounts after <Player>, so the generation bump is
+    // already recorded when this runs.
+    const wrapped = loopWrap.generation !== seen.current;
+    seen.current = loopWrap.generation;
     const group = groupRef.current;
-    if (!group) return;
-    if (loopWrap.generation !== seen.current) {
-      seen.current = loopWrap.generation;
-      group.visible = false;
-    } else {
-      group.visible = true;
-    }
+    if (group) group.visible = !wrapped;
+    for (const previewGroup of loopPreviewGroups) previewGroup.visible = !wrapped;
   });
   return null;
 }

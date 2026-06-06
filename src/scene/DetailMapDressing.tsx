@@ -17,7 +17,7 @@ import {
   tiledMapTransforms,
   transformLoopPoint,
 } from "../map";
-import { arWalk, viewState } from "../store";
+import { arWalk, loopPreviewGroups, viewState } from "../store";
 import { pathJointPatches } from "./MapScene";
 
 interface DetailPlacement {
@@ -101,23 +101,26 @@ export function DetailMapDressing({
     [tiled, map, viewer],
   );
 
+  // The preview group's floor shells and object copies are positioned from the
+  // `viewer` React state, which lags the camera by a frame. On a path-loop wrap
+  // the camera teleports while these still hold the pre-wrap layout, flashing
+  // copies in the wrong place (P13). Registering the group lets <Scene>'s
+  // after-<Player> guard blank it for the teleport frame; the base copy below
+  // stays visible because it sits at fixed world positions and never desyncs.
+  const previewGroup = useRef<THREE.Group | null>(null);
+  const registerPreviewGroup = useCallback((group: THREE.Group | null) => {
+    if (previewGroup.current) loopPreviewGroups.delete(previewGroup.current);
+    previewGroup.current = group;
+    if (group) loopPreviewGroups.add(group);
+  }, []);
+
   return (
     <group>
       <MapShell map={map} materials={materials} />
-      {floorPreviews.map((preview) => (
-        <group
-          key={preview.id}
-          position={[preview.anchor[0], loopPreviewElevationOffset(map, preview), preview.anchor[1]]}
-          rotation={[0, preview.rotation, 0]}
-        >
-          <group position={[-preview.source[0], 0, -preview.source[1]]}>
-            <MapShell map={map} materials={materials} />
-          </group>
-        </group>
-      ))}
       {detailLandmarks.map(({ landmark, geometry }) => (
         <LandmarkInstances
           key={landmark.id}
+          variant="base"
           geometry={geometry}
           material={materials.floor}
           map={map}
@@ -126,6 +129,31 @@ export function DetailMapDressing({
           landmark={landmark}
         />
       ))}
+      <group ref={registerPreviewGroup}>
+        {floorPreviews.map((preview) => (
+          <group
+            key={preview.id}
+            position={[preview.anchor[0], loopPreviewElevationOffset(map, preview), preview.anchor[1]]}
+            rotation={[0, preview.rotation, 0]}
+          >
+            <group position={[-preview.source[0], 0, -preview.source[1]]}>
+              <MapShell map={map} materials={materials} />
+            </group>
+          </group>
+        ))}
+        {detailLandmarks.map(({ landmark, geometry }) => (
+          <LandmarkInstances
+            key={landmark.id}
+            variant="preview"
+            geometry={geometry}
+            material={materials.floor}
+            map={map}
+            objectPreviews={objectPreviews}
+            quality={quality}
+            landmark={landmark}
+          />
+        ))}
+      </group>
     </group>
   );
 }
@@ -143,6 +171,10 @@ export function SurfaceMapDressing({
   return <MapShell map={map} materials={resolved} />;
 }
 
+// `base` renders the single authoring tile's objects; `preview` renders only the
+// loop-copy objects. They're split so the preview copies — which lag the camera
+// by a frame and so flicker on a loop wrap — can live in a group that <Scene>
+// blanks for the teleport frame, while the base copies stay put (see P13).
 function LandmarkInstances({
   geometry,
   material,
@@ -150,6 +182,7 @@ function LandmarkInstances({
   objectPreviews,
   quality,
   landmark,
+  variant,
 }: {
   geometry: THREE.BufferGeometry;
   material: THREE.Material;
@@ -157,12 +190,14 @@ function LandmarkInstances({
   objectPreviews: ReturnType<typeof tiledMapTransforms>;
   quality: "low" | "high";
   landmark: EnvironmentPackLandmark;
+  variant: "base" | "preview";
 }) {
   const placements = useMemo(() => detailPlacements(map, quality, landmark), [landmark, map, quality]);
   const transforms = useMemo(() => {
-    const matrices = placements.map((placement) =>
-      transform(placement.position, placement.scale, placement.rotationY),
-    );
+    if (variant === "base") {
+      return placements.map((placement) => transform(placement.position, placement.scale, placement.rotationY));
+    }
+    const matrices: THREE.Matrix4[] = [];
     for (const preview of objectPreviews) {
       const lift = loopPreviewElevationOffset(map, preview);
       for (const placement of placements) {
@@ -177,7 +212,8 @@ function LandmarkInstances({
       }
     }
     return matrices;
-  }, [map, objectPreviews, placements]);
+  }, [map, objectPreviews, placements, variant]);
+  if (!transforms.length) return null;
   return (
     <DetailInstances
       geometry={geometry}
