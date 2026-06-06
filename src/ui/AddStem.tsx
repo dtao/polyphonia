@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
-import { registerStemDialogOpener, shortcutKeys } from "../shortcuts";
 
 const AUDIO_RE = /\.(mp3|wav|ogg|flac|m4a|aac|opus|webm)$/i;
 const isAudio = (f: File) => f.type.startsWith("audio/") || AUDIO_RE.test(f.name);
@@ -29,13 +28,6 @@ export function AddStem() {
       }
     }
   }
-
-  // Expose the file picker to the central shortcut dispatcher (Cmd/Ctrl+O is
-  // declared in src/shortcuts.ts).
-  useEffect(() => {
-    registerStemDialogOpener(() => inputRef.current?.click());
-    return () => registerStemDialogOpener(null);
-  }, []);
 
   // Global drag-and-drop.
   useEffect(() => {
@@ -68,7 +60,7 @@ export function AddStem() {
 
   return (
     <>
-      <button style={addBtn} onClick={() => inputRef.current?.click()} title={`Add stem (${shortcutKeys("add-stem")})`}>
+      <button style={addBtn} onClick={() => inputRef.current?.click()} title="Add stem">
         ＋ Add stem
       </button>
       <input

@@ -84,7 +84,7 @@ export function PropertiesPanel() {
         <button
           style={duplicateBtn}
           onClick={() => duplicateTrack(track.id).catch((err) => console.error("Failed to duplicate track", err))}
-          title={`Duplicate track (${shortcutKeys("duplicate-stem")})`}
+          title={`Duplicate track (${shortcutKeys("clone")})`}
         >
           Duplicate
         </button>

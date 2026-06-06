@@ -18,11 +18,9 @@ export type ShortcutId =
   | "toggle-fullscreen"
   | "clear-selection"
   | "delete-selected"
-  | "branch-at-point"
-  | "duplicate-stem"
+  | "clone"
   | "undo"
   | "redo"
-  | "add-stem"
   | "toggle-mode";
 
 // App-owned callbacks the shortcut actions need. Store state and actions are
@@ -76,14 +74,6 @@ export function shortcutKeys(id: ShortcutId): string {
   return sc ? sc.keys.replace("Mod", modKeyLabel()) : "";
 }
 
-// The hidden "Add stem" file input lives in the AddStem component. It registers
-// an opener here so the central dispatcher can trigger it without lifting the
-// file-handling machinery out of that component.
-let stemDialogOpener: (() => void) | null = null;
-export function registerStemDialogOpener(opener: (() => void) | null): void {
-  stemDialogOpener = opener;
-}
-
 // Walks the priority chain of selected objects and deletes the top one. Returns
 // true if something was deleted.
 function deleteSelected(): boolean {
@@ -114,6 +104,38 @@ function deleteSelected(): boolean {
   }
   if (s.selectedMapPointKey) {
     s.deleteMapPoint(s.selectedMapPointKey);
+    return true;
+  }
+  return false;
+}
+
+// Walks the priority chain of selected objects and clones the top one. For a map
+// point this grows a new branch; for everything else it makes a nearby copy.
+// Returns true if something was cloned.
+function cloneSelected(): boolean {
+  const s = useStore.getState();
+  if (s.selectedLandmarkId) {
+    s.duplicateLandmark(s.selectedLandmarkId);
+    return true;
+  }
+  if (s.selectedId) {
+    void s.duplicateTrack(s.selectedId);
+    return true;
+  }
+  if (s.selectedRoomId) {
+    s.duplicateRoom(s.selectedRoomId);
+    return true;
+  }
+  if (s.selectedPlatformId) {
+    s.duplicatePlatform(s.selectedPlatformId);
+    return true;
+  }
+  if (s.selectedWallId) {
+    s.duplicateWall(s.selectedWallId);
+    return true;
+  }
+  if (s.selectedMapPointKey) {
+    s.addBranchAtPoint(s.selectedMapPointKey);
     return true;
   }
   return false;
@@ -166,30 +188,13 @@ export const SHORTCUTS: Shortcut[] = [
     run: () => deleteSelected(),
   },
   {
-    id: "branch-at-point",
-    keys: "B",
-    description: "Grow a new branch from the selected map point",
-    match: (e) => e.code === "KeyB" && !hasModifier(e) && !e.altKey,
-    enabled: () => useStore.getState().mode === "edit" && !!useStore.getState().selectedMapPointKey,
-    run: () => {
-      const key = useStore.getState().selectedMapPointKey;
-      if (!key) return false;
-      useStore.getState().addBranchAtPoint(key);
-      return true;
-    },
-  },
-  {
-    id: "duplicate-stem",
-    keys: "Mod+D",
-    description: "Duplicate the selected stem",
-    match: (e) => hasModifier(e) && e.code === "KeyD",
-    enabled: () => useStore.getState().mode === "edit" && !!useStore.getState().selectedId,
-    run: () => {
-      const id = useStore.getState().selectedId;
-      if (!id) return false;
-      void useStore.getState().duplicateTrack(id);
-      return true;
-    },
+    id: "clone",
+    keys: "C",
+    description:
+      "Clone the selected object — a nearby copy of a stem, room, platform, wall, or landmark, or a new branch from a map point",
+    match: (e) => e.code === "KeyC" && !hasModifier(e) && !e.altKey,
+    enabled: () => useStore.getState().mode === "edit",
+    run: () => cloneSelected(),
   },
   {
     id: "undo",
@@ -212,17 +217,6 @@ export const SHORTCUTS: Shortcut[] = [
     enabled: () => useStore.getState().entered,
     run: () => {
       void useStore.getState().redo();
-      return true;
-    },
-  },
-  {
-    id: "add-stem",
-    keys: "Mod+O",
-    description: "Open the file picker to add a stem",
-    match: (e) => hasModifier(e) && e.code === "KeyO",
-    enabled: () => !!useStore.getState().engine && !!stemDialogOpener,
-    run: () => {
-      stemDialogOpener?.();
       return true;
     },
   },

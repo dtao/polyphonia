@@ -43,15 +43,16 @@ function hudShortcutHint({
 }): string {
   const del = shortcutKeys("delete-selected");
   const esc = shortcutKeys("clear-selection");
+  const clone = shortcutKeys("clone");
   if (mode === "explore")
     return `WASD + mouse to move · click scene for mouse look · Esc releases cursor · ${shortcutKeys("toggle-mode")} to edit · ${shortcutKeys("toggle-fullscreen")} fullscreen`;
-  if (selectedId) return `drag to move stem · ${del} removes · ${shortcutKeys("duplicate-stem")} duplicates · ${esc} clears`;
-  if (selectedLandmarkId) return `drag to place landmark · adjust rotation and scale below · ${del} removes · ${esc} clears`;
-  if (branchStartPointKey) return `click floor to place branch · ${shortcutKeys("branch-at-point")} cancels · ${del} removes point · ${esc} clears`;
-  if (selectedMapPointKey) return `drag point to reshape · terminal points can branch or become rooms · ${del} removes point · ${esc} clears`;
+  if (selectedId) return `drag to move stem · ${del} removes · ${clone} clones · ${esc} clears`;
+  if (selectedLandmarkId) return `drag to place landmark · adjust rotation and scale below · ${del} removes · ${clone} clones · ${esc} clears`;
+  if (branchStartPointKey) return `click floor to place branch · ${del} removes point · ${esc} clears`;
+  if (selectedMapPointKey) return `drag point to reshape · ${clone} branches · ${del} removes point · ${esc} clears`;
   if (selectedMapSegmentId) return `adjust segment width · click point to edit branches · ${esc} clears`;
   if (selectedStart) return `drag start marker · choose Move/Rotate in Map · ${esc} clears`;
-  return `WASD to move · Q/E down/up · drag to orbit · click a track or map point · ${shortcutKeys("add-stem")} adds stem · ${shortcutKeys("undo")} undo · ${shortcutKeys("toggle-fullscreen")} fullscreen`;
+  return `WASD to move · Q/E down/up · drag to orbit · click a track or map point · ${shortcutKeys("undo")} undo · ${shortcutKeys("toggle-fullscreen")} fullscreen`;
 }
 
 export default function App() {
