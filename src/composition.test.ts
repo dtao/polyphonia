@@ -1,0 +1,99 @@
+import { describe, expect, it } from "vitest";
+import {
+  compositionRevision,
+  defaultComposition,
+  normalizeComposition,
+  touchComposition,
+} from "./composition";
+
+describe("composition compatibility and revisions", () => {
+  it("preserves an existing creation timestamp when backfilling updatedAt", () => {
+    const createdAt = "2026-01-02T03:04:05.000Z";
+    const normalized = normalizeComposition({
+      ...defaultComposition,
+      createdAt,
+      updatedAt: undefined,
+    });
+
+    expect(normalized.createdAt).toBe(createdAt);
+    expect(normalized.updatedAt).toBe(createdAt);
+  });
+
+  it("touches updatedAt without replacing createdAt", () => {
+    const createdAt = "2026-01-02T03:04:05.000Z";
+    const updatedAt = "2026-06-06T12:00:00.000Z";
+
+    expect(touchComposition({ createdAt, updatedAt: "old" }, updatedAt)).toEqual({
+      createdAt,
+      updatedAt,
+    });
+  });
+
+  it("ignores local and cloud bookkeeping when detecting unpublished changes", () => {
+    const base = {
+      ...defaultComposition,
+      id: "local-a",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-02T00:00:00.000Z",
+      publishedId: "published-a",
+      publishedRevision: "old",
+      publishedAt: "2026-01-03T00:00:00.000Z",
+    };
+    const bookkeepingOnly = {
+      ...base,
+      id: "local-b",
+      createdAt: "2025-01-01T00:00:00.000Z",
+      updatedAt: "2026-06-06T00:00:00.000Z",
+      publishedId: "published-b",
+      publishedRevision: "new",
+      publishedAt: "2026-06-06T00:00:00.000Z",
+    };
+
+    expect(compositionRevision(bookkeepingOnly)).toBe(compositionRevision(base));
+  });
+
+  it("treats stored and runtime file sources as the same audio identity", () => {
+    const runtime = {
+      ...defaultComposition,
+      tracks: [
+        {
+          ...defaultComposition.tracks[0],
+          source: { kind: "file" as const, url: "blob:http://localhost/runtime-a" },
+          hash: "hash-a",
+        },
+      ],
+    };
+    const stored = {
+      ...runtime,
+      tracks: [
+        {
+          ...runtime.tracks[0],
+          source: { kind: "stored", key: "stem-a" },
+          hash: "hash-b",
+        },
+      ],
+    };
+
+    expect(compositionRevision(stored)).toBe(compositionRevision(runtime));
+  });
+
+  it("changes revision for audible, visual, and map edits", () => {
+    const baseline = compositionRevision(defaultComposition);
+    const changedVolume = {
+      ...defaultComposition,
+      tracks: [{ ...defaultComposition.tracks[0], volume: 0.5 }, ...defaultComposition.tracks.slice(1)],
+    };
+    const changedEnvironment = {
+      ...defaultComposition,
+      environment: { pack: { id: "atlas-cavern", quality: "high" as const } },
+    };
+    const changedMap = {
+      ...defaultComposition,
+      map: { ...defaultComposition.map, wallHeight: 3 },
+    };
+
+    expect(compositionRevision(changedVolume)).not.toBe(baseline);
+    expect(compositionRevision(changedEnvironment)).not.toBe(baseline);
+    expect(compositionRevision(changedMap)).not.toBe(baseline);
+  });
+});

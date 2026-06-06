@@ -72,32 +72,6 @@ earlier ones.
 
 ## Polish & fixes
 
-<<<<<<< HEAD
-- [x] Smooth movement (capped pixel ratio); spawn facing forward.
-- [x] Single-click entry that locks the pointer immediately; stray clicks inert on the start screen.
-- [x] Exit back to the start screen (audio teardown), with edits preserved for re-entry.
-- [x] Hide UI chrome during camera control; "Add stem" only in edit mode.
-- [x] Billboard track labels so they stay readable from any angle.
-- [x] Preserve position across Explore/Edit (altitude shifts, location doesn't); new stems spawn at the view center.
-- [x] First high-fidelity environment pass: cavern uses richer procedural geometry, torch/fog/water atmosphere, and a readable first-person opening view.
-- [x] First map-authoring pass: compositions can choose Open, Line, or Y walkable maps with visible boundary walls and Explore-mode movement constraints.
-- [ ] **Choppy mouse-look** — camera *rotation* (mouse-look) in explore mode often feels choppy, while *walking* (WASD translation) stays smooth. Investigate why rotation specifically stutters.
-- [x] **Mode cleanup on Exit** — after exiting to the start screen, the mouse still controls the camera. More generally, be consistent about which "mode" we're in and when clicks / mouse movement should take effect.
-- [ ] **Turn in Edit mode** — you can move (pan) in edit mode but not turn/rotate the view. Add the ability to turn while keeping the elevated perspective.
-
-**Cross-cutting** (interleave opportunistically): mobile / touch controls, undo / redo, loading & error states.
-
-## Automated test coverage
-
-- [x] Add Vitest and document what belongs in automated vs. manual testing.
-- [x] Artist slug/path helpers.
-- [x] Environment and map normalization/backwards compatibility.
-- [x] Local library migration and serializable uploaded-stem markers.
-- [x] Published composition row/title-key payload shape.
-- [ ] Store actions that sync data changes to the audio engine.
-- [ ] Export/import bundle round trips with embedded stem data.
-- [ ] Publish flow with local fakes for changed vs. unchanged stem uploads.
-=======
 - [ ] **P1 Stem timing offset** — let each stem shift earlier or later by musical intervals such as 1/16, 1/8, 1/4, and 1/2 notes, while keeping all stems synchronized to the shared audio clock and saved in the composition manifest.
 - [ ] **P2 Stem direction** — similar to real-world speakers, it should be possible for stems to be unidirectional (current behavior) or to be "pointed" in a direction, with the ability for the user to configure the width and dispersion of the sound.
 - [ ] P3 Extending one segment into another should "connect" them (unified bridge point).
@@ -108,4 +82,3 @@ earlier ones.
 - [x] P8 Floor texture goes away after changing detail pack for the first time and doesn't come back until browser refresh.
 - [x] P9 Geo Drive mode should only be available on mobile, on tiled maps.
 - [x] P10 Environmental objects (trees, crystals, etc.) should repeat on tiled maps just as stem orbs do.
->>>>>>> main
