@@ -17,6 +17,7 @@ import { MapPanel } from "./ui/MapPanel";
 import { DebugPanel } from "./ui/DebugPanel";
 import { AudioLoadingOverlay } from "./ui/AudioLoadingOverlay";
 import { ARWalkControls } from "./ui/ARWalkControls";
+import { GeoWalkControls } from "./ui/GeoWalkControls";
 import { useStore } from "./store";
 import { exportComposition } from "./persistence";
 
@@ -387,7 +388,12 @@ export default function App() {
           <EntrancePanel />
           <PlatformPanel />
           <WallPanel />
-          {mode === "explore" && <ARWalkControls map={comp.map} />}
+          {mode === "explore" && (
+            <>
+              <ARWalkControls map={comp.map} />
+              <GeoWalkControls map={comp.map} />
+            </>
+          )}
 
           {/* Empty composition: prompt the user to add their first stem. */}
           {comp.tracks.length === 0 && !locked && (
