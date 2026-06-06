@@ -50,12 +50,12 @@ earlier ones.
 - [x] **M5.9 Occlusion and obstruction pass** — introduce geometry-aware sound shaping between listener and stems (line-of-sight checks against environment/map obstacles; blocked sounds get softer/darker without breaking timing, with room/tunnel/wall thickness affecting dampening strength).
 - [x] **M5.10 Looping space model** — support composition-level spatial tiling (`none`, square, hex, path-loop`) with tile size/origin and compatible map topology so a stem layout can repeat infinitely like the audio loop.
 - [x] **M5.11 Tiled map rendering and audio instances** — render nearby visual tiles/map copies and create/cull nearby virtual stem instances around the listener, bounded by adaptive distance/performance limits so infinite space stays cheap.
-- [x] **M5.16 AR/Geo movement experiments** — square/hex tiled maps expose optional listener modes: AR Walk lets Three own an Android WebXR AR session for room-scale pose tracking, while Geo Drive watches GPS movement for car-scale exploration. Both feed existing map wrapping/clamping/audio updates.
 - [ ] **M5.12 Tiling editor aids** — show tile boundaries, mirrored/ghost map copies, and edge-continuity hints in Edit mode so composers can intentionally make square/hex/path layouts that tile cleanly.
 - [ ] **M5.13 Publish/viewer compatibility for maps and environments** — ensure `/c/:id`, `/gallery`, artist pages, export/import, and older manifests all handle environment, map, start, and tiling metadata gracefully.
 - [ ] **M5.14 Open-world stitching prototype** — explore streaming/culling multiple artists' spaces into neighborhoods once single-composition maps and tiling work.
 - [x] **M5.15 Elevation (the vertical dimension)** — stems drag freely in 3D (gizmo Y unlocked) and branch points carry a height (`map.elevations`), so segments become ramps. The explore player auto-follows the walkable surface, attached rooms inherit their branch point's height, and spatial audio is 3D for free (listener + panners already honor Y).
-- [x] **M5.16 Multi-entrance rooms** - support rooms connecting to multiple path segments - or other rooms from arbitrary points in the wall.
+- [x] **M5.16a AR/Geo movement experiments** — square/hex tiled maps expose optional listener modes: AR Walk lets Three own an Android WebXR AR session for room-scale pose tracking, while Geo Drive watches GPS movement for car-scale exploration. Both feed existing map wrapping/clamping/audio updates.
+- [x] **M5.16b Multi-entrance rooms** - support rooms connecting to multiple path segments - or other rooms from arbitrary points in the wall.
 - [x] **M5.17 Tunnels** - introduce a new type of path segment: an enclosed tunnel (with sound occlusion).
 - [x] **M5.18 Platforms** - large areas of various shapes (rectangle, hex, circle) - like rooms, they can be connected to path segments; but they have no walls or ceilings.
 - [x] **M5.19 Doors** - entrances can have doors that slide open - can be openable from one side, or from both sides.
@@ -72,7 +72,6 @@ earlier ones.
 
 ## Polish & fixes
 
-- [ ] **Turn in Edit mode** — you can move (pan) in edit mode but not turn/rotate the view. Add the ability to turn while keeping the elevated perspective.
 - [ ] **Stem timing offset** — let each stem shift earlier or later by musical intervals such as 1/16, 1/8, 1/4, and 1/2 notes, while keeping all stems synchronized to the shared audio clock and saved in the composition manifest.
 - [ ] **Stem direction** — similar to real-world speakers, it should be possible for stems to be unidirectional (current behavior) or to be "pointed" in a direction, with the ability for the user to configure the width and dispersion of the sound.
 - [ ] Extending one segment into another should "connect" them (unified bridge point).
