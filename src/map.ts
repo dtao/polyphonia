@@ -53,6 +53,7 @@ export interface MapRoom {
   width: number; // interior extent along x
   depth: number; // interior extent along z
   height: number; // wall / ceiling height
+  elevation?: number; // flat floor height (attached legacy rooms inherit branch height when absent)
   entrances: RoomEntrance[]; // doorways cut into the walls (at least one)
   attachment?: RoomAttachment; // rooms created from path endpoints stay attached to that branch point
 }
@@ -60,8 +61,8 @@ export interface MapRoom {
 // Older manifests stored a single entrance inline; accepted on read and
 // migrated to `entrances` by `normalizeRoom`.
 type LegacyRoomEntrance = Partial<{ entranceSide: RoomSide; entranceWidth: number; entranceOffset: number }>;
-type RawMapRoom = Omit<MapRoom, "entrances" | "rotation" | "height"> &
-  Partial<Pick<MapRoom, "entrances" | "rotation" | "height">> &
+type RawMapRoom = Omit<MapRoom, "entrances" | "rotation" | "height" | "elevation"> &
+  Partial<Pick<MapRoom, "entrances" | "rotation" | "height" | "elevation">> &
   LegacyRoomEntrance;
 
 // A free-standing wall placed anywhere on the map purely to occlude sound — it
@@ -745,6 +746,7 @@ export function segmentEndElevation(map: Pick<CompositionMap, "elevations">, seg
 }
 
 export function roomElevation(map: Pick<CompositionMap, "segments" | "elevations">, room: MapRoom): number {
+  if (Number.isFinite(room.elevation)) return room.elevation!;
   const point = roomAttachmentPoint(map, room);
   return point ? pointElevation(map, mapPointKey(point)) : 0;
 }
@@ -1563,6 +1565,7 @@ function normalizeRoom(room: RawMapRoom): MapRoom {
     width,
     depth,
     height: clamp(room.height ?? 3.2, 2, 12),
+    ...(Number.isFinite(room.elevation) ? { elevation: clamp(room.elevation!, -20, 40) } : {}),
     entrances: rawEntrances.map((entrance) => normalizeEntrance(entrance, width, depth)),
     attachment: isRoomAttachment(room.attachment) ? room.attachment : undefined,
   };

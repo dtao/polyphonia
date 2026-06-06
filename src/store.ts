@@ -254,6 +254,21 @@ function movedSegmentEndpoints(before: WalkableSegment[], after: WalkableSegment
   return moved;
 }
 
+function setConnectedRoomEndpointElevations(elevations: Record<string, number> | undefined, segments: WalkableSegment[], roomId: string, elevation: number | undefined): Record<string, number> | undefined {
+  if (elevation === undefined || !Number.isFinite(elevation)) return elevations;
+  const next = { ...(elevations ?? {}) };
+  for (const segment of segments) {
+    for (const end of ["start", "end"] as const) {
+      const connection = segment.connections?.[end];
+      if (connection?.kind !== "room" || connection.roomId !== roomId) continue;
+      const key = mapPointKey(segment[end]);
+      if (elevation === 0) delete next[key];
+      else next[key] = elevation;
+    }
+  }
+  return Object.keys(next).length ? next : undefined;
+}
+
 function pruneSelection(
   s: StoreState,
   composition: Composition,
@@ -463,6 +478,7 @@ export const useStore = create<StoreState>((set, get) => ({
       width: 14,
       depth: 12,
       height: 3.4,
+      elevation: 0,
       // opening back toward the start/path
       entrances: [{ side: forward > 0 ? "south" : "north", width: 5, offset: 0 }],
     };
@@ -475,7 +491,8 @@ export const useStore = create<StoreState>((set, get) => ({
     const room = map.rooms.find((r) => r.id === id);
     if (!room) return;
     const nextMap = normalizeMap({ ...map, rooms: map.rooms.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
-    const elevations = moveEndpointElevations(map.elevations, movedSegmentEndpoints(map.segments, nextMap.segments));
+    const movedElevations = moveEndpointElevations(map.elevations, movedSegmentEndpoints(map.segments, nextMap.segments));
+    const elevations = setConnectedRoomEndpointElevations(movedElevations, nextMap.segments, id, patch.elevation);
     get().setMap({ ...nextMap, elevations });
   },
 
@@ -539,6 +556,7 @@ export const useStore = create<StoreState>((set, get) => ({
         width,
         depth,
         height: room.height,
+        elevation: roomElevation(map, room),
         entrances: [{ side: "north", width: Math.min(width, Math.max(5, entrance.width)), offset: 0 }],
       });
       selection = { selectedRoomId: id, selectedEntranceIndex: null };

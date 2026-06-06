@@ -72,6 +72,8 @@ function Rooms({ map, editMode }: { map: CompositionMap; editMode: boolean }) {
 
 function Room({ room, elevationY, editMode, selected }: { room: MapRoom; elevationY: number; editMode: boolean; selected: boolean }) {
   const selectRoom = useStore((s) => s.selectRoom);
+  const updateRoom = useStore((s) => s.updateRoom);
+  const [obj, setObj] = useState<THREE.Group | null>(null);
   const [cx, cz] = room.center;
   const h = room.height;
   const boxes = roomWallBoxes(room);
@@ -79,9 +81,19 @@ function Room({ room, elevationY, editMode, selected }: { room: MapRoom; elevati
   const wallColor = selected ? "#8fffe8" : "#9aa6bd";
   const wallTransparent = editMode;
 
+  function handleObjectChange() {
+    if (!obj) return;
+    updateRoom(room.id, {
+      center: [obj.position.x, obj.position.z],
+      elevation: Math.max(-20, Math.min(40, obj.position.y)),
+      attachment: undefined,
+    });
+  }
+
   return (
     <>
       <group
+        ref={setObj}
         position={[cx, elevationY, cz]}
         rotation={[0, room.rotation, 0]}
         onClick={(e) => {
@@ -115,6 +127,9 @@ function Room({ room, elevationY, editMode, selected }: { room: MapRoom; elevati
         {room.entrances.map((entrance, i) => (entrance.door ? <DoorPanel key={`door-${i}`} room={room} entrance={entrance} editMode={editMode} /> : null))}
         {editMode && selected && <RoomEntranceEditor room={room} elevationY={elevationY} />}
       </group>
+      {editMode && selected && obj && (
+        <TransformControls object={obj} mode="translate" showX showY showZ size={0.9} onObjectChange={handleObjectChange} />
+      )}
     </>
   );
 }
