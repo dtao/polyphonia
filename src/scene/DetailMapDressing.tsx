@@ -29,6 +29,13 @@ import type { FadedInstancedMesh } from "./fadedInstances";
 import { pathJointPatches } from "./MapScene";
 import { radialFade, RADIAL_FADE_OUTER } from "./fade";
 import { environmentGenerationRadius, environmentPreviewTransforms } from "./environmentVisibility";
+import { debugFlag } from "../debug";
+import {
+  environmentInstanceDebugEnabled,
+  recordEnvironmentInstanceBatch,
+  removeEnvironmentInstanceBatch,
+} from "./environmentInstanceDebug";
+import { environmentLodFade } from "./environmentLod";
 
 interface DetailPlacement {
   position: [number, number, number];
@@ -145,6 +152,7 @@ export function DetailMapDressing({
           objectPreviews={objectPreviews}
           quality={quality}
           landmark={landmark}
+          debugId={`${pack.id}:${landmark.id}:base`}
         />
       ))}
       <group ref={registerPreviewGroup}>
@@ -169,6 +177,7 @@ export function DetailMapDressing({
             objectPreviews={objectPreviews}
             quality={quality}
             landmark={landmark}
+            debugId={`${pack.id}:${landmark.id}:preview`}
           />
         ))}
       </group>
@@ -201,6 +210,7 @@ function LandmarkInstances({
   quality,
   landmark,
   variant,
+  debugId,
 }: {
   geometry: THREE.BufferGeometry;
   material: THREE.Material;
@@ -209,6 +219,7 @@ function LandmarkInstances({
   quality: "low" | "high";
   landmark: EnvironmentPackLandmark;
   variant: "base" | "preview";
+  debugId: string;
 }) {
   const placements = useMemo(() => detailPlacements(map, quality, landmark), [landmark, map, quality]);
   const transforms = useMemo(() => {
@@ -239,6 +250,7 @@ function LandmarkInstances({
       transforms={transforms}
       quality={quality}
       landmark={landmark}
+      debugId={debugId}
     />
   );
 }
@@ -505,12 +517,14 @@ function DetailInstances({
   transforms,
   quality,
   landmark,
+  debugId,
 }: {
   geometry: THREE.BufferGeometry;
   material: THREE.Material;
   transforms: THREE.Matrix4[];
   quality: "low" | "high";
   landmark: EnvironmentPackLandmark;
+  debugId: string;
 }) {
   const camera = useThree((state) => state.camera);
   const lowGeometry = useMemo(() => lowDetailGeometry(landmark.fallback), [landmark.fallback]);
@@ -532,22 +546,52 @@ function DetailInstances({
   const lastUpdate = useRef(-Infinity);
   const seenWrap = useRef(loopWrap.generation);
   const position = useMemo(() => new THREE.Vector3(), []);
+  const debugEnabled = useMemo(environmentInstanceDebugEnabled, []);
+  const noLod = useMemo(() => debugFlag("debugEnvironmentNoLod"), []);
+  const debugInstances = useMemo(
+    () =>
+      [] as Array<{
+        position: [number, number, number];
+        distance: number;
+        fade: number;
+        state: "near" | "blend" | "far" | "hidden";
+      }>,
+    [],
+  );
 
   const refill = useCallback(() => {
     let nearCount = 0;
     let farCount = 0;
+    if (debugEnabled) debugInstances.length = 0;
     for (const matrix of transforms) {
       position.setFromMatrixPosition(matrix);
       const distance = position.distanceTo(camera.position);
-      if (distance > DETAIL_OBJECT_CULL) continue;
       const fade = radialFade(distance);
-      if (fade <= 0.002) continue;
-      if (quality === "high" && distance < 42) {
+      const lod = environmentLodFade(distance, quality, noLod);
+      const state =
+        distance > DETAIL_OBJECT_CULL || fade <= 0.002
+          ? "hidden"
+          : lod.near > 0.002 && lod.far > 0.002
+            ? "blend"
+            : lod.near > lod.far
+              ? "near"
+              : "far";
+      if (debugEnabled) {
+        debugInstances.push({
+          position: [position.x, position.y, position.z],
+          distance,
+          fade,
+          state,
+        });
+      }
+      if (state === "hidden") continue;
+      if (lod.near > 0.002) {
         nearMesh.setMatrixAt(nearCount, matrix);
-        setInstanceFade(nearMesh, nearCount++, fade);
-      } else {
+        setInstanceFade(nearMesh, nearCount++, fade * lod.near);
+      }
+      if (lod.far > 0.002) {
         farMesh.setMatrixAt(farCount, matrix);
-        setInstanceFade(farMesh, farCount++, fade);
+        setInstanceFade(farMesh, farCount++, fade * lod.far);
       }
     }
     nearMesh.count = nearCount;
@@ -558,7 +602,8 @@ function DetailInstances({
     finishInstanceFadeUpdate(farMesh);
     nearMesh.computeBoundingSphere();
     farMesh.computeBoundingSphere();
-  }, [camera, farMesh, nearMesh, position, quality, transforms]);
+    if (debugEnabled) recordEnvironmentInstanceBatch(debugId, debugInstances);
+  }, [camera, debugEnabled, debugId, debugInstances, farMesh, nearMesh, noLod, position, quality, transforms]);
 
   useEffect(() => {
     nearMesh.castShadow = true;
@@ -566,10 +611,11 @@ function DetailInstances({
     farMesh.castShadow = false;
     farMesh.receiveShadow = true;
     return () => {
+      removeEnvironmentInstanceBatch(debugId);
       disposeFadedInstancedMesh(nearMesh);
       disposeFadedInstancedMesh(farMesh);
     };
-  }, [farMesh, nearMesh]);
+  }, [debugId, farMesh, nearMesh]);
   useEffect(() => () => lowGeometry.dispose(), [lowGeometry]);
 
   // Fill synchronously whenever the meshes or placements change so a freshly

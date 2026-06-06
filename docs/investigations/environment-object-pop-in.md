@@ -2,6 +2,12 @@
 
 Date: 2026-06-06
 
+## Status
+
+Resolved and manually verified on June 6, 2026. Environmental objects retain
+their authored size, fade at the radial horizon, and transition between proxy
+and authored geometry without visible pop-in on path-loop maps.
+
 ## Symptom
 
 Verdant Grove trees and Prismatic Reach crystal formations do not enter the
@@ -72,5 +78,41 @@ cannot hide an object whose repeated copy does not exist yet.
 - Instance fade/cull lists refresh at 30 Hz and immediately after the explicit
   loop-wrap generation signal, replacing the previous 250 ms stale window.
 
-Automated tests can verify transforms, coverage, and material configuration;
-the visual quality and seam handoff remain pending manual verification.
+Automated tests verify transforms, coverage, and material configuration. The
+constant-size alpha fade and path-loop seam handoff were manually verified.
+
+## Result After `610f0ab`
+
+Manual verification confirmed that square/hex behavior improved, but path-loop
+trees and crystals still appear abruptly. The stable transform pool and alpha
+fade were therefore insufficient.
+
+A remaining hard discontinuity is the detail LOD split: high-quality
+environment objects switch from proxy geometry to authored geometry at exactly
+42 units. New diagnostics record near/far/hidden states and transitions under
+`debugEnvironmentInstances=1`. The comparison flag
+`debugEnvironmentNoLod=1` forces authored geometry throughout the visible
+radius to determine whether that geometry swap is perceived as pop-in.
+
+## Diagnosis Confirmed
+
+The exported run from June 6 confirmed that the remaining pop was the hard LOD
+boundary:
+
+- 74 `far -> near` transitions occurred at 41.18–42.00 units.
+- 74 `near -> far` transitions occurred at 42.01–42.28 units.
+- Every sampled transition had radial fade `1.0`, so the geometry changed while
+  fully visible.
+- With `debugEnvironmentNoLod=1`, manual testing showed more initial authored
+  objects and no observed pop-in.
+
+The implementation now overlaps proxy and authored geometry across a 34–50
+unit band, alpha-fading one out while the other fades in instead of replacing
+the mesh at one distance.
+
+## Resolution
+
+Manual retesting of the same path-loop route confirmed that the LOD crossfade
+eliminated the remaining pop-in. The environment-instance debug snapshot and
+the `debugEnvironmentNoLod=1` comparison flag remain available for future pack
+or geometry regressions.

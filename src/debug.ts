@@ -3,6 +3,7 @@ import { TrackDef } from "./composition";
 import { MarkerDebugSnapshot } from "./scene/markerDebug";
 import { resolvedEnvironmentQuality } from "./environmentPacks";
 import type { EnvironmentSettings } from "./environment";
+import type { EnvironmentInstanceDebugSnapshot } from "./scene/environmentInstanceDebug";
 
 export interface DebugSample {
   t: number;
@@ -31,6 +32,7 @@ export interface DebugSample {
   environment: {
     pack?: string;
     quality?: "low" | "high";
+    instances?: EnvironmentInstanceDebugSnapshot;
   };
   render?: {
     calls: number;
@@ -103,6 +105,8 @@ export function exportDebugSamples(): void {
       debugNoEchoLights: debugFlag("debugNoEchoLights"),
       debugNoFlare: debugFlag("debugNoFlare"),
       debugNoStarRays: debugFlag("debugNoStarRays"),
+      debugEnvironmentInstances: debugFlag("debugEnvironmentInstances"),
+      debugEnvironmentNoLod: debugFlag("debugEnvironmentNoLod"),
     },
     samples,
   };
