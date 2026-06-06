@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { useStore, viewState, touchMove, arWalk } from "../store";
+import { useStore, viewState, touchMove, arWalk, geoWalk } from "../store";
 import { MapSupport, mapSupportAt, stepOnMap, surfaceHeightOnSupport, wrapLoopPosition } from "../map";
 
 const EYE_HEIGHT = 1.7;
 const AR_HEADING_SMOOTHING = 0.45;
+const GEO_HEADING_SMOOTHING = 0.5;
 
 function turnToward(current: number, target: number, amount: number): number {
   const delta = Math.atan2(Math.sin(target - current), Math.cos(target - current));
@@ -171,13 +172,29 @@ export function Player() {
     right.current.crossVectors(forward.current, up).normalize();
 
     const previous: [number, number] = [camera.position.x, camera.position.z];
+    let geoFacing: [number, number] | null = null;
     if (arWalk.active) {
+      geoWalk.pendingX = 0;
+      geoWalk.pendingZ = 0;
       camera.position.x = viewState.x;
       camera.position.z = viewState.z;
       camera.position.y = viewState.y + EYE_HEIGHT;
       if (Math.hypot(viewState.fx, viewState.fz) > 0.03) {
         const targetYaw = Math.atan2(-viewState.fx, -viewState.fz);
         look.current.targetYaw = turnToward(look.current.targetYaw, targetYaw, AR_HEADING_SMOOTHING);
+        look.current.targetPitch = THREE.MathUtils.damp(look.current.targetPitch, 0, 10, dt);
+      }
+    } else if (geoWalk.active) {
+      const dx = geoWalk.pendingX;
+      const dz = geoWalk.pendingZ;
+      geoWalk.pendingX = 0;
+      geoWalk.pendingZ = 0;
+      camera.position.x += dx;
+      camera.position.z += dz;
+      if (Math.hypot(dx, dz) > 0.01) {
+        geoFacing = [dx, dz];
+        const targetYaw = Math.atan2(-dx, -dz);
+        look.current.targetYaw = turnToward(look.current.targetYaw, targetYaw, GEO_HEADING_SMOOTHING);
         look.current.targetPitch = THREE.MathUtils.damp(look.current.targetPitch, 0, 10, dt);
       }
     } else {
@@ -224,7 +241,11 @@ export function Player() {
     viewState.y = ground;
     viewState.z = camera.position.z;
     const len = Math.hypot(forward.current.x, forward.current.z);
-    if (len > 0 && !arWalk.active) {
+    const geoLen = geoFacing ? Math.hypot(geoFacing[0], geoFacing[1]) : 0;
+    if (geoFacing && geoLen > 0.01) {
+      viewState.fx = geoFacing[0] / geoLen;
+      viewState.fz = geoFacing[1] / geoLen;
+    } else if (len > 0 && !arWalk.active) {
       viewState.fx = forward.current.x / len;
       viewState.fz = forward.current.z / len;
     }

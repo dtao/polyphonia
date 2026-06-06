@@ -60,6 +60,15 @@ export const arWalk = {
   renderYaw: 0,
 };
 
+// Experimental driving input: <GeoWalkControls> watches device geolocation and
+// queues smoothed map-space deltas. <Player> applies those deltas through the
+// same wrap/clamp path as keyboard movement.
+export const geoWalk = {
+  active: false,
+  pendingX: 0,
+  pendingZ: 0,
+};
+
 type Falloff = Pick<TrackDef, "refDistance" | "maxDistance" | "rolloff">;
 
 export type Mode = "explore" | "edit";
