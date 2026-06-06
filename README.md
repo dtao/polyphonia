@@ -22,7 +22,9 @@ these spatial compositions.
   spaces that wrap back on themselves. Path segments can be marked as enclosed
   **tunnels** whose walls and ceiling muffle sound passing in or out the sides,
   and open **platforms** (rectangle, hex, or circle) add wide walkable areas
-  that connect to any path, room, or platform they overlap.
+  that connect to any path, room, or platform they overlap. Room doorways can
+  carry sliding **doors** that open as you approach (from either side or just
+  one) and muffle sound while shut.
 - **Edit** — an overhead edit mode to place tracks in space (drag gizmo), and a
   properties panel to rename, recolor, set volume, and tune distance falloff.
 - **Build from scratch** — create a new composition (title / BPM, plus an

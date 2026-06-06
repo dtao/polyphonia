@@ -58,7 +58,7 @@ earlier ones.
 - [x] **M5.16 Multi-entrance rooms** - support rooms connecting to multiple path segments - or other rooms from arbitrary points in the wall.
 - [x] **M5.17 Tunnels** - introduce a new type of path segment: an enclosed tunnel (with sound occlusion).
 - [x] **M5.18 Platforms** - large areas of various shapes (rectangle, hex, circle) - like rooms, they can be connected to path segments; but they have no walls or ceilings.
-- [ ] **M5.19 Doors** - entrances can have doors that slide open - can be openable from one side, or from both sides.
+- [x] **M5.19 Doors** - entrances can have doors that slide open - can be openable from one side, or from both sides.
 - [ ] **M5.20 Standalone walls** - allow composers to create walls in arbitary locations (not necessarily connected to a path segment) to introduce intentional occlusion as part of a composition.
 
 ## Milestone 6 — Authored high-fidelity environments

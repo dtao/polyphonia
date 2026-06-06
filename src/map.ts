@@ -22,12 +22,20 @@ export interface RoomAttachment {
   end: SegmentEnd;
 }
 
+// A door that slides open as the listener approaches. `openFrom` controls which
+// side it responds to: "both", only from "inside" the room, or only from
+// "outside". A closed door fills its doorway and occludes sound like a wall.
+export interface DoorConfig {
+  openFrom: "both" | "inside" | "outside";
+}
+
 // A doorway cut into one of a room's walls. A room can have several, on any
 // combination of walls, so it can open onto multiple paths/rooms.
 export interface RoomEntrance {
   side: RoomSide; // which wall this opening is cut into
   width: number; // doorway opening width
   offset: number; // center offset along the wall (0 = centered)
+  door?: DoorConfig; // absent = permanently open gap
 }
 
 // An enclosed rectangular space (walls + ceiling) with one or more doorways that
@@ -308,16 +316,23 @@ export function roomRegionRects(room: MapRoom): Rect[] {
   return [interiorRect(room), ...room.entrances.map((entrance) => doorwayRect(room, entrance))];
 }
 
+function openingInterval(entrance: RoomEntrance): [number, number] {
+  const ew = Math.max(0.5, entrance.width);
+  return [entrance.offset - ew / 2, entrance.offset + ew / 2];
+}
+
 // Opening intervals along a given wall (in that wall's local coordinate), and
-// the solid spans left over once every opening is removed. Shared by the audio
-// occlusion test and the wall mesh builder so they agree on where the gaps are.
+// the solid spans left over once every opening is removed. Used by the wall
+// mesh builder, where every doorway is always a gap (a door is a separate
+// sliding panel that fills it).
 export function wallOpenings(room: MapRoom, side: RoomSide): Array<[number, number]> {
-  return room.entrances
-    .filter((entrance) => entrance.side === side)
-    .map((entrance) => {
-      const ew = Math.max(0.5, entrance.width);
-      return [entrance.offset - ew / 2, entrance.offset + ew / 2] as [number, number];
-    });
+  return room.entrances.filter((entrance) => entrance.side === side).map(openingInterval);
+}
+
+// Like `wallOpenings`, but a doorway with a *closed* door (for the given
+// listener) is treated as solid, so sound can't leak through it.
+function openWallOpenings(room: MapRoom, side: RoomSide, listener: [number, number]): Array<[number, number]> {
+  return room.entrances.filter((entrance) => entrance.side === side && doorIsOpen(room, entrance, listener)).map(openingInterval);
 }
 
 export function solidWallSpans(half: number, openings: Array<[number, number]>): Array<[number, number]> {
@@ -360,9 +375,54 @@ export function roomWallObstructionCount(map: Pick<CompositionMap, "rooms">, fro
     const aInside = pointInRect(a, interiorRect(room));
     const bInside = pointInRect(b, interiorRect(room));
     if (aInside === bInside) continue;
-    if (lineHitsSolidRoomWall(room, a, b)) count++;
+    // `from` is the listener, so closed doors (relative to it) become solid.
+    if (lineHitsSolidRoomWall(room, a, b, from)) count++;
   }
   return count;
+}
+
+// --- Doors ---
+
+// How close (beyond the doorway threshold) the listener must be for a door to
+// stand fully open.
+const DOOR_OPEN_RADIUS = 4.5;
+
+// World-space center of an entrance's doorway opening, on its wall line.
+export function entranceDoorwayCenter(room: MapRoom, entrance: RoomEntrance): [number, number] {
+  const r = interiorRect(room);
+  let local: [number, number];
+  switch (entrance.side) {
+    case "north":
+      local = [entrance.offset, r.minZ];
+      break;
+    case "south":
+      local = [entrance.offset, r.maxZ];
+      break;
+    case "west":
+      local = [r.minX, entrance.offset];
+      break;
+    case "east":
+      local = [r.maxX, entrance.offset];
+      break;
+  }
+  return fromRoomLocal(room, local);
+}
+
+// 0 (shut) … 1 (wide open) for an entrance's door given the listener position.
+// No door = always 1. A directional door stays shut for a listener on the wrong
+// side; otherwise it opens smoothly as the listener nears the doorway.
+export function doorOpenAmount(room: MapRoom, entrance: RoomEntrance, listener: [number, number]): number {
+  if (!entrance.door) return 1;
+  const inside = roomInteriorContains(room, listener);
+  const allowed = entrance.door.openFrom === "both" || (entrance.door.openFrom === "inside" ? inside : !inside);
+  if (!allowed) return 0;
+  const center = entranceDoorwayCenter(room, entrance);
+  const distance = Math.hypot(listener[0] - center[0], listener[1] - center[1]);
+  return clamp(1 - (distance - 0.5) / DOOR_OPEN_RADIUS, 0, 1);
+}
+
+export function doorIsOpen(room: MapRoom, entrance: RoomEntrance, listener: [number, number]): boolean {
+  return doorOpenAmount(room, entrance, listener) > 0.5;
 }
 
 export function isTunnelSegment(segment: WalkableSegment): boolean {
@@ -720,7 +780,7 @@ export function alignAttachedRooms(map: CompositionMap): CompositionMap {
       // (north, centered). Any additional entrances the composer added on other
       // walls are preserved as-is.
       const [primary, ...rest] = room.entrances;
-      const lockedPrimary: RoomEntrance = { side: "north", width: primary?.width ?? 5, offset: 0 };
+      const lockedPrimary: RoomEntrance = { side: "north", width: primary?.width ?? 5, offset: 0, ...(primary?.door ? { door: primary.door } : {}) };
       return { ...room, ...placed, entrances: [lockedPrimary, ...rest] };
     }),
   };
@@ -1024,13 +1084,15 @@ function closestPointOnSegment(point: [number, number], a: [number, number], b: 
   return [a[0] + dx * t, a[1] + dz * t];
 }
 
-function lineHitsSolidRoomWall(room: MapRoom, from: [number, number], to: [number, number]): boolean {
+// `from`/`to` are in room-local coords; `listener` is the world-space listener
+// used to decide which doors are currently open (and therefore not solid).
+function lineHitsSolidRoomWall(room: MapRoom, from: [number, number], to: [number, number], listener: [number, number]): boolean {
   const r = interiorRect(room);
   const walls: Array<[[number, number], [number, number]]> = [];
-  for (const [s, e] of solidWallSpans(r.maxX, wallOpenings(room, "north"))) walls.push([[s, r.minZ], [e, r.minZ]]);
-  for (const [s, e] of solidWallSpans(r.maxX, wallOpenings(room, "south"))) walls.push([[s, r.maxZ], [e, r.maxZ]]);
-  for (const [s, e] of solidWallSpans(r.maxZ, wallOpenings(room, "west"))) walls.push([[r.minX, s], [r.minX, e]]);
-  for (const [s, e] of solidWallSpans(r.maxZ, wallOpenings(room, "east"))) walls.push([[r.maxX, s], [r.maxX, e]]);
+  for (const [s, e] of solidWallSpans(r.maxX, openWallOpenings(room, "north", listener))) walls.push([[s, r.minZ], [e, r.minZ]]);
+  for (const [s, e] of solidWallSpans(r.maxX, openWallOpenings(room, "south", listener))) walls.push([[s, r.maxZ], [e, r.maxZ]]);
+  for (const [s, e] of solidWallSpans(r.maxZ, openWallOpenings(room, "west", listener))) walls.push([[r.minX, s], [r.minX, e]]);
+  for (const [s, e] of solidWallSpans(r.maxZ, openWallOpenings(room, "east", listener))) walls.push([[r.maxX, s], [r.maxX, e]]);
   return walls.some(([a, b]) => lineSegmentsIntersect(from, to, a, b));
 }
 
@@ -1165,7 +1227,14 @@ function normalizeEntrance(entrance: RoomEntrance, width: number, depth: number)
   const span = entranceSpan(entrance.side, width, depth);
   const entranceWidth = clamp(entrance.width, 1, Math.max(1, span));
   const maxOffset = Math.max(0, span / 2 - entranceWidth / 2);
-  return { side: entrance.side, width: entranceWidth, offset: clamp(entrance.offset, -maxOffset, maxOffset) };
+  const normalized: RoomEntrance = { side: entrance.side, width: entranceWidth, offset: clamp(entrance.offset, -maxOffset, maxOffset) };
+  if (isDoorConfig(entrance.door)) normalized.door = { openFrom: entrance.door.openFrom };
+  return normalized;
+}
+
+function isDoorConfig(value: unknown): value is DoorConfig {
+  const door = value as DoorConfig;
+  return door?.openFrom === "both" || door?.openFrom === "inside" || door?.openFrom === "outside";
 }
 
 function normalizeRoom(room: RawMapRoom): MapRoom {

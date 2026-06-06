@@ -1,5 +1,13 @@
-import { RoomEntrance, RoomSide, ROOM_WALL_THICKNESS } from "../map";
+import { DoorConfig, RoomEntrance, RoomSide, ROOM_WALL_THICKNESS } from "../map";
 import { useStore } from "../store";
+
+type DoorMode = "none" | DoorConfig["openFrom"];
+const DOOR_MODES: Array<{ value: DoorMode; label: string }> = [
+  { value: "none", label: "Open" },
+  { value: "both", label: "Door" },
+  { value: "outside", label: "From out" },
+  { value: "inside", label: "From in" },
+];
 
 // Bottom-left inspector for the selected room (like the stem panel). Shown in
 // edit mode when a room is selected. A room can carry several doorways; the
@@ -16,6 +24,17 @@ export function RoomPanel() {
   function setEntrance(index: number, patch: Partial<RoomEntrance>) {
     if (!room) return;
     updateRoom(room.id, { entrances: room.entrances.map((e, i) => (i === index ? { ...e, ...patch } : e)) });
+  }
+
+  function setDoor(index: number, mode: DoorMode) {
+    if (!room) return;
+    updateRoom(room.id, {
+      entrances: room.entrances.map((e, i) => {
+        if (i !== index) return e;
+        const { door: _door, ...rest } = e;
+        return mode === "none" ? rest : { ...rest, door: { openFrom: mode } };
+      }),
+    });
   }
 
   function addEntrance() {
@@ -71,6 +90,16 @@ export function RoomPanel() {
             {!locked && maxOffset > 0.01 && (
               <Slider label="Offset" value={entrance.offset} min={-maxOffset} max={maxOffset} step={0.5} onChange={(v) => setEntrance(index, { offset: v })} />
             )}
+            <div style={doorGrid}>
+              {DOOR_MODES.map((m) => {
+                const current = (entrance.door?.openFrom ?? "none") === m.value;
+                return (
+                  <button key={m.value} style={{ ...doorBtn, ...(current ? sideActive : null) }} onClick={() => setDoor(index, m.value)} title={`Door: ${m.label}`}>
+                    {m.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         );
       })}
@@ -180,6 +209,22 @@ const sideActive: React.CSSProperties = {
   border: "1px solid rgba(91,140,255,0.75)",
   background: "rgba(91,140,255,0.24)",
   color: "white",
+};
+
+const doorGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr 1fr 1fr",
+  gap: 4,
+};
+
+const doorBtn: React.CSSProperties = {
+  padding: "5px 2px",
+  borderRadius: 6,
+  border: "1px solid rgba(255,255,255,0.14)",
+  background: "rgba(255,255,255,0.06)",
+  color: "rgba(255,255,255,0.74)",
+  cursor: "pointer",
+  fontSize: 10,
 };
 
 const addBtn: React.CSSProperties = {

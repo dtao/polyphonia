@@ -3,8 +3,8 @@ import { Line, TransformControls } from "@react-three/drei";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
-import { canAddBranchAtPoint, clampToMap, CompositionMap, isTunnelSegment, loopRoleForPoint, MapPlatform, MapRoom, platformElevation, platformLocalPolygon, roomAttachedToPoint, roomElevation, ROOM_WALL_THICKNESS, solidWallSpans, surfaceHeightAt, tunnelSideWalls, wallOpenings, WalkableSegment } from "../map";
-import { useStore } from "../store";
+import { canAddBranchAtPoint, clampToMap, CompositionMap, doorOpenAmount, isTunnelSegment, loopRoleForPoint, MapPlatform, MapRoom, platformElevation, platformLocalPolygon, RoomEntrance, roomAttachedToPoint, roomElevation, ROOM_WALL_THICKNESS, solidWallSpans, surfaceHeightAt, tunnelSideWalls, wallOpenings, WalkableSegment } from "../map";
+import { useStore, viewState } from "../store";
 import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 
 const MAX_TRACK_LIGHTS = 64;
@@ -110,9 +110,49 @@ function Room({ room, elevationY, editMode, selected }: { room: MapRoom; elevati
             <meshStandardMaterial color={wallColor} roughness={0.85} metalness={0.05} transparent={wallTransparent} opacity={wallOpacity} depthWrite={!editMode} side={THREE.DoubleSide} />
           </mesh>
         ))}
+        {room.entrances.map((entrance, i) => (entrance.door ? <DoorPanel key={`door-${i}`} room={room} entrance={entrance} editMode={editMode} /> : null))}
       </group>
     </>
   );
+}
+
+// A sliding door that fills its doorway and retracts into the adjacent wall as
+// the listener approaches from an allowed side (see `doorOpenAmount`).
+function DoorPanel({ room, entrance, editMode }: { room: MapRoom; entrance: RoomEntrance; editMode: boolean }) {
+  const ref = useRef<THREE.Mesh>(null);
+  const open = useRef(0);
+  const data = useMemo(() => doorPanelData(room, entrance), [room, entrance]);
+  useFrame((_, dt) => {
+    if (!ref.current) return;
+    const target = doorOpenAmount(room, entrance, [viewState.x, viewState.z]);
+    open.current = THREE.MathUtils.damp(open.current, target, 8, dt);
+    const slide = open.current * (data.width + 0.4);
+    ref.current.position.set(data.center[0] + (data.axis === "x" ? slide : 0), room.height / 2, data.center[1] + (data.axis === "z" ? slide : 0));
+  });
+  return (
+    <mesh ref={ref} position={[data.center[0], room.height / 2, data.center[1]]}>
+      <boxGeometry args={data.size} />
+      <meshStandardMaterial color="#caa46a" roughness={0.5} metalness={0.35} transparent={editMode} opacity={editMode ? 0.55 : 1} depthWrite={!editMode} side={THREE.DoubleSide} />
+    </mesh>
+  );
+}
+
+function doorPanelData(room: MapRoom, entrance: RoomEntrance): { center: [number, number]; axis: "x" | "z"; width: number; size: [number, number, number] } {
+  const hw = room.width / 2;
+  const hd = room.depth / 2;
+  const t = ROOM_WALL_THICKNESS;
+  const h = room.height;
+  const w = entrance.width;
+  switch (entrance.side) {
+    case "north":
+      return { center: [entrance.offset, -hd], axis: "x", width: w, size: [w, h, t] };
+    case "south":
+      return { center: [entrance.offset, hd], axis: "x", width: w, size: [w, h, t] };
+    case "west":
+      return { center: [-hw, entrance.offset], axis: "z", width: w, size: [t, h, w] };
+    case "east":
+      return { center: [hw, entrance.offset], axis: "z", width: w, size: [t, h, w] };
+  }
 }
 
 // Wall boxes in room-local coords; each entrance leaves a gap in its wall.
