@@ -1502,7 +1502,19 @@ function lineHitsMovementRoomWall(room: MapRoom, from: [number, number], to: [nu
   for (const [s, e] of solidWallSpans(r.maxX, movementWallOpenings(room, "south", listener))) walls.push(horizontalWallRect(s, e, r.maxX, r.maxZ, room));
   for (const [s, e] of solidWallSpans(r.maxZ, movementWallOpenings(room, "west", listener))) walls.push(verticalWallRect(s, e, r.maxZ, r.minX, room));
   for (const [s, e] of solidWallSpans(r.maxZ, movementWallOpenings(room, "east", listener))) walls.push(verticalWallRect(s, e, r.maxZ, r.maxX, room));
-  return walls.some((rect) => lineIntersectsRectInclusive(from, to, rect));
+  return walls.some((rect) => movementBlockedByWallRect(from, to, rect));
+}
+
+function movementBlockedByWallRect(from: [number, number], to: [number, number], rect: Rect): boolean {
+  if (pointInRect(from, rect)) {
+    return rectPenetrationDepth(to, rect) > rectPenetrationDepth(from, rect);
+  }
+  return lineIntersectsRectInclusive(from, to, rect);
+}
+
+function rectPenetrationDepth(point: [number, number], rect: Rect): number {
+  if (!pointInRect(point, rect)) return 0;
+  return Math.min(point[0] - rect.minX, rect.maxX - point[0], point[1] - rect.minZ, rect.maxZ - point[1]);
 }
 
 function movementWallOpenings(room: MapRoom, side: RoomSide, listener: [number, number]): Array<[number, number]> {
