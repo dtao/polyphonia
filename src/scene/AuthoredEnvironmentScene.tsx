@@ -1,15 +1,16 @@
-import { useGLTF } from "@react-three/drei";
-import { useFrame, useThree } from "@react-three/fiber";
-import { Component, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { TransformControls, useGLTF } from "@react-three/drei";
+import { ThreeEvent, useFrame, useThree } from "@react-three/fiber";
+import { Component, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import * as THREE from "three";
 import { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
 import type { EnvironmentSettings } from "../environment";
+import type { EnvironmentLandmarkPlacement } from "../environment";
 import { environmentPackAsset, environmentPackById, resolvedEnvironmentQuality } from "../environmentPacks";
 import type { EnvironmentPackDefinition } from "../environmentPacks";
 import type { CompositionMap } from "../map";
 import { tiledMapTransforms } from "../map";
-import { arWalk, viewState } from "../store";
+import { arWalk, useStore, viewState } from "../store";
 import { DetailMapDressing } from "./DetailMapDressing";
 import { environmentInstanceBatches } from "./environmentInstances";
 
@@ -52,6 +53,7 @@ export function AuthoredEnvironmentScene({
           editMode={editMode}
           quality={quality}
           pack={pack}
+          placements={environment.landmarks ?? []}
           extendLoader={extendLoader}
         />
       </Suspense>
@@ -65,6 +67,7 @@ function EnvironmentAsset({
   editMode,
   quality,
   pack,
+  placements,
   extendLoader,
 }: {
   url: string;
@@ -72,6 +75,7 @@ function EnvironmentAsset({
   editMode: boolean;
   quality: "low" | "high";
   pack: EnvironmentPackDefinition;
+  placements: EnvironmentLandmarkPlacement[];
   extendLoader: (loader: any) => void;
 }) {
   const gltf = useGLTF(url, "/draco-gltf/", true, extendLoader);
@@ -95,7 +99,13 @@ function EnvironmentAsset({
             geometry = object.geometry;
           }
         });
-        return geometry ? [{ landmark, geometry }] : [];
+        return geometry
+          ? [{
+              landmark,
+              geometry,
+              material: findLandmarkMaterial(gltf.scene, landmark.nodePrefix),
+            }]
+          : [];
       }),
     [gltf.scene, pack.landmarks],
   );
@@ -113,7 +123,114 @@ function EnvironmentAsset({
           quality={quality}
         />
       )}
+      <PlacedLandmarks
+        landmarks={landmarkGeometries}
+        placements={placements}
+        editMode={editMode}
+      />
       <PackLighting preset={pack.lighting} enabled={!editMode} quality={quality} />
+    </>
+  );
+}
+
+function findLandmarkMaterial(
+  scene: THREE.Object3D,
+  nodePrefix: string,
+): THREE.Material | THREE.Material[] | undefined {
+  let material: THREE.Material | THREE.Material[] | undefined;
+  scene.traverse((object) => {
+    if (!material && object instanceof THREE.Mesh && object.name.startsWith(nodePrefix)) {
+      material = object.material;
+    }
+  });
+  return material;
+}
+
+function PlacedLandmarks({
+  landmarks,
+  placements,
+  editMode,
+}: {
+  landmarks: Array<{
+    landmark: EnvironmentPackDefinition["landmarks"][number];
+    geometry: THREE.BufferGeometry;
+    material?: THREE.Material | THREE.Material[];
+  }>;
+  placements: EnvironmentLandmarkPlacement[];
+  editMode: boolean;
+}) {
+  const catalog = useMemo(
+    () => new Map(landmarks.map((entry) => [entry.landmark.id, entry])),
+    [landmarks],
+  );
+  return (
+    <group>
+      {placements.map((placement) => {
+        const entry = catalog.get(placement.assetId);
+        if (!entry) return null;
+        return (
+          <PlacedLandmark
+            key={placement.id}
+            placement={placement}
+            geometry={entry.geometry}
+            material={entry.material}
+            editMode={editMode}
+          />
+        );
+      })}
+    </group>
+  );
+}
+
+function PlacedLandmark({
+  placement,
+  geometry,
+  material,
+  editMode,
+}: {
+  placement: EnvironmentLandmarkPlacement;
+  geometry: THREE.BufferGeometry;
+  material?: THREE.Material | THREE.Material[];
+  editMode: boolean;
+}) {
+  const mesh = useRef<THREE.Mesh>(null);
+  const selected = useStore((state) => state.selectedLandmarkId === placement.id);
+  const selectLandmark = useStore((state) => state.selectLandmark);
+  const handleClick = (event: ThreeEvent<MouseEvent>) => {
+    if (!editMode) return;
+    event.stopPropagation();
+    selectLandmark(placement.id);
+  };
+  const updateFromObject = () => {
+    const object = mesh.current;
+    if (!object) return;
+    useStore.getState().updateLandmark(placement.id, {
+      position: [object.position.x, object.position.y, object.position.z],
+      rotation: [object.rotation.x, object.rotation.y, object.rotation.z],
+      scale: [object.scale.x, object.scale.y, object.scale.z],
+    });
+  };
+  return (
+    <>
+      <mesh
+        ref={mesh}
+        geometry={geometry}
+        material={material}
+        position={placement.position}
+        rotation={placement.rotation}
+        scale={placement.scale}
+        castShadow
+        receiveShadow
+        onClick={handleClick}
+      />
+      {editMode && selected && mesh.current && (
+        <TransformControls
+          object={mesh.current}
+          mode="translate"
+          size={0.85}
+          onObjectChange={updateFromObject}
+        />
+      )}
     </>
   );
 }

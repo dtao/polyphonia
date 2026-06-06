@@ -31,6 +31,7 @@ beforeEach(() => {
     selectedEntranceIndex: null,
     selectedPlatformId: null,
     selectedWallId: null,
+    selectedLandmarkId: null,
   });
 });
 
@@ -86,6 +87,7 @@ describe("store edit contracts", () => {
       selectedRoomId: null,
       selectedPlatformId: null,
       selectedWallId: null,
+      selectedLandmarkId: null,
     });
 
     store.selectRoom("room-a");
@@ -94,5 +96,36 @@ describe("store edit contracts", () => {
       selectedRoomId: "room-a",
       selectedEntranceIndex: null,
     });
+  });
+
+  it("adds, edits, selects, and removes pack landmarks through history", async () => {
+    useStore.getState().setEnvironment({
+      pack: { id: "verdant-grove", variant: "temperate", quality: "auto" },
+    });
+    useStore.setState({ undoStack: [], redoStack: [] });
+
+    useStore.getState().addLandmark("evergreen");
+    const added = useStore.getState().composition.environment.landmarks?.[0];
+    expect(added).toMatchObject({ assetId: "evergreen", scale: [1, 1, 1] });
+    expect(useStore.getState().selectedLandmarkId).toBe(added?.id);
+
+    useStore.getState().updateLandmark(added!.id, {
+      position: [4, 0, -6],
+      scale: [2, 2, 2],
+    });
+    expect(useStore.getState().composition.environment.landmarks?.[0]).toMatchObject({
+      position: [4, 0, -6],
+      scale: [2, 2, 2],
+    });
+
+    useStore.getState().select("bass");
+    expect(useStore.getState().selectedLandmarkId).toBeNull();
+    useStore.getState().selectLandmark(added!.id);
+    expect(useStore.getState().selectedId).toBeNull();
+
+    useStore.getState().deleteLandmark(added!.id);
+    expect(useStore.getState().composition.environment.landmarks).toBeUndefined();
+    await useStore.getState().undo();
+    expect(useStore.getState().composition.environment.landmarks).toHaveLength(1);
   });
 });

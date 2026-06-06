@@ -14,7 +14,12 @@ import {
   importComposition as importBundle,
 } from "./persistence";
 import { newId } from "./id";
-import { EnvironmentSettings, defaultEnvironment, normalizeEnvironment } from "./environment";
+import {
+  EnvironmentLandmarkPlacement,
+  EnvironmentSettings,
+  defaultEnvironment,
+  normalizeEnvironment,
+} from "./environment";
 import { attachmentForPoint, canAddBranchAtPoint, canAddPlatformAtPoint, canAddRoomAtPoint, CompositionMap, entranceDoorwayCenter, entranceLocalCenter, entranceOuterPoint, MAP_PRESETS, MapPlatform, MapRoom, MapWall, RoomEntrance, RoomSide, defaultMap, mapPointKey, normalizeMap, platformContains, platformElevation, pointInOriginalTile, roomContains, roomElevation, roomWorldPoint, surfaceHeightAt, WalkableSegment } from "./map";
 import { ArtistIdentity } from "./artist";
 import {
@@ -104,6 +109,7 @@ interface StoreState {
   selectedEntranceIndex: number | null; // sub-selection within selectedRoomId
   selectedPlatformId: string | null;
   selectedWallId: string | null;
+  selectedLandmarkId: string | null;
   entered: boolean; // has the user started the experience (left the entry screen)
   viewer: boolean; // read-only shared-link view (no autosave, no editing)
   user: AuthUser | null; // signed-in account (for publishing); null = anonymous
@@ -133,6 +139,12 @@ interface StoreState {
   setBranchStartPoint: (key: string | null) => void;
   selectStart: () => void;
   setStartGizmoMode: (mode: "translate" | "rotate") => void;
+
+  // Visual landmark instances supplied by the selected detail pack.
+  selectLandmark: (id: string | null) => void;
+  addLandmark: (assetId: string) => void;
+  updateLandmark: (id: string, patch: Partial<EnvironmentLandmarkPlacement>) => void;
+  deleteLandmark: (id: string) => void;
 
   // Rooms (enclosed spaces on the map).
   selectRoom: (id: string | null) => void;
@@ -479,7 +491,7 @@ function shiftRoomForPinnedResize(room: MapRoom, patch: Partial<MapRoom>, dimens
 function pruneSelection(
   s: StoreState,
   composition: Composition,
-): Pick<StoreState, "selectedId" | "selectedMapPointKey" | "selectedMapSegmentId" | "branchStartPointKey" | "selectedStart" | "selectedRoomId" | "selectedEntranceIndex" | "selectedPlatformId" | "selectedWallId"> {
+): Pick<StoreState, "selectedId" | "selectedMapPointKey" | "selectedMapSegmentId" | "branchStartPointKey" | "selectedStart" | "selectedRoomId" | "selectedEntranceIndex" | "selectedPlatformId" | "selectedWallId" | "selectedLandmarkId"> {
   const selectedRoom = s.selectedRoomId ? composition.map.rooms.find((room) => room.id === s.selectedRoomId) : undefined;
   return {
     selectedId: s.selectedId && composition.tracks.some((t) => t.id === s.selectedId) ? s.selectedId : null,
@@ -500,6 +512,10 @@ function pruneSelection(
     selectedEntranceIndex: selectedRoom && s.selectedEntranceIndex !== null && s.selectedEntranceIndex < selectedRoom.entrances.length ? s.selectedEntranceIndex : null,
     selectedPlatformId: s.selectedPlatformId && composition.map.platforms.some((platform) => platform.id === s.selectedPlatformId) ? s.selectedPlatformId : null,
     selectedWallId: s.selectedWallId && composition.map.walls.some((wall) => wall.id === s.selectedWallId) ? s.selectedWallId : null,
+    selectedLandmarkId:
+      s.selectedLandmarkId && composition.environment.landmarks?.some((landmark) => landmark.id === s.selectedLandmarkId)
+        ? s.selectedLandmarkId
+        : null,
   };
 }
 
@@ -561,6 +577,7 @@ export const useStore = create<StoreState>((set, get) => ({
   selectedEntranceIndex: null,
   selectedPlatformId: null,
   selectedWallId: null,
+  selectedLandmarkId: null,
   entered: false,
   viewer: false,
   user: null,
@@ -659,18 +676,90 @@ export const useStore = create<StoreState>((set, get) => ({
         selectedEntranceIndex: mode === "edit" ? s.selectedEntranceIndex : null,
         selectedPlatformId: mode === "edit" ? s.selectedPlatformId : null,
         selectedWallId: mode === "edit" ? s.selectedWallId : null,
+        selectedLandmarkId: mode === "edit" ? s.selectedLandmarkId : null,
       };
     }),
   toggleMode: () => get().setMode(get().mode === "edit" ? "explore" : "edit"),
-  select: (selectedId) => set({ selectedId, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null }),
-  selectMapPoint: (selectedMapPointKey) => set({ selectedMapPointKey, selectedMapSegmentId: null, selectedId: null, selectedStart: false, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null }),
-  selectMapSegment: (selectedMapSegmentId) => set({ selectedMapSegmentId, selectedMapPointKey: null, selectedId: null, branchStartPointKey: null, selectedStart: false, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null }),
-  setBranchStartPoint: (branchStartPointKey) => set({ branchStartPointKey, selectedMapPointKey: branchStartPointKey, selectedMapSegmentId: null, selectedId: null, selectedStart: false, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null }),
-  selectStart: () => set({ selectedStart: true, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null }),
+  select: (selectedId) => set({ selectedId, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null }),
+  selectMapPoint: (selectedMapPointKey) => set({ selectedMapPointKey, selectedMapSegmentId: null, selectedId: null, selectedStart: false, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null }),
+  selectMapSegment: (selectedMapSegmentId) => set({ selectedMapSegmentId, selectedMapPointKey: null, selectedId: null, branchStartPointKey: null, selectedStart: false, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null }),
+  setBranchStartPoint: (branchStartPointKey) => set({ branchStartPointKey, selectedMapPointKey: branchStartPointKey, selectedMapSegmentId: null, selectedId: null, selectedStart: false, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null }),
+  selectStart: () => set({ selectedStart: true, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null }),
   setStartGizmoMode: (startGizmoMode) => set({ startGizmoMode }),
 
+  selectLandmark: (selectedLandmarkId) =>
+    set({
+      selectedLandmarkId,
+      selectedId: null,
+      selectedMapPointKey: null,
+      selectedMapSegmentId: null,
+      branchStartPointKey: null,
+      selectedStart: false,
+      selectedRoomId: null,
+      selectedEntranceIndex: null,
+      selectedPlatformId: null,
+      selectedWallId: null,
+    }),
+  addLandmark: (assetId) => {
+    const state = get();
+    const [x, z] = state.composition.map.start.position;
+    const landmark: EnvironmentLandmarkPlacement = {
+      id: newId(),
+      assetId,
+      position: [x, surfaceHeightAt(state.composition.map, [x, z]), z],
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1],
+    };
+    set((s) => ({
+      ...withHistory(s, `landmark:${landmark.id}:add`),
+      composition: {
+        ...touchComposition(s.composition),
+        environment: normalizeEnvironment({
+          ...s.composition.environment,
+          landmarks: [...(s.composition.environment.landmarks ?? []), landmark],
+        }),
+      },
+      selectedLandmarkId: landmark.id,
+      selectedId: null,
+      selectedMapPointKey: null,
+      selectedMapSegmentId: null,
+      branchStartPointKey: null,
+      selectedStart: false,
+      selectedRoomId: null,
+      selectedEntranceIndex: null,
+      selectedPlatformId: null,
+      selectedWallId: null,
+      mode: "edit",
+    }));
+  },
+  updateLandmark: (id, patch) =>
+    set((s) => ({
+      ...withHistory(s, `landmark:${id}:${Object.keys(patch).sort().join(",")}`),
+      composition: {
+        ...touchComposition(s.composition),
+        environment: normalizeEnvironment({
+          ...s.composition.environment,
+          landmarks: (s.composition.environment.landmarks ?? []).map((landmark) =>
+            landmark.id === id ? { ...landmark, ...patch } : landmark,
+          ),
+        }),
+      },
+    })),
+  deleteLandmark: (id) =>
+    set((s) => ({
+      ...withHistory(s, `landmark:${id}:delete`),
+      composition: {
+        ...touchComposition(s.composition),
+        environment: normalizeEnvironment({
+          ...s.composition.environment,
+          landmarks: (s.composition.environment.landmarks ?? []).filter((landmark) => landmark.id !== id),
+        }),
+      },
+      selectedLandmarkId: s.selectedLandmarkId === id ? null : s.selectedLandmarkId,
+    })),
+
   selectRoom: (selectedRoomId) =>
-    set({ selectedRoomId, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
+    set({ selectedRoomId, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
 
   addRoom: () => {
     const map = get().composition.map;
@@ -725,7 +814,7 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   selectEntrance: (roomId, index) =>
-    set({ selectedRoomId: roomId, selectedEntranceIndex: index, selectedPlatformId: null, selectedWallId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
+    set({ selectedRoomId: roomId, selectedEntranceIndex: index, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
 
   addEntrance: (roomId, side) => {
     const map = get().composition.map;
@@ -733,7 +822,7 @@ export const useStore = create<StoreState>((set, get) => ({
     if (!room) return;
     const entrances: RoomEntrance[] = [...room.entrances, { side, width: 5, offset: 0 }];
     get().updateRoom(roomId, { entrances });
-    set({ selectedRoomId: roomId, selectedEntranceIndex: entrances.length - 1, selectedPlatformId: null, selectedWallId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, selectedStart: false });
+    set({ selectedRoomId: roomId, selectedEntranceIndex: entrances.length - 1, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, selectedStart: false });
   },
 
   updateEntrance: (roomId, index, patch) => {
@@ -829,7 +918,7 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   selectPlatform: (selectedPlatformId) =>
-    set({ selectedPlatformId, selectedWallId: null, selectedRoomId: null, selectedEntranceIndex: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
+    set({ selectedPlatformId, selectedWallId: null, selectedLandmarkId: null, selectedRoomId: null, selectedEntranceIndex: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
 
   // Attach a platform to a terminal path point; alignment positions it just
   // past that point so its near edge meets the path.
@@ -884,7 +973,7 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   selectWall: (selectedWallId) =>
-    set({ selectedWallId, selectedPlatformId: null, selectedRoomId: null, selectedEntranceIndex: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
+    set({ selectedWallId, selectedPlatformId: null, selectedLandmarkId: null, selectedRoomId: null, selectedEntranceIndex: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
 
   addWall: () => {
     const map = get().composition.map;

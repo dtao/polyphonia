@@ -36,4 +36,39 @@ describe("environment normalization", () => {
       } as any),
     ).toEqual(defaultEnvironment);
   });
+
+  it("normalizes creator-authored landmark placements", () => {
+    expect(
+      normalizeEnvironment({
+        pack: { id: "verdant-grove", quality: "auto" },
+        landmarks: [
+          {
+            id: " tree-1 ",
+            assetId: " evergreen ",
+            position: [2, 0, -3],
+            rotation: [0, Math.PI / 2, 0],
+            scale: [1.5, 1.5, 1.5],
+          },
+          {
+            id: "",
+            assetId: "broken",
+            position: [0, 0, 0],
+            rotation: [0, 0, 0],
+            scale: [1, 1, 1],
+          },
+        ],
+      }),
+    ).toEqual({
+      pack: { id: "verdant-grove", quality: "auto" },
+      landmarks: [
+        {
+          id: "tree-1",
+          assetId: "evergreen",
+          position: [2, 0, -3],
+          rotation: [0, Math.PI / 2, 0],
+          scale: [1.5, 1.5, 1.5],
+        },
+      ],
+    });
+  });
 });

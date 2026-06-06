@@ -9,6 +9,7 @@ import { RoomPanel } from "./ui/RoomPanel";
 import { EntrancePanel } from "./ui/EntrancePanel";
 import { PlatformPanel } from "./ui/PlatformPanel";
 import { WallPanel } from "./ui/WallPanel";
+import { LandmarkPanel } from "./ui/LandmarkPanel";
 import { AddStem } from "./ui/AddStem";
 import { EntryScreen } from "./ui/EntryScreen";
 import { PublishControl } from "./ui/PublishControl";
@@ -42,6 +43,7 @@ function hudShortcutHint({
   selectedMapSegmentId,
   branchStartPointKey,
   selectedStart,
+  selectedLandmarkId,
 }: {
   mode: string;
   selectedId: string | null;
@@ -49,10 +51,12 @@ function hudShortcutHint({
   selectedMapSegmentId: string | null;
   branchStartPointKey: string | null;
   selectedStart: boolean;
+  selectedLandmarkId: string | null;
 }): string {
   const mod = modKey();
   if (mode === "explore") return "WASD + mouse to move · click scene for mouse look · Esc releases cursor · Tab to edit · F fullscreen";
   if (selectedId) return `drag to move stem · Delete removes · ${mod}+D duplicates · Esc clears`;
+  if (selectedLandmarkId) return "drag to place landmark · adjust rotation and scale below · Delete removes · Esc clears";
   if (branchStartPointKey) return "click floor to place branch · B cancels · Delete removes point · Esc clears";
   if (selectedMapPointKey) return "drag point to reshape · terminal points can branch or become rooms · Delete removes point · Esc clears";
   if (selectedMapSegmentId) return "adjust segment width · click point to edit branches · Esc clears";
@@ -73,6 +77,7 @@ export default function App() {
   const selectedMapSegmentId = useStore((s) => s.selectedMapSegmentId);
   const branchStartPointKey = useStore((s) => s.branchStartPointKey);
   const selectedStart = useStore((s) => s.selectedStart);
+  const selectedLandmarkId = useStore((s) => s.selectedLandmarkId);
   const canUndo = useStore((s) => s.undoStack.length > 0);
   const canRedo = useStore((s) => s.redoStack.length > 0);
   const [openEditPanel, setOpenEditPanel] = useState<EditPanel>(null);
@@ -84,6 +89,7 @@ export default function App() {
     selectedMapSegmentId,
     branchStartPointKey,
     selectedStart,
+    selectedLandmarkId,
   });
 
   // Load the saved composition library + auth session on launch.
@@ -178,12 +184,22 @@ export default function App() {
           useStore.getState().select(null);
           return;
         }
+        if (useStore.getState().selectedLandmarkId) {
+          e.preventDefault();
+          useStore.getState().selectLandmark(null);
+          return;
+        }
       }
       const el = document.activeElement;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return;
       const modifier = e.metaKey || e.ctrlKey;
       const s = useStore.getState();
       if (s.mode === "edit" && (e.code === "Delete" || e.code === "Backspace")) {
+        if (s.selectedLandmarkId) {
+          e.preventDefault();
+          s.deleteLandmark(s.selectedLandmarkId);
+          return;
+        }
         if (s.selectedId) {
           e.preventDefault();
           s.deleteTrack(s.selectedId);
@@ -391,6 +407,7 @@ export default function App() {
           <EntrancePanel />
           <PlatformPanel />
           <WallPanel />
+          <LandmarkPanel />
           {mode === "explore" && (
             <>
               <ARWalkControls map={comp.map} />

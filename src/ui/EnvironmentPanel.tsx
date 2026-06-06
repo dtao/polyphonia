@@ -4,6 +4,7 @@ import { useStore } from "../store";
 export function EnvironmentPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () => void; onClose: () => void }) {
   const environment = useStore((s) => s.composition.environment);
   const setEnvironment = useStore((s) => s.setEnvironment);
+  const addLandmark = useStore((s) => s.addLandmark);
   const selectedPack = environmentPackById(environment.pack?.id);
 
   if (!open) {
@@ -31,6 +32,7 @@ export function EnvironmentPanel({ open, onOpen, onClose }: { open: boolean; onO
             const pack = environmentPackById(event.target.value);
             setEnvironment({
               pack: pack ? { id: pack.id, variant: pack.variants[0], quality: "auto" } : undefined,
+              landmarks: [],
             });
           }}
           style={select}
@@ -72,6 +74,23 @@ export function EnvironmentPanel({ open, onOpen, onClose }: { open: boolean; onO
               {item.title} by {item.author} · {item.license}
             </div>
           ))}
+
+          {selectedPack.landmarks.length > 0 && (
+            <div style={landmarkSection}>
+              <div style={label}>Landmarks</div>
+              {selectedPack.landmarks.map((landmark) => (
+                <button
+                  key={landmark.id}
+                  style={landmarkButton}
+                  onClick={() => addLandmark(landmark.id)}
+                  title={`Place ${landmark.name}`}
+                >
+                  <span aria-hidden>＋</span>
+                  <span>{landmark.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </>
       )}
     </div>
@@ -158,4 +177,26 @@ const attribution: React.CSSProperties = {
   marginTop: 5,
   color: "rgba(255,255,255,0.42)",
   fontSize: 10,
+};
+
+const landmarkSection: React.CSSProperties = {
+  marginTop: 12,
+  paddingTop: 10,
+  borderTop: "1px solid rgba(255,255,255,0.1)",
+};
+
+const landmarkButton: React.CSSProperties = {
+  width: "100%",
+  minHeight: 34,
+  marginTop: 6,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 7,
+  borderRadius: 6,
+  border: "1px solid rgba(255,255,255,0.14)",
+  background: "rgba(255,255,255,0.07)",
+  color: "white",
+  cursor: "pointer",
+  fontSize: 12,
 };
