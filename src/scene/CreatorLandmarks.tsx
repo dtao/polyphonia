@@ -1,7 +1,9 @@
 import { TransformControls, useGLTF } from "@react-three/drei";
+import { useThree } from "@react-three/fiber";
 import type { ThreeEvent } from "@react-three/fiber";
-import { Suspense, useMemo, useRef } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
+import { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
 import type { CreatorLandmarkAsset } from "../creatorAssets";
 import type { EnvironmentLandmarkPlacement } from "../environment";
 import { useStore } from "../store";
@@ -15,6 +17,18 @@ export function CreatorLandmarks({
   placements: EnvironmentLandmarkPlacement[];
   editMode: boolean;
 }) {
+  const gl = useThree((state) => state.gl);
+  const ktx2Loader = useMemo(
+    () => new KTX2Loader().setTranscoderPath("/basis/").detectSupport(gl),
+    [gl],
+  );
+  const extendLoader = useCallback((loader: any) => loader.setKTX2Loader(ktx2Loader), [ktx2Loader]);
+  useEffect(
+    () => () => {
+      ktx2Loader.dispose();
+    },
+    [ktx2Loader],
+  );
   const catalog = useMemo(() => new Map(assets.map((asset) => [asset.id, asset])), [assets]);
   return (
     <group>
@@ -23,7 +37,12 @@ export function CreatorLandmarks({
         if (!asset) return null;
         return (
           <Suspense key={placement.id} fallback={null}>
-            <CreatorLandmark asset={asset} placement={placement} editMode={editMode} />
+            <CreatorLandmark
+              asset={asset}
+              placement={placement}
+              editMode={editMode}
+              extendLoader={extendLoader}
+            />
           </Suspense>
         );
       })}
@@ -35,12 +54,15 @@ function CreatorLandmark({
   asset,
   placement,
   editMode,
+  extendLoader,
 }: {
   asset: CreatorLandmarkAsset;
   placement: EnvironmentLandmarkPlacement;
   editMode: boolean;
+  extendLoader: (loader: any) => void;
 }) {
-  const gltf = useGLTF(asset.model);
+  useGLTF.preload(asset.model, "/draco-gltf/", true, extendLoader);
+  const gltf = useGLTF(asset.model, "/draco-gltf/", true, extendLoader);
   const object = useMemo(() => {
     const clone = gltf.scene.clone(true);
     clone.traverse((child) => {

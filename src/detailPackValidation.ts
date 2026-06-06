@@ -20,6 +20,8 @@ const ALLOWED_GLTF_EXTENSIONS = new Set([
   "KHR_draco_mesh_compression",
   "EXT_meshopt_compression",
   "KHR_texture_basisu",
+  "EXT_texture_webp",
+  "KHR_mesh_quantization",
   "KHR_texture_transform",
   "KHR_materials_unlit",
 ]);
