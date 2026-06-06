@@ -52,9 +52,14 @@ earlier ones.
 - [x] **M5.11 Tiled map rendering and audio instances** — render nearby visual tiles/map copies and create/cull nearby virtual stem instances around the listener, bounded by adaptive distance/performance limits so infinite space stays cheap.
 - [x] **M5.16 AR Walk experiment** — square/hex tiled maps expose an optional listener mode that lets Three own an Android WebXR AR session, reads the XR camera pose, maps initial AR heading to the composition's current facing, and applies continuous pose deltas while existing map wrapping/clamping/audio updates keep working.
 - [ ] **M5.12 Tiling editor aids** — show tile boundaries, mirrored/ghost map copies, and edge-continuity hints in Edit mode so composers can intentionally make square/hex/path layouts that tile cleanly.
-- [x] **M5.15 Elevation (the vertical dimension)** — stems drag freely in 3D (gizmo Y unlocked) and branch points carry a height (`map.elevations`), so segments become ramps. The explore player auto-follows the walkable surface, attached rooms inherit their branch point's height, and spatial audio is 3D for free (listener + panners already honor Y).
 - [ ] **M5.13 Publish/viewer compatibility for maps and environments** — ensure `/c/:id`, `/gallery`, artist pages, export/import, and older manifests all handle environment, map, start, and tiling metadata gracefully.
 - [ ] **M5.14 Open-world stitching prototype** — explore streaming/culling multiple artists' spaces into neighborhoods once single-composition maps and tiling work.
+- [x] **M5.15 Elevation (the vertical dimension)** — stems drag freely in 3D (gizmo Y unlocked) and branch points carry a height (`map.elevations`), so segments become ramps. The explore player auto-follows the walkable surface, attached rooms inherit their branch point's height, and spatial audio is 3D for free (listener + panners already honor Y).
+- [ ] **M5.16 Multi-entrance rooms** - support rooms connecting to multiple path segments - or other rooms from arbitrary points in the wall.
+- [ ] **M5.17 Tunnels** - introduce a new type of path segment: an enclosed tunnel (with sound occlusion).
+- [ ] **M5.18 Platforms** - large areas of various shapes (rectangle, hex, circle) - like rooms, they can be connected to path segments; but they have no walls or ceilings.
+- [ ] **M5.19 Doors** - entrances can have doors that slide open - can be openable from one side, or from both sides.
+- [ ] **M5.20 Standalone walls** - allow composers to create walls in arbitary locations (not necessarily connected to a path segment) to introduce intentional occlusion as part of a composition.
 
 ## Milestone 6 — Authored high-fidelity environments
 
