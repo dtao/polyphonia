@@ -15,7 +15,7 @@ import {
 } from "./persistence";
 import { newId } from "./id";
 import { EnvironmentSettings, defaultEnvironment, normalizeEnvironment } from "./environment";
-import { attachmentForPoint, canAddBranchAtPoint, canAddPlatformAtPoint, canAddRoomAtPoint, CompositionMap, entranceDoorwayCenter, entranceLocalCenter, entranceOuterPoint, MAP_PRESETS, MapPlatform, MapRoom, MapWall, RoomEntrance, RoomSide, defaultMap, mapPointKey, normalizeMap, pointInOriginalTile, roomElevation, surfaceHeightAt, WalkableSegment } from "./map";
+import { attachmentForPoint, canAddBranchAtPoint, canAddPlatformAtPoint, canAddRoomAtPoint, CompositionMap, entranceDoorwayCenter, entranceLocalCenter, entranceOuterPoint, MAP_PRESETS, MapPlatform, MapRoom, MapWall, RoomEntrance, RoomSide, defaultMap, mapPointKey, normalizeMap, platformContains, platformElevation, pointInOriginalTile, roomContains, roomElevation, roomWorldPoint, surfaceHeightAt, WalkableSegment } from "./map";
 import { ArtistIdentity } from "./artist";
 import {
   AuthUser,
@@ -277,6 +277,189 @@ function setConnectedEndpointElevations(
   return Object.keys(next).length ? next : undefined;
 }
 
+function setConnectedGroupEndpointElevations(elevations: Record<string, number> | undefined, map: CompositionMap, group: Set<StructureKey>): Record<string, number> | undefined {
+  let next = elevations;
+  for (const key of group) {
+    const [kind, id] = key.split(":") as ["room" | "platform", string];
+    if (kind === "room") {
+      const room = map.rooms.find((r) => r.id === id);
+      if (room) next = setConnectedEndpointElevations(next, map.segments, "room", id, roomElevation(map, room));
+    } else {
+      const platform = map.platforms.find((p) => p.id === id);
+      if (platform) next = setConnectedEndpointElevations(next, map.segments, "platform", id, platformElevation(map, platform));
+    }
+  }
+  return next;
+}
+
+type StructureKey = `room:${string}` | `platform:${string}`;
+
+function roomKey(id: string): StructureKey {
+  return `room:${id}`;
+}
+
+function platformKey(id: string): StructureKey {
+  return `platform:${id}`;
+}
+
+function connectedStructureKeys(map: CompositionMap, start: StructureKey): Set<StructureKey> {
+  const seen = new Set<StructureKey>([start]);
+  const queue: StructureKey[] = [start];
+  while (queue.length) {
+    const key = queue.shift()!;
+    for (const next of directStructureNeighbors(map, key)) {
+      if (seen.has(next)) continue;
+      seen.add(next);
+      queue.push(next);
+    }
+  }
+  return seen;
+}
+
+function directStructureNeighbors(map: CompositionMap, key: StructureKey): StructureKey[] {
+  const [kind, id] = key.split(":") as ["room" | "platform", string];
+  if (kind === "room") {
+    const room = map.rooms.find((r) => r.id === id);
+    if (!room) return [];
+    return [
+      ...map.rooms.filter((other) => other.id !== id && roomsDirectlyConnect(room, other)).map((other) => roomKey(other.id)),
+      ...map.platforms.filter((platform) => roomPlatformDirectlyConnect(room, platform)).map((platform) => platformKey(platform.id)),
+    ];
+  }
+
+  const platform = map.platforms.find((p) => p.id === id);
+  if (!platform) return [];
+  return [
+    ...map.rooms.filter((room) => roomPlatformDirectlyConnect(room, platform)).map((room) => roomKey(room.id)),
+    ...map.platforms.filter((other) => other.id !== id && platformsDirectlyConnect(platform, other)).map((other) => platformKey(other.id)),
+  ];
+}
+
+function roomsDirectlyConnect(a: MapRoom, b: MapRoom): boolean {
+  return a.entrances.some((entrance) => roomContains(b, entranceOuterPoint(a, entrance))) || b.entrances.some((entrance) => roomContains(a, entranceOuterPoint(b, entrance)));
+}
+
+function roomPlatformDirectlyConnect(room: MapRoom, platform: MapPlatform): boolean {
+  return room.entrances.some((entrance) => platformContains(platform, entranceOuterPoint(room, entrance))) || platformContains(platform, room.center);
+}
+
+function platformsDirectlyConnect(a: MapPlatform, b: MapPlatform): boolean {
+  return (
+    platformContains(a, b.center) ||
+    platformContains(b, a.center) ||
+    platformSamplePoints(a).some((point) => platformContains(b, point)) ||
+    platformSamplePoints(b).some((point) => platformContains(a, point))
+  );
+}
+
+function platformSamplePoints(platform: MapPlatform): [number, number][] {
+  if (platform.shape === "circle") {
+    const radius = platform.width / 2;
+    return Array.from({ length: 12 }, (_, i) => {
+      const angle = (i / 12) * Math.PI * 2;
+      return platformWorldPoint(platform, [Math.cos(angle) * radius, Math.sin(angle) * radius]);
+    });
+  }
+  const hw = platform.width / 2;
+  const hd = platform.shape === "rect" ? platform.depth / 2 : platform.width / 2;
+  if (platform.shape === "rect") {
+    return [
+      platformWorldPoint(platform, [hw, hd]),
+      platformWorldPoint(platform, [-hw, hd]),
+      platformWorldPoint(platform, [-hw, -hd]),
+      platformWorldPoint(platform, [hw, -hd]),
+    ];
+  }
+  return Array.from({ length: 6 }, (_, i) => {
+    const angle = (i / 6) * Math.PI * 2;
+    return platformWorldPoint(platform, [Math.cos(angle) * hw, Math.sin(angle) * hw]);
+  });
+}
+
+function platformWorldPoint(platform: MapPlatform, localPoint: [number, number]): [number, number] {
+  const c = Math.cos(platform.rotation);
+  const s = Math.sin(platform.rotation);
+  return [platform.center[0] + localPoint[0] * c + localPoint[1] * s, platform.center[1] - localPoint[0] * s + localPoint[1] * c];
+}
+
+function moveStructureGroup(
+  map: CompositionMap,
+  start: StructureKey,
+  delta: { x: number; z: number; y: number },
+  roomPatch?: { id: string; patch: Partial<MapRoom> },
+  platformPatch?: { id: string; patch: Partial<MapPlatform> },
+): CompositionMap {
+  const group = connectedStructureKeys(map, start);
+  const rooms = map.rooms.map((room) => {
+    const patch = roomPatch?.id === room.id ? roomPatch.patch : undefined;
+    const base = patch ? { ...room, ...patch } : room;
+    if (!group.has(roomKey(room.id))) return base;
+    const currentElevation = roomElevation(map, room);
+    return {
+      ...base,
+      center: [room.center[0] + delta.x, room.center[1] + delta.z] as [number, number],
+      elevation: currentElevation + delta.y,
+      attachment: undefined,
+    };
+  });
+  const platforms = map.platforms.map((platform) => {
+    const patch = platformPatch?.id === platform.id ? platformPatch.patch : undefined;
+    const base = patch ? { ...platform, ...patch } : platform;
+    if (!group.has(platformKey(platform.id))) return base;
+    const currentElevation = platformElevation(map, platform);
+    return {
+      ...base,
+      center: [platform.center[0] + delta.x, platform.center[1] + delta.z] as [number, number],
+      elevation: currentElevation + delta.y,
+      attachment: undefined,
+    };
+  });
+  return { ...map, rooms, platforms };
+}
+
+function connectedRoomSides(map: CompositionMap, room: MapRoom): Set<RoomSide> {
+  const sides = new Set<RoomSide>();
+  for (const entrance of room.entrances) {
+    const outer = entranceOuterPoint(room, entrance);
+    const connected =
+      map.rooms.some((other) => other.id !== room.id && roomContains(other, outer)) ||
+      map.platforms.some((platform) => platformContains(platform, outer));
+    if (connected) sides.add(entrance.side);
+  }
+  return sides;
+}
+
+function constrainRoomResize(map: CompositionMap, room: MapRoom, patch: Partial<MapRoom>): Partial<MapRoom> {
+  if (patch.width === undefined && patch.depth === undefined) return patch;
+  const sides = connectedRoomSides(map, room);
+  let next = { ...patch };
+  if (patch.width !== undefined) {
+    const westPinned = sides.has("west");
+    const eastPinned = sides.has("east");
+    if (westPinned && eastPinned) next.width = room.width;
+    else if (westPinned || eastPinned) next = shiftRoomForPinnedResize(room, next, "width", westPinned ? "west" : "east");
+  }
+  if (patch.depth !== undefined) {
+    const northPinned = sides.has("north");
+    const southPinned = sides.has("south");
+    if (northPinned && southPinned) next.depth = room.depth;
+    else if (northPinned || southPinned) next = shiftRoomForPinnedResize(room, next, "depth", northPinned ? "north" : "south");
+  }
+  return next;
+}
+
+function shiftRoomForPinnedResize(room: MapRoom, patch: Partial<MapRoom>, dimension: "width" | "depth", pinnedSide: RoomSide): Partial<MapRoom> {
+  const nextSize = dimension === "width" ? patch.width : patch.depth;
+  if (nextSize === undefined) return patch;
+  const oldSize = dimension === "width" ? room.width : room.depth;
+  const delta = nextSize - oldSize;
+  if (delta === 0) return patch;
+  const localShift: [number, number] =
+    pinnedSide === "west" ? [delta / 2, 0] : pinnedSide === "east" ? [-delta / 2, 0] : pinnedSide === "north" ? [0, delta / 2] : [0, -delta / 2];
+  const shifted = roomWorldPoint(room, localShift);
+  return { ...patch, center: [shifted[0], shifted[1]] };
+}
+
 function pruneSelection(
   s: StoreState,
   composition: Composition,
@@ -498,9 +681,24 @@ export const useStore = create<StoreState>((set, get) => ({
     const map = normalizeMap(get().composition.map);
     const room = map.rooms.find((r) => r.id === id);
     if (!room) return;
-    const nextMap = normalizeMap({ ...map, rooms: map.rooms.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
+    const constrainedPatch = constrainRoomResize(map, room, patch);
+    const isMove = patch.center !== undefined || patch.elevation !== undefined;
+    const movedGroup = isMove ? connectedStructureKeys(map, roomKey(id)) : new Set<StructureKey>();
+    const nextRoomMap = isMove
+      ? moveStructureGroup(
+          map,
+          roomKey(id),
+          {
+            x: (patch.center?.[0] ?? room.center[0]) - room.center[0],
+            z: (patch.center?.[1] ?? room.center[1]) - room.center[1],
+            y: (patch.elevation ?? roomElevation(map, room)) - roomElevation(map, room),
+          },
+          { id, patch: constrainedPatch },
+        )
+      : { ...map, rooms: map.rooms.map((r) => (r.id === id ? { ...r, ...constrainedPatch } : r)) };
+    const nextMap = normalizeMap(nextRoomMap);
     const movedElevations = moveEndpointElevations(map.elevations, movedSegmentEndpoints(map.segments, nextMap.segments));
-    const elevations = setConnectedEndpointElevations(movedElevations, nextMap.segments, "room", id, patch.elevation);
+    const elevations = isMove ? setConnectedGroupEndpointElevations(movedElevations, nextMap, movedGroup) : setConnectedEndpointElevations(movedElevations, nextMap.segments, "room", id, patch.elevation);
     get().setMap({ ...nextMap, elevations });
   },
 
@@ -640,9 +838,26 @@ export const useStore = create<StoreState>((set, get) => ({
 
   updatePlatform: (id, patch) => {
     const map = normalizeMap(get().composition.map);
-    const nextMap = normalizeMap({ ...map, preset: "custom", platforms: map.platforms.map((platform) => (platform.id === id ? { ...platform, ...patch } : platform)) });
+    const platform = map.platforms.find((p) => p.id === id);
+    if (!platform) return;
+    const isMove = patch.center !== undefined || patch.elevation !== undefined;
+    const movedGroup = isMove ? connectedStructureKeys(map, platformKey(id)) : new Set<StructureKey>();
+    const nextPlatformMap = isMove
+      ? moveStructureGroup(
+          map,
+          platformKey(id),
+          {
+            x: (patch.center?.[0] ?? platform.center[0]) - platform.center[0],
+            z: (patch.center?.[1] ?? platform.center[1]) - platform.center[1],
+            y: (patch.elevation ?? platformElevation(map, platform)) - platformElevation(map, platform),
+          },
+          undefined,
+          { id, patch },
+        )
+      : { ...map, preset: "custom" as const, platforms: map.platforms.map((p) => (p.id === id ? { ...p, ...patch } : p)) };
+    const nextMap = normalizeMap(nextPlatformMap);
     const elevations = moveEndpointElevations(map.elevations, movedSegmentEndpoints(map.segments, nextMap.segments));
-    const nextElevations = setConnectedEndpointElevations(elevations, nextMap.segments, "platform", id, patch.elevation);
+    const nextElevations = isMove ? setConnectedGroupEndpointElevations(elevations, nextMap, movedGroup) : setConnectedEndpointElevations(elevations, nextMap.segments, "platform", id, patch.elevation);
     get().setMap({ ...nextMap, elevations: nextElevations });
   },
 
