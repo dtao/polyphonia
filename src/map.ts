@@ -395,7 +395,7 @@ export function stepOnMap(map: CompositionMap, previous: [number, number], attem
 
   if (stepHitsRoomWall(map, previous, attempted)) return { position: previous, support };
 
-  if (supportContains(map, support, attempted)) return { position: attempted, support };
+  if (supportContainsForMovement(map, support, attempted, previous)) return { position: attempted, support };
 
   const transition = transitionSupport(map, support, previous, attempted);
   if (transition) return transition;
@@ -458,6 +458,36 @@ function doorwayRect(room: MapRoom, entrance: RoomEntrance): Rect {
 
 export function roomRegionRects(room: MapRoom): Rect[] {
   return [interiorRect(room), ...room.entrances.map((entrance) => doorwayRect(room, entrance))];
+}
+
+function movementRoomRegionRects(room: MapRoom, listener: [number, number]): Rect[] {
+  const r = insetRect(interiorRect(room), PLAYER_COLLISION_RADIUS);
+  return [r, ...room.entrances.filter((entrance) => doorIsOpen(room, entrance, listener)).map((entrance) => movementDoorwayRect(room, entrance)).filter(rectHasArea)];
+}
+
+function movementDoorwayRect(room: MapRoom, entrance: RoomEntrance): Rect {
+  const r = interiorRect(room);
+  const halfWidth = Math.max(0.5, entrance.width) / 2;
+  const a = entrance.offset - halfWidth + PLAYER_COLLISION_RADIUS;
+  const b = entrance.offset + halfWidth - PLAYER_COLLISION_RADIUS;
+  switch (entrance.side) {
+    case "north":
+      return { minX: a, maxX: b, minZ: r.minZ - DOOR_DEPTH, maxZ: r.minZ + PLAYER_COLLISION_RADIUS };
+    case "south":
+      return { minX: a, maxX: b, minZ: r.maxZ - PLAYER_COLLISION_RADIUS, maxZ: r.maxZ + DOOR_DEPTH };
+    case "west":
+      return { minX: r.minX - DOOR_DEPTH, maxX: r.minX + PLAYER_COLLISION_RADIUS, minZ: a, maxZ: b };
+    case "east":
+      return { minX: r.maxX - PLAYER_COLLISION_RADIUS, maxX: r.maxX + DOOR_DEPTH, minZ: a, maxZ: b };
+  }
+}
+
+function insetRect(rect: Rect, amount: number): Rect {
+  return { minX: rect.minX + amount, maxX: rect.maxX - amount, minZ: rect.minZ + amount, maxZ: rect.maxZ - amount };
+}
+
+function rectHasArea(rect: Rect): boolean {
+  return rect.minX < rect.maxX && rect.minZ < rect.maxZ;
 }
 
 // Local-space (x,z) center of an entrance's doorway, on its wall line.
@@ -554,6 +584,11 @@ export function roomContains(room: MapRoom, point: [number, number]): boolean {
 
 export function roomInteriorContains(room: MapRoom, point: [number, number]): boolean {
   return pointInRect(toRoomLocal(room, point), interiorRect(room));
+}
+
+function movementRoomContains(room: MapRoom, point: [number, number], listener: [number, number]): boolean {
+  const local = toRoomLocal(room, point);
+  return movementRoomRegionRects(room, listener).some((rect) => pointInRect(local, rect));
 }
 
 export function containingRoom(map: Pick<CompositionMap, "rooms">, point: [number, number]): MapRoom | null {
@@ -1161,6 +1196,12 @@ function supportContains(map: CompositionMap, support: MapSupport, point: [numbe
   return segment ? pointInSegment(point, segment) : false;
 }
 
+function supportContainsForMovement(map: CompositionMap, support: MapSupport, point: [number, number], listener: [number, number]): boolean {
+  if (support.kind !== "room") return supportContains(map, support, point);
+  const room = map.rooms.find((r) => r.id === support.roomId);
+  return room ? movementRoomContains(room, point, listener) : false;
+}
+
 function transitionSupport(map: CompositionMap, support: MapSupport, previous: [number, number], attempted: [number, number]): MapStep | null {
   if (support.kind === "open") return { position: attempted, support };
 
@@ -1173,7 +1214,7 @@ function transitionSupport(map: CompositionMap, support: MapSupport, previous: [
   if (support.kind === "platform") {
     const segment = nearestSegmentContaining(map, attempted);
     if (segment) return { position: attempted, support: { kind: "segment", segmentId: segment.id } };
-    const room = map.rooms.find((r) => roomContains(r, attempted));
+    const room = map.rooms.find((r) => movementRoomContains(r, attempted, previous));
     if (room) return { position: attempted, support: { kind: "room", roomId: room.id } };
     return null;
   }
@@ -1182,7 +1223,7 @@ function transitionSupport(map: CompositionMap, support: MapSupport, previous: [
     const room = map.rooms.find((r) => r.id === support.roomId);
     if (!room) return null;
     for (const other of map.rooms) {
-      if (other.id === room.id || !roomContains(other, attempted)) continue;
+      if (other.id === room.id || !movementRoomContains(other, attempted, previous)) continue;
       if (roomsConnectThroughDoorways(room, other)) return { position: attempted, support: { kind: "room", roomId: other.id } };
     }
     // Step out through any doorway onto a segment that reaches into it.
@@ -1198,7 +1239,7 @@ function transitionSupport(map: CompositionMap, support: MapSupport, previous: [
   if (!segment) return null;
   // Step into any room whose doorway this segment reaches.
   for (const room of map.rooms) {
-    if (roomContains(room, attempted) && segmentTouchesRoomDoorway(room, segment)) {
+    if (movementRoomContains(room, attempted, previous) && segmentTouchesRoomDoorway(room, segment)) {
       return { position: attempted, support: { kind: "room", roomId: room.id } };
     }
   }
@@ -1219,7 +1260,7 @@ function clampToSupport(map: CompositionMap, support: MapSupport, point: [number
     if (!room) return null;
     let best: [number, number] = point;
     let bestDistanceSq = Infinity;
-    for (const rect of [interiorRect(room), ...room.entrances.filter((entrance) => doorIsOpen(room, entrance, listener)).map((entrance) => doorwayRect(room, entrance))]) {
+    for (const rect of movementRoomRegionRects(room, listener)) {
       const candidate = fromRoomLocal(room, closestInRect(toRoomLocal(room, point), rect));
       const dx = point[0] - candidate[0];
       const dz = point[1] - candidate[1];
@@ -1402,18 +1443,36 @@ function lineHitsSolidRoomWall(room: MapRoom, from: [number, number], to: [numbe
 
 function lineHitsMovementRoomWall(room: MapRoom, from: [number, number], to: [number, number], listener: [number, number]): boolean {
   const r = interiorRect(room);
-  const walls: Array<[[number, number], [number, number]]> = [];
-  for (const [s, e] of solidWallSpans(r.maxX, movementWallOpenings(room, "north", listener))) walls.push([[s, r.minZ], [e, r.minZ]]);
-  for (const [s, e] of solidWallSpans(r.maxX, movementWallOpenings(room, "south", listener))) walls.push([[s, r.maxZ], [e, r.maxZ]]);
-  for (const [s, e] of solidWallSpans(r.maxZ, movementWallOpenings(room, "west", listener))) walls.push([[r.minX, s], [r.minX, e]]);
-  for (const [s, e] of solidWallSpans(r.maxZ, movementWallOpenings(room, "east", listener))) walls.push([[r.maxX, s], [r.maxX, e]]);
-  return walls.some(([a, b]) => lineSegmentsIntersectInclusive(from, to, a, b));
+  const walls: Rect[] = [];
+  for (const [s, e] of solidWallSpans(r.maxX, movementWallOpenings(room, "north", listener))) walls.push(horizontalWallRect(s, e, r.maxX, r.minZ, room));
+  for (const [s, e] of solidWallSpans(r.maxX, movementWallOpenings(room, "south", listener))) walls.push(horizontalWallRect(s, e, r.maxX, r.maxZ, room));
+  for (const [s, e] of solidWallSpans(r.maxZ, movementWallOpenings(room, "west", listener))) walls.push(verticalWallRect(s, e, r.maxZ, r.minX, room));
+  for (const [s, e] of solidWallSpans(r.maxZ, movementWallOpenings(room, "east", listener))) walls.push(verticalWallRect(s, e, r.maxZ, r.maxX, room));
+  return walls.some((rect) => lineIntersectsRectInclusive(from, to, rect));
 }
 
 function movementWallOpenings(room: MapRoom, side: RoomSide, listener: [number, number]): Array<[number, number]> {
   return openWallOpenings(room, side, listener)
     .map(([a, b]) => [a + PLAYER_COLLISION_RADIUS, b - PLAYER_COLLISION_RADIUS] as [number, number])
     .filter(([a, b]) => a < b);
+}
+
+function horizontalWallRect(start: number, end: number, half: number, z: number, room: MapRoom): Rect {
+  const thickness = wallThickness(room.wallThickness) / 2 + PLAYER_COLLISION_RADIUS;
+  const minX = start - PLAYER_COLLISION_RADIUS - (touchesWallEdge(start, -half) ? thickness : 0);
+  const maxX = end + PLAYER_COLLISION_RADIUS + (touchesWallEdge(end, half) ? thickness : 0);
+  return { minX, maxX, minZ: z - thickness, maxZ: z + thickness };
+}
+
+function verticalWallRect(start: number, end: number, half: number, x: number, room: MapRoom): Rect {
+  const thickness = wallThickness(room.wallThickness) / 2 + PLAYER_COLLISION_RADIUS;
+  const minZ = start - PLAYER_COLLISION_RADIUS - (touchesWallEdge(start, -half) ? thickness : 0);
+  const maxZ = end + PLAYER_COLLISION_RADIUS + (touchesWallEdge(end, half) ? thickness : 0);
+  return { minX: x - thickness, maxX: x + thickness, minZ, maxZ };
+}
+
+function touchesWallEdge(value: number, edge: number): boolean {
+  return Math.abs(value - edge) < 0.001;
 }
 
 function lineSegmentsIntersect(a: [number, number], b: [number, number], c: [number, number], d: [number, number]): boolean {
@@ -1442,6 +1501,23 @@ function lineSegmentsIntersectInclusive(a: [number, number], b: [number, number]
   const t = cross(acx, acz, cdx, cdz) / denom;
   const u = cross(acx, acz, abx, abz) / denom;
   return t >= -0.0001 && t <= 1.0001 && u >= -0.0001 && u <= 1.0001;
+}
+
+function lineIntersectsRectInclusive(a: [number, number], b: [number, number], r: Rect): boolean {
+  if (pointInRect(a, r) || pointInRect(b, r)) return true;
+  const corners: [number, number][] = [
+    [r.minX, r.minZ],
+    [r.maxX, r.minZ],
+    [r.maxX, r.maxZ],
+    [r.minX, r.maxZ],
+  ];
+  const edges: Array<[[number, number], [number, number]]> = [
+    [corners[0], corners[1]],
+    [corners[1], corners[2]],
+    [corners[2], corners[3]],
+    [corners[3], corners[0]],
+  ];
+  return edges.some(([c, d]) => lineSegmentsIntersectInclusive(a, b, c, d));
 }
 
 function cross(ax: number, az: number, bx: number, bz: number): number {
