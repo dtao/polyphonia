@@ -28,6 +28,14 @@ export interface EnvironmentPackDefinition {
     maxTriangles: number;
     maxDrawCalls: number;
   };
+  effects?: {
+    exposure: number;
+    bloomStrength: number;
+    bloomThreshold: number;
+    bloomRadius: number;
+    ambientOcclusion: boolean;
+    vignette: number;
+  };
 }
 
 // Authored packs are registered here rather than embedded in composition data.
@@ -59,6 +67,14 @@ export const ENVIRONMENT_PACKS: readonly EnvironmentPackDefinition[] = [
       maxTriangles: 180_000,
       maxDrawCalls: 120,
     },
+    effects: {
+      exposure: 1.08,
+      bloomStrength: 0.22,
+      bloomThreshold: 0.72,
+      bloomRadius: 0.38,
+      ambientOcclusion: true,
+      vignette: 0.28,
+    },
   },
 ];
 
@@ -79,4 +95,13 @@ export function environmentPackAsset(
     if (exact) return exact;
   }
   return pack.assets.find((asset) => asset.quality === "high") ?? pack.assets[0];
+}
+
+export function resolvedEnvironmentQuality(quality: EnvironmentQuality): Exclude<EnvironmentQuality, "auto"> {
+  if (quality !== "auto") return quality;
+  if (typeof navigator === "undefined") return "high";
+  const device = navigator as Navigator & { deviceMemory?: number };
+  const lowMemory = device.deviceMemory !== undefined && device.deviceMemory <= 4;
+  const lowConcurrency = navigator.hardwareConcurrency !== undefined && navigator.hardwareConcurrency <= 4;
+  return lowMemory || lowConcurrency ? "low" : "high";
 }

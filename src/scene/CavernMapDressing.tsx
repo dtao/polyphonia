@@ -15,13 +15,15 @@ export function CavernMapDressing({
   map,
   rockGeometry,
   editMode,
+  quality,
 }: {
   map: CompositionMap;
   rockGeometry: THREE.BufferGeometry;
   editMode: boolean;
+  quality: "low" | "high";
 }) {
   const material = useStoneMaterial(editMode);
-  const rocks = useMemo(() => rockTransforms(map), [map]);
+  const rocks = useMemo(() => rockTransforms(map, quality), [map, quality]);
 
   return (
     <group>
@@ -164,6 +166,7 @@ function RockInstances({
   useEffect(() => {
     transforms.forEach((matrix, index) => mesh.setMatrixAt(index, matrix));
     mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingSphere();
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     return () => mesh.dispose();
@@ -217,7 +220,7 @@ function useStoneMaterial(editMode: boolean): THREE.MeshStandardMaterial {
   return material;
 }
 
-function rockTransforms(map: CompositionMap): THREE.Matrix4[] {
+function rockTransforms(map: CompositionMap, quality: "low" | "high"): THREE.Matrix4[] {
   const transforms: THREE.Matrix4[] = [];
   for (const segment of map.segments) {
     if (segment.kind === "tunnel") continue;
@@ -227,7 +230,7 @@ function rockTransforms(map: CompositionMap): THREE.Matrix4[] {
     if (length < 0.01) continue;
     const nx = -dz / length;
     const nz = dx / length;
-    const count = Math.max(2, Math.floor(length / 4.5));
+    const count = Math.max(2, Math.floor(length / (quality === "high" ? 4.5 : 8)));
     for (let index = 0; index <= count; index += 1) {
       const t = index / count;
       const x = segment.start[0] + dx * t;
@@ -251,8 +254,9 @@ function rockTransforms(map: CompositionMap): THREE.Matrix4[] {
 
   for (const room of map.rooms) {
     const y = roomElevation(map, room) + 0.4;
-    for (let index = 0; index < 8; index += 1) {
-      const angle = (index / 8) * Math.PI * 2 + room.rotation;
+    const rockCount = quality === "high" ? 8 : 4;
+    for (let index = 0; index < rockCount; index += 1) {
+      const angle = (index / rockCount) * Math.PI * 2 + room.rotation;
       const radiusX = room.width / 2 + 0.8;
       const radiusZ = room.depth / 2 + 0.8;
       transforms.push(

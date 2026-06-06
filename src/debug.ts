@@ -1,6 +1,8 @@
 import { CompositionMap, containingRoom, loopAdjacentTransforms } from "./map";
 import { TrackDef } from "./composition";
 import { MarkerDebugSnapshot } from "./scene/markerDebug";
+import { resolvedEnvironmentQuality } from "./environmentPacks";
+import type { EnvironmentSettings } from "./environment";
 
 export interface DebugSample {
   t: number;
@@ -25,6 +27,10 @@ export interface DebugSample {
     segments: number;
     rooms: number;
     loopPreviews: number;
+  };
+  environment: {
+    pack?: string;
+    quality?: "low" | "high";
   };
   render?: {
     calls: number;
@@ -152,5 +158,12 @@ export function mapDebugSnapshot(map: CompositionMap): DebugSample["map"] {
     segments: map.segments.length,
     rooms: map.rooms.length,
     loopPreviews: loopAdjacentTransforms(map).length,
+  };
+}
+
+export function environmentDebugSnapshot(environment: EnvironmentSettings): DebugSample["environment"] {
+  return {
+    pack: environment.pack?.id,
+    quality: environment.pack ? resolvedEnvironmentQuality(environment.pack.quality ?? "auto") : undefined,
   };
 }

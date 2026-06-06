@@ -292,6 +292,7 @@ export default function App() {
   return (
     <>
       <Canvas
+        shadows
         camera={{ position: [0, 1.7, 0], fov: 70, near: 0.1, far: 200 }}
         // Cap pixel ratio: full-window 3D at Retina 2x+ tanks the frame rate
         // and makes mouselook feel choppy. 1.5 is a sweet spot of crisp + fast.

@@ -15,6 +15,7 @@ import { ARWalkSession } from "./ARWalkSession";
 import { CompositionMap, LoopPreviewTransform, loopPreviewElevationOffset, tiledMapTransforms, transformLoopPoint } from "../map";
 import { TrackDef } from "../composition";
 import { debugFlag, debugValue } from "../debug";
+import { EnvironmentEffects } from "./EnvironmentEffects";
 
 const VIEWER_SAMPLE_DISTANCE = 0.75;
 const TILE_PREVIEW_RADIUS = 180;
@@ -58,8 +59,15 @@ export function Scene() {
   const showEchoLights =
     mode === "explore" && loopPreviewsEnabled && map.tiling.type !== "none" && !debugFlag("debugNoPointLights") && !debugFlag("debugNoEchoLights");
   const forcedPack = debugValue("environmentPack");
+  const forcedQuality = debugValue("environmentQuality");
   const renderedEnvironment = forcedPack
-    ? { ...environment, pack: { id: forcedPack, quality: "high" as const } }
+    ? {
+        ...environment,
+        pack: {
+          id: forcedPack,
+          quality: forcedQuality === "low" ? ("low" as const) : ("high" as const),
+        },
+      }
     : environment;
 
   return (
@@ -96,6 +104,7 @@ export function Scene() {
           recorded; hides the preview group on the teleport frame. */}
       {mode === "explore" && loopPreviewsEnabled && <LoopWrapBlipGuard groupRef={previewGroup} />}
       <ListenerSync />
+      <EnvironmentEffects environment={renderedEnvironment} editMode={mode === "edit"} />
       <ARWalkSession />
       <ARBackdrop />
       <DebugSampler />

@@ -1,6 +1,6 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import { useRef } from "react";
-import { debugEnabled, mapDebugSnapshot, memorySnapshot, recordDebugSample, roomDebugSnapshot, timingSnapshot } from "../debug";
+import { debugEnabled, environmentDebugSnapshot, mapDebugSnapshot, memorySnapshot, recordDebugSample, roomDebugSnapshot, timingSnapshot } from "../debug";
 import { useStore } from "../store";
 import * as THREE from "three";
 import { markerDebugSnapshot } from "./markerDebug";
@@ -34,6 +34,7 @@ export function DebugSampler() {
       position,
       ...room,
       map: mapDebugSnapshot(state.composition.map),
+      environment: environmentDebugSnapshot(state.composition.environment),
       render: renderDebugSnapshot(gl, scene),
       visual: markerDebugSnapshot(now),
       audio: state.engine?.debugSnapshot() ?? null,
