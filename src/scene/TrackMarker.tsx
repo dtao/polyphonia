@@ -170,7 +170,7 @@ export function TrackMarker({
       <Billboard position={[0, 0, 0]}>
         {showFlare && (
           <mesh scale={[orbRadius * 5.6, orbRadius * 5.6, 1]}>
-            <planeGeometry args={[1, 1]} />
+            <circleGeometry args={[0.5, 64]} />
             <shaderMaterial
               ref={flare}
               transparent
@@ -188,7 +188,7 @@ export function TrackMarker({
         )}
         {showStarRays && (
           <mesh ref={starburst} scale={[orbRadius * 10.8, orbRadius * 10.8, 1]} rotation={[0, 0, seed]}>
-            <planeGeometry args={[1, 1]} />
+            <circleGeometry args={[0.5, 64]} />
             <shaderMaterial
               ref={rays}
               transparent
@@ -311,14 +311,12 @@ const flareFragmentShader = `
   void main() {
     vec2 p = vUv - vec2(0.5);
     float d = length(p);
-    float core = smoothstep(radius, 0.0, d);
+    float core = 1.0 - smoothstep(0.0, radius, d);
     float haze = exp(-d * 5.6);
-    // The haze never reaches zero, so without this it leaks all the way to the
-    // billboard plane's square corners — invisible on the black void but a hard
-    // square halo over a lit detail-pack floor. Fade to zero inside the plane's
-    // inscribed circle (d = 0.5) so only a round glow survives.
-    float edge = smoothstep(0.5, 0.4, d);
+    if (d >= 0.5) discard;
+    float edge = 1.0 - smoothstep(0.4, 0.5, d);
     float alpha = (core * 0.85 + haze * 0.38) * opacity * edge;
+    if (alpha < 0.001) discard;
     vec3 hot = mix(color, vec3(1.0), core * 0.72);
     gl_FragColor = vec4(hot, alpha);
   }
@@ -333,7 +331,7 @@ const starRayFragmentShader = `
   float ray(vec2 p, vec2 dir, float width, float length, float strength) {
     float along = dot(p, dir);
     float across = abs(dot(p, vec2(-dir.y, dir.x)));
-    float body = exp(-across * width) * smoothstep(length, 0.02, along);
+    float body = exp(-across * width) * (1.0 - smoothstep(0.02, length, along));
     return body * step(0.0, along) * strength;
   }
 
@@ -349,10 +347,11 @@ const starRayFragmentShader = `
     rays += ray(p, normalize(vec2(-0.62, -0.78)), 54.0, 0.44, 0.72);
     rays += ray(p, normalize(vec2(-0.74,  0.66)), 70.0, 0.28, 0.38);
     rays += ray(p, normalize(vec2( 0.58, -0.82)), 46.0, 0.40, 0.62);
-    float center = smoothstep(radius, 0.0, d);
-    // Vanish within the plane's inscribed circle (d = 0.5) so the rays/glow can't
-    // paint the square plane edges over a lit detail-pack floor (see flare).
-    float alpha = (rays + center * 0.5) * smoothstep(0.5, 0.02, d) * opacity;
+    float center = 1.0 - smoothstep(0.0, radius, d);
+    if (d >= 0.5) discard;
+    float edge = 1.0 - smoothstep(0.42, 0.5, d);
+    float alpha = (rays + center * 0.5) * edge * opacity;
+    if (alpha < 0.001) discard;
     vec3 hot = mix(color, vec3(1.0), center * 0.85);
     gl_FragColor = vec4(hot, alpha);
   }
