@@ -3,7 +3,7 @@ import { Line, TransformControls } from "@react-three/drei";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
-import { canAddBranchAtPoint, clampToMap, CompositionMap, doorOpenAmount, entranceLocalCenter, isTunnelSegment, loopRoleForPoint, MapPlatform, MapRoom, MapWall, platformElevation, platformLocalPolygon, pointHasAttachment, RoomEntrance, roomElevation, roomLocalPoint, RoomSide, ROOM_WALL_THICKNESS, solidWallSpans, surfaceHeightAt, tunnelHeight, tunnelSideWalls, wallOpenings, WalkableSegment } from "../map";
+import { canAddBranchAtPoint, clampToMap, CompositionMap, doorOpenAmount, DOOR_DEPTH, entranceLocalCenter, isTunnelSegment, loopRoleForPoint, MapPlatform, MapRoom, MapWall, platformElevation, platformLocalPolygon, pointHasAttachment, RoomEntrance, roomElevation, roomLocalPoint, roomWorldPoint, RoomSide, ROOM_WALL_THICKNESS, solidWallSpans, surfaceHeightAt, tunnelHeight, tunnelSideWalls, wallOpenings, WalkableSegment } from "../map";
 import { useStore, viewState } from "../store";
 import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 
@@ -1058,6 +1058,11 @@ function walkableFloorGeometry(map: CompositionMap): THREE.BufferGeometry | null
     );
   }
 
+  for (const segment of segments) {
+    addRoomDoorwayConnector(map, segment, "start", vertices, indices);
+    addRoomDoorwayConnector(map, segment, "end", vertices, indices);
+  }
+
   // Joints are a single shared height, so their fill patch is flat.
   for (const { point, segments: jointSegments } of sharedJoints(segments)) {
     const jy = elevationAt(map, point);
@@ -1079,6 +1084,57 @@ function walkableFloorGeometry(map: CompositionMap): THREE.BufferGeometry | null
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   return geometry;
+}
+
+function addRoomDoorwayConnector(map: CompositionMap, segment: WalkableSegment, end: SegmentEnd, vertices: number[], indices: number[]): void {
+  const point = end === "start" ? segment.start : segment.end;
+  for (const room of map.rooms) {
+    for (const entrance of room.entrances) {
+      if (!pointInEntranceThreshold(room, entrance, point)) continue;
+      const doorway = doorwayEdgePoints(room, entrance);
+      const y = roomElevation(map, room);
+      addFloorPolygon(
+        convexHull([borderPoint(segment, map.segments, end, -1), borderPoint(segment, map.segments, end, 1), ...doorway]).map((p) => ({ point: p, y })),
+        vertices,
+        indices,
+      );
+      return;
+    }
+  }
+}
+
+function pointInEntranceThreshold(room: MapRoom, entrance: RoomEntrance, point: [number, number]): boolean {
+  const local = roomLocalPoint(room, point);
+  const halfDoor = Math.max(0.5, entrance.width) / 2;
+  const halfWall = ROOM_WALL_THICKNESS / 2;
+  const hw = room.width / 2;
+  const hd = room.depth / 2;
+  switch (entrance.side) {
+    case "north":
+      return local[0] >= entrance.offset - halfDoor && local[0] <= entrance.offset + halfDoor && local[1] >= -hd - halfWall && local[1] <= -hd + DOOR_DEPTH;
+    case "south":
+      return local[0] >= entrance.offset - halfDoor && local[0] <= entrance.offset + halfDoor && local[1] >= hd - DOOR_DEPTH && local[1] <= hd + halfWall;
+    case "west":
+      return local[1] >= entrance.offset - halfDoor && local[1] <= entrance.offset + halfDoor && local[0] >= -hw - halfWall && local[0] <= -hw + DOOR_DEPTH;
+    case "east":
+      return local[1] >= entrance.offset - halfDoor && local[1] <= entrance.offset + halfDoor && local[0] >= hw - DOOR_DEPTH && local[0] <= hw + halfWall;
+  }
+}
+
+function doorwayEdgePoints(room: MapRoom, entrance: RoomEntrance): [[number, number], [number, number]] {
+  const halfDoor = Math.max(0.5, entrance.width) / 2;
+  const hw = room.width / 2;
+  const hd = room.depth / 2;
+  switch (entrance.side) {
+    case "north":
+      return [roomWorldPoint(room, [entrance.offset - halfDoor, -hd]), roomWorldPoint(room, [entrance.offset + halfDoor, -hd])];
+    case "south":
+      return [roomWorldPoint(room, [entrance.offset - halfDoor, hd]), roomWorldPoint(room, [entrance.offset + halfDoor, hd])];
+    case "west":
+      return [roomWorldPoint(room, [-hw, entrance.offset - halfDoor]), roomWorldPoint(room, [-hw, entrance.offset + halfDoor])];
+    case "east":
+      return [roomWorldPoint(room, [hw, entrance.offset - halfDoor]), roomWorldPoint(room, [hw, entrance.offset + halfDoor])];
+  }
 }
 
 function pathSkirtGeometry(map: CompositionMap): THREE.BufferGeometry | null {

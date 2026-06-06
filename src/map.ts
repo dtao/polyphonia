@@ -128,7 +128,7 @@ export type MapSupport =
 export const ROOM_WALL_THICKNESS = 0.3;
 // How far the walkable doorway "threshold" extends outside the entrance wall, so
 // a room positioned against a path connects to it.
-const DOOR_DEPTH = 2.6;
+export const DOOR_DEPTH = 2.6;
 
 type Rect = { minX: number; maxX: number; minZ: number; maxZ: number };
 
