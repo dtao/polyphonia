@@ -16,9 +16,17 @@ export interface RoomAttachment {
   end: SegmentEnd;
 }
 
-// An enclosed rectangular space (walls + ceiling) with one doorway that opens
-// onto the rest of the walkable map. (Sonic character — reverb/echo from wall
-// reflections — is intended for a later change.)
+// A doorway cut into one of a room's walls. A room can have several, on any
+// combination of walls, so it can open onto multiple paths/rooms.
+export interface RoomEntrance {
+  side: RoomSide; // which wall this opening is cut into
+  width: number; // doorway opening width
+  offset: number; // center offset along the wall (0 = centered)
+}
+
+// An enclosed rectangular space (walls + ceiling) with one or more doorways that
+// open onto the rest of the walkable map. (Sonic character — reverb/echo from
+// wall reflections — is handled by the audio engine's room acoustics.)
 export interface MapRoom {
   id: string;
   center: [number, number]; // x, z of the interior center
@@ -26,11 +34,16 @@ export interface MapRoom {
   width: number; // interior extent along x
   depth: number; // interior extent along z
   height: number; // wall / ceiling height
-  entranceSide: RoomSide; // which wall has the doorway
-  entranceWidth: number; // doorway opening width
-  entranceOffset: number; // doorway center offset along the entrance wall (0 = centered)
+  entrances: RoomEntrance[]; // doorways cut into the walls (at least one)
   attachment?: RoomAttachment; // rooms created from path endpoints stay attached to that branch point
 }
+
+// Older manifests stored a single entrance inline; accepted on read and
+// migrated to `entrances` by `normalizeRoom`.
+type LegacyRoomEntrance = Partial<{ entranceSide: RoomSide; entranceWidth: number; entranceOffset: number }>;
+type RawMapRoom = Omit<MapRoom, "entrances" | "rotation" | "height"> &
+  Partial<Pick<MapRoom, "entrances" | "rotation" | "height">> &
+  LegacyRoomEntrance;
 
 export interface MapTiling {
   type: MapTilingType;
@@ -226,29 +239,59 @@ export function interiorRect(room: MapRoom): Rect {
   return { minX: -hw, maxX: hw, minZ: -hd, maxZ: hd };
 }
 
-// The walkable doorway threshold: a strip the entrance width wide that bridges
-// the wall gap and extends DOOR_DEPTH outside, so the room connects to a path.
-function doorwayRect(room: MapRoom): Rect {
+// The walkable doorway threshold for one entrance: a strip the entrance width
+// wide that bridges the wall gap and extends DOOR_DEPTH outside, so the room
+// connects to a path.
+function doorwayRect(room: MapRoom, entrance: RoomEntrance): Rect {
   const r = interiorRect(room);
-  const ew = Math.max(0.5, room.entranceWidth);
-  const a = room.entranceOffset - ew / 2;
-  const b = room.entranceOffset + ew / 2;
-  const c = room.entranceOffset - ew / 2;
-  const d = room.entranceOffset + ew / 2;
-  switch (room.entranceSide) {
+  const ew = Math.max(0.5, entrance.width);
+  const a = entrance.offset - ew / 2;
+  const b = entrance.offset + ew / 2;
+  switch (entrance.side) {
     case "north":
       return { minX: a, maxX: b, minZ: r.minZ - DOOR_DEPTH, maxZ: r.minZ };
     case "south":
       return { minX: a, maxX: b, minZ: r.maxZ, maxZ: r.maxZ + DOOR_DEPTH };
     case "west":
-      return { minX: r.minX - DOOR_DEPTH, maxX: r.minX, minZ: c, maxZ: d };
+      return { minX: r.minX - DOOR_DEPTH, maxX: r.minX, minZ: a, maxZ: b };
     case "east":
-      return { minX: r.maxX, maxX: r.maxX + DOOR_DEPTH, minZ: c, maxZ: d };
+      return { minX: r.maxX, maxX: r.maxX + DOOR_DEPTH, minZ: a, maxZ: b };
   }
 }
 
 export function roomRegionRects(room: MapRoom): Rect[] {
-  return [interiorRect(room), doorwayRect(room)];
+  return [interiorRect(room), ...room.entrances.map((entrance) => doorwayRect(room, entrance))];
+}
+
+// Opening intervals along a given wall (in that wall's local coordinate), and
+// the solid spans left over once every opening is removed. Shared by the audio
+// occlusion test and the wall mesh builder so they agree on where the gaps are.
+export function wallOpenings(room: MapRoom, side: RoomSide): Array<[number, number]> {
+  return room.entrances
+    .filter((entrance) => entrance.side === side)
+    .map((entrance) => {
+      const ew = Math.max(0.5, entrance.width);
+      return [entrance.offset - ew / 2, entrance.offset + ew / 2] as [number, number];
+    });
+}
+
+export function solidWallSpans(half: number, openings: Array<[number, number]>): Array<[number, number]> {
+  let spans: Array<[number, number]> = [[-half, half]];
+  for (const [a, b] of openings) {
+    const next: Array<[number, number]> = [];
+    for (const [s, e] of spans) {
+      const lo = Math.max(s, a);
+      const hi = Math.min(e, b);
+      if (lo >= hi) {
+        next.push([s, e]);
+        continue;
+      }
+      if (lo - s > 0.05) next.push([s, lo]);
+      if (e - hi > 0.05) next.push([hi, e]);
+    }
+    spans = next;
+  }
+  return spans;
 }
 
 export function roomContains(room: MapRoom, point: [number, number]): boolean {
@@ -538,7 +581,13 @@ export function alignAttachedRooms(map: CompositionMap): CompositionMap {
     rooms: map.rooms.map((room) => {
       if (!room.attachment) return room;
       const placed = attachedRoomPlacement(map, room);
-      return placed ? { ...room, ...placed, entranceOffset: 0 } : room;
+      if (!placed) return room;
+      // The attachment doorway is the first entrance, locked facing the path
+      // (north, centered). Any additional entrances the composer added on other
+      // walls are preserved as-is.
+      const [primary, ...rest] = room.entrances;
+      const lockedPrimary: RoomEntrance = { side: "north", width: primary?.width ?? 5, offset: 0 };
+      return { ...room, ...placed, entrances: [lockedPrimary, ...rest] };
     }),
   };
 }
@@ -748,7 +797,7 @@ function segmentHeightAt(map: Pick<CompositionMap, "elevations">, segment: Walka
   return startElev + (endElev - startElev) * t;
 }
 
-function attachedRoomPlacement(map: Pick<CompositionMap, "segments">, room: MapRoom): Pick<MapRoom, "center" | "rotation" | "entranceSide"> | null {
+function attachedRoomPlacement(map: Pick<CompositionMap, "segments">, room: MapRoom): Pick<MapRoom, "center" | "rotation"> | null {
   if (!room.attachment) return null;
   const segment = map.segments.find((s) => s.id === room.attachment?.segmentId);
   if (!segment) return null;
@@ -757,7 +806,7 @@ function attachedRoomPlacement(map: Pick<CompositionMap, "segments">, room: MapR
   const out = normalizeDirection([point[0] - other[0], point[1] - other[1]]);
   const rotation = Math.atan2(out[0], out[1]);
   const center: [number, number] = [point[0] + out[0] * (room.depth / 2), point[1] + out[1] * (room.depth / 2)];
-  return { center, rotation, entranceSide: "north" };
+  return { center, rotation };
 }
 
 function toRoomLocal(room: MapRoom, point: [number, number]): [number, number] {
@@ -777,21 +826,11 @@ function fromRoomLocal(room: MapRoom, point: [number, number]): [number, number]
 function lineHitsSolidRoomWall(room: MapRoom, from: [number, number], to: [number, number]): boolean {
   const r = interiorRect(room);
   const walls: Array<[[number, number], [number, number]]> = [];
-  for (const [s, e] of splitWall(r.maxX, room.entranceSide === "north", room.entranceWidth, room.entranceOffset)) walls.push([[s, r.minZ], [e, r.minZ]]);
-  for (const [s, e] of splitWall(r.maxX, room.entranceSide === "south", room.entranceWidth, room.entranceOffset)) walls.push([[s, r.maxZ], [e, r.maxZ]]);
-  for (const [s, e] of splitWall(r.maxZ, room.entranceSide === "west", room.entranceWidth, room.entranceOffset)) walls.push([[r.minX, s], [r.minX, e]]);
-  for (const [s, e] of splitWall(r.maxZ, room.entranceSide === "east", room.entranceWidth, room.entranceOffset)) walls.push([[r.maxX, s], [r.maxX, e]]);
+  for (const [s, e] of solidWallSpans(r.maxX, wallOpenings(room, "north"))) walls.push([[s, r.minZ], [e, r.minZ]]);
+  for (const [s, e] of solidWallSpans(r.maxX, wallOpenings(room, "south"))) walls.push([[s, r.maxZ], [e, r.maxZ]]);
+  for (const [s, e] of solidWallSpans(r.maxZ, wallOpenings(room, "west"))) walls.push([[r.minX, s], [r.minX, e]]);
+  for (const [s, e] of solidWallSpans(r.maxZ, wallOpenings(room, "east"))) walls.push([[r.maxX, s], [r.maxX, e]]);
   return walls.some(([a, b]) => lineSegmentsIntersect(from, to, a, b));
-}
-
-function splitWall(half: number, isEntrance: boolean, entranceWidth: number, offset: number): Array<[number, number]> {
-  if (!isEntrance) return [[-half, half]];
-  const a = offset - entranceWidth / 2;
-  const b = offset + entranceWidth / 2;
-  const parts: Array<[number, number]> = [];
-  if (a > -half + 0.05) parts.push([-half, a]);
-  if (b < half - 0.05) parts.push([b, half]);
-  return parts;
 }
 
 function lineSegmentsIntersect(a: [number, number], b: [number, number], c: [number, number], d: [number, number]): boolean {
@@ -873,35 +912,55 @@ function isWalkableSegment(value: unknown): value is WalkableSegment {
   );
 }
 
-function isMapRoom(value: unknown): value is MapRoom {
-  const r = value as MapRoom;
+function isMapRoom(value: unknown): value is RawMapRoom {
+  const r = value as RawMapRoom;
   return (
     typeof r?.id === "string" &&
     isPoint(r.center) &&
     (r.rotation === undefined || (typeof r.rotation === "number" && Number.isFinite(r.rotation))) &&
     typeof r.width === "number" &&
-    typeof r.depth === "number" &&
-    typeof r.height === "number" &&
-    (r.entranceSide === "north" || r.entranceSide === "south" || r.entranceSide === "east" || r.entranceSide === "west")
+    typeof r.depth === "number"
   );
 }
 
-function normalizeRoom(room: MapRoom): MapRoom {
+function isRoomEntrance(value: unknown): value is RoomEntrance {
+  const e = value as RoomEntrance;
+  return isRoomSide(e?.side) && typeof e.width === "number" && Number.isFinite(e.width) && typeof e.offset === "number" && Number.isFinite(e.offset);
+}
+
+function isRoomSide(value: unknown): value is RoomSide {
+  return value === "north" || value === "south" || value === "east" || value === "west";
+}
+
+// Wall span available for a doorway on a given side (interior extent minus the
+// two corner wall thicknesses).
+function entranceSpan(side: RoomSide, width: number, depth: number): number {
+  return (side === "north" || side === "south" ? width : depth) - ROOM_WALL_THICKNESS * 2;
+}
+
+function normalizeEntrance(entrance: RoomEntrance, width: number, depth: number): RoomEntrance {
+  const span = entranceSpan(entrance.side, width, depth);
+  const entranceWidth = clamp(entrance.width, 1, Math.max(1, span));
+  const maxOffset = Math.max(0, span / 2 - entranceWidth / 2);
+  return { side: entrance.side, width: entranceWidth, offset: clamp(entrance.offset, -maxOffset, maxOffset) };
+}
+
+function normalizeRoom(room: RawMapRoom): MapRoom {
   const width = clamp(room.width, 3, 80);
   const depth = clamp(room.depth, 3, 80);
-  const span = (room.entranceSide === "north" || room.entranceSide === "south" ? width : depth) - ROOM_WALL_THICKNESS * 2;
-  const entranceWidth = clamp(room.entranceWidth ?? 4, 1, Math.max(1, span));
-  const maxOffset = Math.max(0, span / 2 - entranceWidth / 2);
+  // Prefer the new entrances array; fall back to the legacy single-entrance
+  // fields, then to a centered south doorway.
+  const rawEntrances: RoomEntrance[] = Array.isArray(room.entrances) && room.entrances.some(isRoomEntrance)
+    ? room.entrances.filter(isRoomEntrance)
+    : [{ side: isRoomSide(room.entranceSide) ? room.entranceSide : "south", width: room.entranceWidth ?? 4, offset: room.entranceOffset ?? 0 }];
   return {
     id: room.id,
     center: room.center,
-    rotation: Number.isFinite(room.rotation) ? room.rotation : 0,
+    rotation: Number.isFinite(room.rotation) ? (room.rotation as number) : 0,
     width,
     depth,
     height: clamp(room.height ?? 3.2, 2, 12),
-    entranceSide: room.entranceSide,
-    entranceWidth,
-    entranceOffset: clamp(room.entranceOffset ?? 0, -maxOffset, maxOffset),
+    entrances: rawEntrances.map((entrance) => normalizeEntrance(entrance, width, depth)),
     attachment: isRoomAttachment(room.attachment) ? room.attachment : undefined,
   };
 }

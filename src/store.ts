@@ -395,9 +395,8 @@ export const useStore = create<StoreState>((set, get) => ({
       width: 14,
       depth: 12,
       height: 3.4,
-      entranceSide: forward > 0 ? "south" : "north", // opening back toward the start/path
-      entranceWidth: 5,
-      entranceOffset: 0,
+      // opening back toward the start/path
+      entrances: [{ side: forward > 0 ? "south" : "north", width: 5, offset: 0 }],
     };
     get().setMap({ rooms: [...map.rooms, room] });
     set({ selectedRoomId: room.id, selectedId: null, selectedMapSegmentId: null, selectedMapPointKey: null, selectedStart: false });
@@ -431,9 +430,7 @@ export const useStore = create<StoreState>((set, get) => ({
       width,
       depth,
       height: 3.4,
-      entranceSide: "south",
-      entranceWidth: 5,
-      entranceOffset: 0,
+      entrances: [{ side: "north", width: 5, offset: 0 }],
       attachment,
     };
     get().setMap({ rooms: [...map.rooms, room] });

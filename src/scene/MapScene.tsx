@@ -3,7 +3,7 @@ import { TransformControls } from "@react-three/drei";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
-import { canAddBranchAtPoint, clampToMap, CompositionMap, loopRoleForPoint, MapRoom, roomAttachedToPoint, roomElevation, ROOM_WALL_THICKNESS, surfaceHeightAt, WalkableSegment } from "../map";
+import { canAddBranchAtPoint, clampToMap, CompositionMap, loopRoleForPoint, MapRoom, roomAttachedToPoint, roomElevation, ROOM_WALL_THICKNESS, solidWallSpans, surfaceHeightAt, wallOpenings, WalkableSegment } from "../map";
 import { useStore } from "../store";
 import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 
@@ -113,29 +113,17 @@ function Room({ room, elevationY, editMode, selected }: { room: MapRoom; elevati
   );
 }
 
-// Wall boxes in room-local coords; the entrance side gets a gap for the doorway.
+// Wall boxes in room-local coords; each entrance leaves a gap in its wall.
 function roomWallBoxes(room: MapRoom): Array<{ pos: [number, number]; size: [number, number] }> {
   const hw = room.width / 2;
   const hd = room.depth / 2;
   const t = ROOM_WALL_THICKNESS;
-  const ew = room.entranceWidth;
-  const off = room.entranceOffset;
   const boxes: Array<{ pos: [number, number]; size: [number, number] }> = [];
-  for (const [s, e] of splitWall(hw, room.entranceSide === "north", ew, off)) boxes.push({ pos: [(s + e) / 2, -hd], size: [e - s + t, t] });
-  for (const [s, e] of splitWall(hw, room.entranceSide === "south", ew, off)) boxes.push({ pos: [(s + e) / 2, hd], size: [e - s + t, t] });
-  for (const [s, e] of splitWall(hd, room.entranceSide === "west", ew, off)) boxes.push({ pos: [-hw, (s + e) / 2], size: [t, e - s + t] });
-  for (const [s, e] of splitWall(hd, room.entranceSide === "east", ew, off)) boxes.push({ pos: [hw, (s + e) / 2], size: [t, e - s + t] });
+  for (const [s, e] of solidWallSpans(hw, wallOpenings(room, "north"))) boxes.push({ pos: [(s + e) / 2, -hd], size: [e - s + t, t] });
+  for (const [s, e] of solidWallSpans(hw, wallOpenings(room, "south"))) boxes.push({ pos: [(s + e) / 2, hd], size: [e - s + t, t] });
+  for (const [s, e] of solidWallSpans(hd, wallOpenings(room, "west"))) boxes.push({ pos: [-hw, (s + e) / 2], size: [t, e - s + t] });
+  for (const [s, e] of solidWallSpans(hd, wallOpenings(room, "east"))) boxes.push({ pos: [hw, (s + e) / 2], size: [t, e - s + t] });
   return boxes;
-}
-
-function splitWall(half: number, isEntrance: boolean, entranceWidth: number, offset: number): Array<[number, number]> {
-  if (!isEntrance) return [[-half, half]];
-  const a = offset - entranceWidth / 2;
-  const b = offset + entranceWidth / 2;
-  const parts: Array<[number, number]> = [];
-  if (a > -half + 0.05) parts.push([-half, a]);
-  if (b < half - 0.05) parts.push([b, half]);
-  return parts;
 }
 
 function ReflectiveUnderfloor({
