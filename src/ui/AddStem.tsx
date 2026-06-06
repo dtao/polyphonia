@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
+import { registerStemDialogOpener } from "../shortcuts";
 
 const AUDIO_RE = /\.(mp3|wav|ogg|flac|m4a|aac|opus|webm)$/i;
 const isAudio = (f: File) => f.type.startsWith("audio/") || AUDIO_RE.test(f.name);
@@ -29,21 +30,14 @@ export function AddStem() {
     }
   }
 
-  // Global drag-and-drop.
+  // Expose the file picker to the central shortcut dispatcher (Cmd/Ctrl+O is
+  // declared in src/shortcuts.ts).
   useEffect(() => {
-    if (!engine) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      const el = document.activeElement;
-      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return;
-      if ((e.metaKey || e.ctrlKey) && e.code === "KeyO") {
-        e.preventDefault();
-        inputRef.current?.click();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [engine]);
+    registerStemDialogOpener(() => inputRef.current?.click());
+    return () => registerStemDialogOpener(null);
+  }, []);
 
+  // Global drag-and-drop.
   useEffect(() => {
     if (!engine) return;
     const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files");

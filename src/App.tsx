@@ -22,15 +22,7 @@ import { ARWalkControls } from "./ui/ARWalkControls";
 import { GeoWalkControls } from "./ui/GeoWalkControls";
 import { useStore } from "./store";
 import { exportComposition } from "./persistence";
-
-type EditPanel = "environment" | "map" | "loop" | null;
-
-function deleteSelectedMapPoint(): void {
-  const s = useStore.getState();
-  const key = s.selectedMapPointKey;
-  if (!key) return;
-  s.deleteMapPoint(key);
-}
+import { dispatchShortcut, type EditPanel } from "./shortcuts";
 
 function modKey(): string {
   return navigator.platform.toLowerCase().includes("mac") ? "Cmd" : "Ctrl";
@@ -160,107 +152,17 @@ export default function App() {
     useStore.getState().setAudioLoading({ status: "idle" });
   }
 
-  // Tab toggles Explore/Edit. Cmd/Ctrl+Z and Shift+Cmd/Ctrl+Z handle edit
-  // history when focus is not inside a native text field.
+  // All discrete keyboard shortcuts are declared in src/shortcuts.ts; here we
+  // just feed keydown events to the central dispatcher with the bits of UI
+  // state and callbacks it needs.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.code === "KeyF") {
-        const el = document.activeElement;
-        if (!el || (el.tagName !== "INPUT" && el.tagName !== "TEXTAREA")) {
-          e.preventDefault();
-          toggleFullscreen();
-          return;
-        }
-      }
-      if (e.key === "Escape" && document.fullscreenElement) return;
-      if (e.key === "Escape" && useStore.getState().mode === "edit") {
-        if (openEditPanel) {
-          e.preventDefault();
-          setOpenEditPanel(null);
-          return;
-        }
-        if (useStore.getState().selectedId) {
-          e.preventDefault();
-          useStore.getState().select(null);
-          return;
-        }
-        if (useStore.getState().selectedLandmarkId) {
-          e.preventDefault();
-          useStore.getState().selectLandmark(null);
-          return;
-        }
-      }
-      const el = document.activeElement;
-      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return;
-      const modifier = e.metaKey || e.ctrlKey;
-      const s = useStore.getState();
-      if (s.mode === "edit" && (e.code === "Delete" || e.code === "Backspace")) {
-        if (s.selectedLandmarkId) {
-          e.preventDefault();
-          s.deleteLandmark(s.selectedLandmarkId);
-          return;
-        }
-        if (s.selectedId) {
-          e.preventDefault();
-          s.deleteTrack(s.selectedId);
-          return;
-        }
-        if (s.selectedRoomId && s.selectedEntranceIndex !== null) {
-          e.preventDefault();
-          s.removeEntrance(s.selectedRoomId, s.selectedEntranceIndex);
-          return;
-        }
-        if (s.selectedRoomId) {
-          e.preventDefault();
-          s.deleteRoom(s.selectedRoomId);
-          return;
-        }
-        if (s.selectedPlatformId) {
-          e.preventDefault();
-          s.deletePlatform(s.selectedPlatformId);
-          return;
-        }
-        if (s.selectedWallId) {
-          e.preventDefault();
-          s.deleteWall(s.selectedWallId);
-          return;
-        }
-        if (s.selectedMapPointKey) {
-          e.preventDefault();
-          deleteSelectedMapPoint();
-          return;
-        }
-      }
-      if (s.mode === "edit" && e.code === "KeyB" && !modifier && !e.altKey) {
-        if (s.selectedMapPointKey) {
-          e.preventDefault();
-          s.addBranchAtPoint(s.selectedMapPointKey);
-          return;
-        }
-      }
-      if (s.mode === "edit" && modifier && e.code === "KeyD") {
-        if (s.selectedId) {
-          e.preventDefault();
-          void s.duplicateTrack(s.selectedId);
-          return;
-        }
-      }
-      if (modifier && e.key.toLowerCase() === "z" && useStore.getState().entered) {
-        e.preventDefault();
-        if (e.shiftKey) void useStore.getState().redo();
-        else void useStore.getState().undo();
-        return;
-      }
-      if (modifier && e.key.toLowerCase() === "y" && useStore.getState().entered) {
-        e.preventDefault();
-        void useStore.getState().redo();
-        return;
-      }
-      if (e.code === "Tab" && useStore.getState().engine) {
-        e.preventDefault();
-        handleToggleMode();
-      }
-    };
+    const onKey = (e: KeyboardEvent) =>
+      dispatchShortcut(e, {
+        toggleMode: handleToggleMode,
+        toggleFullscreen,
+        openEditPanel,
+        setOpenEditPanel,
+      });
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [handleToggleMode, openEditPanel, toggleFullscreen]);
