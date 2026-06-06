@@ -250,21 +250,25 @@ function DoorPanel({ room, entrance, editMode }: { room: MapRoom; entrance: Room
   );
 }
 
+const DOOR_PANEL_THICKNESS = 0.08;
+const DOOR_PANEL_CLEARANCE = 0.02;
+
 function doorPanelData(room: MapRoom, entrance: RoomEntrance): { center: [number, number]; axis: "x" | "z"; width: number; size: [number, number, number] } {
   const hw = room.width / 2;
   const hd = room.depth / 2;
   const t = ROOM_WALL_THICKNESS;
   const h = room.height;
-  const w = entrance.width;
+  const w = Math.max(0.1, entrance.width - 0.04);
+  const inset = t / 2 + DOOR_PANEL_THICKNESS / 2 + DOOR_PANEL_CLEARANCE;
   switch (entrance.side) {
     case "north":
-      return { center: [entrance.offset, -hd], axis: "x", width: w, size: [w, h, t] };
+      return { center: [entrance.offset, -hd + inset], axis: "x", width: w, size: [w, h, DOOR_PANEL_THICKNESS] };
     case "south":
-      return { center: [entrance.offset, hd], axis: "x", width: w, size: [w, h, t] };
+      return { center: [entrance.offset, hd - inset], axis: "x", width: w, size: [w, h, DOOR_PANEL_THICKNESS] };
     case "west":
-      return { center: [-hw, entrance.offset], axis: "z", width: w, size: [t, h, w] };
+      return { center: [-hw + inset, entrance.offset], axis: "z", width: w, size: [DOOR_PANEL_THICKNESS, h, w] };
     case "east":
-      return { center: [hw, entrance.offset], axis: "z", width: w, size: [t, h, w] };
+      return { center: [hw - inset, entrance.offset], axis: "z", width: w, size: [DOOR_PANEL_THICKNESS, h, w] };
   }
 }
 
@@ -274,11 +278,27 @@ function roomWallBoxes(room: MapRoom): Array<{ pos: [number, number]; size: [num
   const hd = room.depth / 2;
   const t = ROOM_WALL_THICKNESS;
   const boxes: Array<{ pos: [number, number]; size: [number, number] }> = [];
-  for (const [s, e] of solidWallSpans(hw, wallOpenings(room, "north"))) boxes.push({ pos: [(s + e) / 2, -hd], size: [e - s + t, t] });
-  for (const [s, e] of solidWallSpans(hw, wallOpenings(room, "south"))) boxes.push({ pos: [(s + e) / 2, hd], size: [e - s + t, t] });
-  for (const [s, e] of solidWallSpans(hd, wallOpenings(room, "west"))) boxes.push({ pos: [-hw, (s + e) / 2], size: [t, e - s + t] });
-  for (const [s, e] of solidWallSpans(hd, wallOpenings(room, "east"))) boxes.push({ pos: [hw, (s + e) / 2], size: [t, e - s + t] });
+  for (const [s, e] of solidWallSpans(hw, wallOpenings(room, "north"))) boxes.push({ pos: [wallSpanCenter(s, e, hw), -hd], size: [wallSpanLength(s, e, hw), t] });
+  for (const [s, e] of solidWallSpans(hw, wallOpenings(room, "south"))) boxes.push({ pos: [wallSpanCenter(s, e, hw), hd], size: [wallSpanLength(s, e, hw), t] });
+  for (const [s, e] of solidWallSpans(hd, wallOpenings(room, "west"))) boxes.push({ pos: [-hw, wallSpanCenter(s, e, hd)], size: [t, wallSpanLength(s, e, hd)] });
+  for (const [s, e] of solidWallSpans(hd, wallOpenings(room, "east"))) boxes.push({ pos: [hw, wallSpanCenter(s, e, hd)], size: [t, wallSpanLength(s, e, hd)] });
   return boxes;
+}
+
+function wallSpanCenter(start: number, end: number, half: number): number {
+  const min = start - (touchesWallEdge(start, -half) ? ROOM_WALL_THICKNESS / 2 : 0);
+  const max = end + (touchesWallEdge(end, half) ? ROOM_WALL_THICKNESS / 2 : 0);
+  return (min + max) / 2;
+}
+
+function wallSpanLength(start: number, end: number, half: number): number {
+  const min = start - (touchesWallEdge(start, -half) ? ROOM_WALL_THICKNESS / 2 : 0);
+  const max = end + (touchesWallEdge(end, half) ? ROOM_WALL_THICKNESS / 2 : 0);
+  return max - min;
+}
+
+function touchesWallEdge(value: number, edge: number): boolean {
+  return Math.abs(value - edge) < 0.001;
 }
 
 // Enclosed corridors: side walls + a ceiling drawn over a tunnel segment's
