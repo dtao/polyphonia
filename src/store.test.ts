@@ -148,4 +148,36 @@ describe("store edit contracts", () => {
       end: [18, -7],
     });
   });
+
+  it("preserves elevation when cloning landmarks and map points", () => {
+    useStore.setState((state) => ({
+      composition: normalizeComposition({
+        ...state.composition,
+        environment: {
+          landmarks: [{
+            id: "landmark-a",
+            assetId: "evergreen",
+            position: [2, 7, 3],
+            rotation: [0, 0, 0],
+            scale: [1, 1, 1],
+          }],
+        },
+        map: {
+          ...state.composition.map,
+          preset: "custom",
+          segments: [{ id: "raised", start: [0, 0], end: [0, -10], width: 6 }],
+          elevations: { "0.000,0.000": 5 },
+        },
+      }),
+    }));
+
+    useStore.getState().duplicateLandmark("landmark-a");
+    useStore.getState().addBranchAtPoint("0.000,0.000");
+
+    const state = useStore.getState();
+    expect(state.composition.environment.landmarks?.[1]?.position[1]).toBe(7);
+    const clonedEndpoint = state.composition.map.segments[1].end;
+    const clonedKey = `${clonedEndpoint[0].toFixed(3)},${clonedEndpoint[1].toFixed(3)}`;
+    expect(state.composition.map.elevations?.[clonedKey]).toBe(5);
+  });
 });

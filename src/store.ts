@@ -899,7 +899,7 @@ export const useStore = create<StoreState>((set, get) => ({
     const copy: EnvironmentLandmarkPlacement = {
       ...source,
       id: newId(),
-      position: [nx, surfaceHeightAt(state.composition.map, [nx, nz]), nz],
+      position: [nx, source.position[1], nz],
       rotation: [...source.rotation],
       scale: [...source.scale],
     };
@@ -1276,7 +1276,11 @@ export const useStore = create<StoreState>((set, get) => ({
     if (!point) return;
     const end: [number, number] = [point[0] + dir[0] * 12, point[1] + dir[1] * 12];
     const segment = { id: newId(), start: point, end, width };
-    get().setMap({ preset: "custom", segments: [...map.segments, segment] });
+    const sourceElevation = map.elevations?.[pointKey] ?? 0;
+    const elevations = sourceElevation
+      ? { ...(map.elevations ?? {}), [mapPointKey(end)]: sourceElevation }
+      : map.elevations;
+    get().setMap({ preset: "custom", segments: [...map.segments, segment], elevations });
     set({ selectedMapPointKey: mapPointKey(end), selectedRoomId: null, selectedEntranceIndex: null, selectedId: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false });
   },
 
