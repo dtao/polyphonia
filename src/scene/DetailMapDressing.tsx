@@ -82,9 +82,15 @@ function SegmentShell({
   const length = Math.hypot(planarLength, rise);
   const yaw = Math.atan2(dx, dz);
   const pitch = -Math.atan2(rise, planarLength);
+  // The slab is 0.26 thick. Centering it at elevation - 0.10 puts its textured
+  // top at elevation + 0.03 — just proud of the reactive PathMaterial floor
+  // (which sits exactly at elevation) so the texture wins the depth test instead
+  // of z-fighting it (flush tops flicker between texture and plain color). The
+  // 0.03 lift stays below the edge rails (elevation + 0.045); the reactive floor
+  // still shows through at joints/connectors the per-segment slabs don't cover.
   const position: [number, number, number] = [
     (segment.start[0] + segment.end[0]) / 2,
-    (startY + endY) / 2 - 0.13,
+    (startY + endY) / 2 - 0.1,
     (segment.start[1] + segment.end[1]) / 2,
   ];
   const wallHeight = Math.max(map.wallHeight, 3.2);
