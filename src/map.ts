@@ -1,10 +1,16 @@
 export type MapPreset = "open" | "line" | "y" | "custom";
 
+// A plain "path" is an open walkable strip. A "tunnel" is the same walkable
+// strip but enclosed by side walls + a ceiling, so it occludes sound between
+// the inside of the corridor and the world outside it.
+export type SegmentKind = "path" | "tunnel";
+
 export interface WalkableSegment {
   id: string;
   start: [number, number];
   end: [number, number];
   width: number;
+  kind?: SegmentKind; // absent = "path"
 }
 
 export type RoomSide = "north" | "south" | "east" | "west";
@@ -316,6 +322,36 @@ export function roomWallObstructionCount(map: Pick<CompositionMap, "rooms">, fro
     const bInside = pointInRect(b, interiorRect(room));
     if (aInside === bInside) continue;
     if (lineHitsSolidRoomWall(room, a, b)) count++;
+  }
+  return count;
+}
+
+export function isTunnelSegment(segment: WalkableSegment): boolean {
+  return segment.kind === "tunnel";
+}
+
+// The two long side walls of a tunnel segment, in XZ. Open ends let sound pass;
+// crossing a side wall is what muffles it.
+export function tunnelSideWalls(segment: WalkableSegment): Array<[[number, number], [number, number]]> {
+  const dx = segment.end[0] - segment.start[0];
+  const dz = segment.end[1] - segment.start[1];
+  const len = Math.hypot(dx, dz) || 1;
+  const nx = -dz / len;
+  const nz = dx / len;
+  const hw = segment.width / 2;
+  return [
+    [[segment.start[0] + nx * hw, segment.start[1] + nz * hw], [segment.end[0] + nx * hw, segment.end[1] + nz * hw]],
+    [[segment.start[0] - nx * hw, segment.start[1] - nz * hw], [segment.end[0] - nx * hw, segment.end[1] - nz * hw]],
+  ];
+}
+
+export function tunnelObstructionCount(map: Pick<CompositionMap, "segments">, from: [number, number], to: [number, number]): number {
+  let count = 0;
+  for (const segment of map.segments) {
+    if (!isTunnelSegment(segment)) continue;
+    for (const [a, b] of tunnelSideWalls(segment)) {
+      if (lineSegmentsIntersect(from, to, a, b)) count++;
+    }
   }
   return count;
 }

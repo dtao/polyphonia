@@ -3,7 +3,7 @@ import { TransformControls } from "@react-three/drei";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
-import { canAddBranchAtPoint, clampToMap, CompositionMap, loopRoleForPoint, MapRoom, roomAttachedToPoint, roomElevation, ROOM_WALL_THICKNESS, solidWallSpans, surfaceHeightAt, wallOpenings, WalkableSegment } from "../map";
+import { canAddBranchAtPoint, clampToMap, CompositionMap, isTunnelSegment, loopRoleForPoint, MapRoom, roomAttachedToPoint, roomElevation, ROOM_WALL_THICKNESS, solidWallSpans, surfaceHeightAt, tunnelSideWalls, wallOpenings, WalkableSegment } from "../map";
 import { useStore } from "../store";
 import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 
@@ -47,6 +47,7 @@ export function MapScene({
         />
       ))}
       <Rooms map={map} editMode={editMode} />
+      <Tunnels map={map} editMode={editMode} />
       {editMode && <BranchPlacementLayer map={map} />}
       {editMode && <EndpointEditor map={map} endpointCounts={endpointCounts} />}
     </group>
@@ -124,6 +125,91 @@ function roomWallBoxes(room: MapRoom): Array<{ pos: [number, number]; size: [num
   for (const [s, e] of solidWallSpans(hd, wallOpenings(room, "west"))) boxes.push({ pos: [-hw, (s + e) / 2], size: [t, e - s + t] });
   for (const [s, e] of solidWallSpans(hd, wallOpenings(room, "east"))) boxes.push({ pos: [hw, (s + e) / 2], size: [t, e - s + t] });
   return boxes;
+}
+
+// Enclosed corridors: side walls + a ceiling drawn over a tunnel segment's
+// walkable strip. The ceiling is hidden in edit mode so the overhead camera can
+// still click the floor to select the segment; the side walls stay (faint) so
+// the corridor reads as enclosed.
+const TUNNEL_HEIGHT = 3.4;
+
+function Tunnels({ map, editMode }: { map: CompositionMap; editMode: boolean }) {
+  const tunnels = map.segments.filter(isTunnelSegment);
+  if (!tunnels.length) return null;
+  return (
+    <group>
+      {tunnels.map((segment) => (
+        <Tunnel key={segment.id} segment={segment} map={map} editMode={editMode} />
+      ))}
+    </group>
+  );
+}
+
+function Tunnel({ segment, map, editMode }: { segment: WalkableSegment; map: CompositionMap; editMode: boolean }) {
+  const walls = useMemo(() => tunnelWallGeometry(map, segment), [segment, map.elevations]);
+  const ceiling = useMemo(() => tunnelCeilingGeometry(map, segment), [segment, map.elevations]);
+  return (
+    <group>
+      <mesh geometry={walls}>
+        <meshStandardMaterial color="#9aa6bd" roughness={0.85} metalness={0.05} transparent={editMode} opacity={editMode ? 0.28 : 1} depthWrite={!editMode} side={THREE.DoubleSide} />
+      </mesh>
+      {!editMode && (
+        <mesh geometry={ceiling}>
+          <meshStandardMaterial color="#8e99af" roughness={0.88} metalness={0.05} side={THREE.DoubleSide} />
+        </mesh>
+      )}
+    </group>
+  );
+}
+
+function tunnelWallGeometry(map: CompositionMap, segment: WalkableSegment): THREE.BufferGeometry {
+  const sy = elevationAt(map, segment.start) + PATH_HEIGHT;
+  const ey = elevationAt(map, segment.end) + PATH_HEIGHT;
+  const [left, right] = tunnelSideWalls(segment);
+  const vertices: number[] = [];
+  const indices: number[] = [];
+  for (const side of [left, right]) {
+    addQuad(
+      [side[0][0], sy, side[0][1]],
+      [side[1][0], ey, side[1][1]],
+      [side[1][0], ey + TUNNEL_HEIGHT, side[1][1]],
+      [side[0][0], sy + TUNNEL_HEIGHT, side[0][1]],
+      vertices,
+      indices,
+    );
+  }
+  return buildBufferGeometry(vertices, indices);
+}
+
+function tunnelCeilingGeometry(map: CompositionMap, segment: WalkableSegment): THREE.BufferGeometry {
+  const sy = elevationAt(map, segment.start) + PATH_HEIGHT + TUNNEL_HEIGHT;
+  const ey = elevationAt(map, segment.end) + PATH_HEIGHT + TUNNEL_HEIGHT;
+  const [left, right] = tunnelSideWalls(segment);
+  const vertices: number[] = [];
+  const indices: number[] = [];
+  addQuad(
+    [left[0][0], sy, left[0][1]],
+    [left[1][0], ey, left[1][1]],
+    [right[1][0], ey, right[1][1]],
+    [right[0][0], sy, right[0][1]],
+    vertices,
+    indices,
+  );
+  return buildBufferGeometry(vertices, indices);
+}
+
+function addQuad(a: [number, number, number], b: [number, number, number], c: [number, number, number], d: [number, number, number], vertices: number[], indices: number[]): void {
+  const base = vertices.length / 3;
+  vertices.push(...a, ...b, ...c, ...d);
+  indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+}
+
+function buildBufferGeometry(vertices: number[], indices: number[]): THREE.BufferGeometry {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
 }
 
 function ReflectiveUnderfloor({

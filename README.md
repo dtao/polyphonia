@@ -19,7 +19,8 @@ these spatial compositions.
 - **Immersive spaces** — compositions carry environment metadata and can render
   procedural spaces such as a studio void, cavern, forest clearing, or crystal
   hall; editable path maps can define terminal loop points for corridor-like
-  spaces that wrap back on themselves.
+  spaces that wrap back on themselves. Path segments can be marked as enclosed
+  **tunnels** whose walls and ceiling muffle sound passing in or out the sides.
 - **Edit** — an overhead edit mode to place tracks in space (drag gizmo), and a
   properties panel to rename, recolor, set volume, and tune distance falloff.
 - **Build from scratch** — create a new composition (title / BPM, plus an
