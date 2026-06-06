@@ -6,15 +6,19 @@ import * as THREE from "three";
 import { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
 import type { CreatorLandmarkAsset } from "../creatorAssets";
 import type { EnvironmentLandmarkPlacement } from "../environment";
+import type { CompositionMap } from "../map";
 import { useStore } from "../store";
+import { PlacedLandmarkPreviews } from "./PlacedLandmarkPreviews";
 
 export function CreatorLandmarks({
   assets,
   placements,
+  map,
   editMode,
 }: {
   assets: CreatorLandmarkAsset[];
   placements: EnvironmentLandmarkPlacement[];
+  map: CompositionMap;
   editMode: boolean;
 }) {
   const gl = useThree((state) => state.gl);
@@ -46,6 +50,26 @@ export function CreatorLandmarks({
           </Suspense>
         );
       })}
+      <PlacedLandmarkPreviews
+        map={map}
+        placements={placements.filter((placement) => catalog.has(placement.assetId))}
+        editMode={editMode}
+      >
+        {(placement, position, rotation, key) => {
+          const asset = catalog.get(placement.assetId);
+          if (!asset) return null;
+          return (
+            <Suspense key={key} fallback={null}>
+              <CreatorLandmark
+                asset={asset}
+                placement={{ ...placement, position, rotation }}
+                editMode={false}
+                extendLoader={extendLoader}
+              />
+            </Suspense>
+          );
+        }}
+      </PlacedLandmarkPreviews>
     </group>
   );
 }

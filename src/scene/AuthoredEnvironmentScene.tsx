@@ -22,6 +22,7 @@ import {
 } from "./fadedInstances";
 import { radialFade, RADIAL_FADE_OUTER } from "./fade";
 import { environmentGenerationRadius, environmentPreviewTransforms } from "./environmentVisibility";
+import { PlacedLandmarkPreviews } from "./PlacedLandmarkPreviews";
 
 export function AuthoredEnvironmentScene({
   environment,
@@ -80,6 +81,7 @@ export function AuthoredEnvironmentScene({
         <ArchivedPackLandmarks
           key={packId}
           packId={packId}
+          map={map}
           placements={(environment.landmarks ?? []).filter(
             (placement) => placement.packId === packId,
           )}
@@ -94,12 +96,14 @@ export function AuthoredEnvironmentScene({
 
 function ArchivedPackLandmarks({
   packId,
+  map,
   placements,
   editMode,
   quality,
   extendLoader,
 }: {
   packId: string;
+  map: CompositionMap;
   placements: EnvironmentLandmarkPlacement[];
   editMode: boolean;
   quality: "low" | "high";
@@ -114,6 +118,7 @@ function ArchivedPackLandmarks({
         <PackLandmarkAsset
           url={asset.url}
           pack={pack}
+          map={map}
           placements={placements}
           editMode={editMode}
           extendLoader={extendLoader}
@@ -126,12 +131,14 @@ function ArchivedPackLandmarks({
 function PackLandmarkAsset({
   url,
   pack,
+  map,
   placements,
   editMode,
   extendLoader,
 }: {
   url: string;
   pack: EnvironmentPackDefinition;
+  map: CompositionMap;
   placements: EnvironmentLandmarkPlacement[];
   editMode: boolean;
   extendLoader: (loader: any) => void;
@@ -161,6 +168,7 @@ function PackLandmarkAsset({
     <PlacedLandmarks
       landmarks={landmarkGeometries}
       placements={placements}
+      map={map}
       editMode={editMode}
     />
   );
@@ -234,6 +242,7 @@ function EnvironmentAsset({
       <PlacedLandmarks
         landmarks={landmarkGeometries}
         placements={placements}
+        map={map}
         editMode={editMode}
       />
       <PackLighting preset={pack.lighting} enabled={!editMode} quality={quality} />
@@ -257,6 +266,7 @@ function findLandmarkMaterial(
 function PlacedLandmarks({
   landmarks,
   placements,
+  map,
   editMode,
 }: {
   landmarks: Array<{
@@ -265,6 +275,7 @@ function PlacedLandmarks({
     material?: THREE.Material | THREE.Material[];
   }>;
   placements: EnvironmentLandmarkPlacement[];
+  map: CompositionMap;
   editMode: boolean;
 }) {
   const catalog = useMemo(
@@ -286,6 +297,25 @@ function PlacedLandmarks({
           />
         );
       })}
+      <PlacedLandmarkPreviews
+        map={map}
+        placements={placements.filter((placement) => catalog.has(placement.assetId))}
+        editMode={editMode}
+      >
+        {(placement, position, rotation, key) => {
+          const entry = catalog.get(placement.assetId);
+          if (!entry) return null;
+          return (
+            <PlacedLandmark
+              key={key}
+              placement={{ ...placement, position, rotation }}
+              geometry={entry.geometry}
+              material={entry.material}
+              editMode={false}
+            />
+          );
+        }}
+      </PlacedLandmarkPreviews>
     </group>
   );
 }

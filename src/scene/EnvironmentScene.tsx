@@ -72,6 +72,7 @@ export function EnvironmentScene({
       <CreatorLandmarks
         assets={landmarks}
         placements={environment.landmarks ?? []}
+        map={map}
         editMode={editMode}
       />
     </>
