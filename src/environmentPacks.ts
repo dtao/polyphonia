@@ -33,7 +33,34 @@ export interface EnvironmentPackDefinition {
 // Authored packs are registered here rather than embedded in composition data.
 // A composition stores only a stable id/variant/quality selection, keeping
 // manifests portable and allowing asset URLs or delivery formats to evolve.
-export const ENVIRONMENT_PACKS: readonly EnvironmentPackDefinition[] = [];
+export const ENVIRONMENT_PACKS: readonly EnvironmentPackDefinition[] = [
+  {
+    id: "atlas-cavern",
+    name: "Atlas Cavern",
+    environmentType: "cavern",
+    material: "stone",
+    description: "Authored rock chambers, columns, and overhead formations",
+    variants: ["ember"],
+    assets: [
+      {
+        url: "/environments/atlas-cavern/cavern-kit.glb",
+        quality: "high",
+      },
+    ],
+    attribution: [
+      {
+        title: "Atlas Cavern",
+        author: "Polyphonia",
+        license: "Project asset",
+      },
+    ],
+    budgets: {
+      maxTextureSize: 2048,
+      maxTriangles: 180_000,
+      maxDrawCalls: 120,
+    },
+  },
+];
 
 export function environmentPackById(id: string | undefined): EnvironmentPackDefinition | undefined {
   return id ? ENVIRONMENT_PACKS.find((pack) => pack.id === id) : undefined;

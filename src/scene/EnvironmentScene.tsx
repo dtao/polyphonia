@@ -3,6 +3,7 @@ import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import * as THREE from "three";
 import { EnvironmentSettings } from "../environment";
+import { AuthoredEnvironmentScene } from "./AuthoredEnvironmentScene";
 
 type PropSet = Array<{ position: [number, number, number]; scale: [number, number, number]; rotation?: [number, number, number] }>;
 type TorchSet = Array<{ position: [number, number, number]; rotation: [number, number, number]; color: string }>;
@@ -39,6 +40,7 @@ export function EnvironmentScene({ environment, editMode }: { environment: Envir
       {environment.type === "crystal" && <CrystalHall ambience={environment.ambience} />}
       {environment.type === "galaxy" && <Galaxy ambience={environment.ambience} />}
       {environment.type === "studio" && <Studio accents={environment.ambience} />}
+      {environment.pack && <AuthoredEnvironmentScene environment={environment} />}
     </>
   );
 }
