@@ -20,7 +20,9 @@ these spatial compositions.
   procedural spaces such as a studio void, cavern, forest clearing, or crystal
   hall; editable path maps can define terminal loop points for corridor-like
   spaces that wrap back on themselves. Path segments can be marked as enclosed
-  **tunnels** whose walls and ceiling muffle sound passing in or out the sides.
+  **tunnels** whose walls and ceiling muffle sound passing in or out the sides,
+  and open **platforms** (rectangle, hex, or circle) add wide walkable areas
+  that connect to any path, room, or platform they overlap.
 - **Edit** — an overhead edit mode to place tracks in space (drag gizmo), and a
   properties panel to rename, recolor, set volume, and tune distance falloff.
 - **Build from scratch** — create a new composition (title / BPM, plus an

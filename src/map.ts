@@ -51,6 +51,21 @@ type RawMapRoom = Omit<MapRoom, "entrances" | "rotation" | "height"> &
   Partial<Pick<MapRoom, "entrances" | "rotation" | "height">> &
   LegacyRoomEntrance;
 
+export type PlatformShape = "rect" | "hex" | "circle";
+
+// A large open walkable area — like a room with no walls or ceiling. Stems and
+// the listener move across it freely; it connects to any path/room/platform
+// whose walkable area it overlaps.
+export interface MapPlatform {
+  id: string;
+  center: [number, number];
+  rotation: number; // radians around y
+  shape: PlatformShape;
+  width: number; // rect: extent along x; circle/hex: outer diameter
+  depth: number; // rect: extent along z (unused for circle/hex)
+  elevation: number; // flat surface height
+}
+
 export interface MapTiling {
   type: MapTilingType;
   origin: [number, number];
@@ -65,6 +80,7 @@ export interface CompositionMap {
   preset: MapPreset;
   segments: WalkableSegment[];
   rooms: MapRoom[];
+  platforms: MapPlatform[];
   tiling: MapTiling;
   /** @deprecated Use tiling.pathLoop. Kept as a compatibility mirror for older code/manifests. */
   loop?: {
@@ -84,7 +100,11 @@ export interface CompositionMap {
   };
 }
 
-export type MapSupport = { kind: "open" } | { kind: "segment"; segmentId: string } | { kind: "room"; roomId: string };
+export type MapSupport =
+  | { kind: "open" }
+  | { kind: "segment"; segmentId: string }
+  | { kind: "room"; roomId: string }
+  | { kind: "platform"; platformId: string };
 
 export const ROOM_WALL_THICKNESS = 0.3;
 // How far the walkable doorway "threshold" extends outside the entrance wall, so
@@ -96,11 +116,12 @@ type Rect = { minX: number; maxX: number; minZ: number; maxZ: number };
 export const defaultTiling: MapTiling = { type: "none", origin: [0, 0], tileSize: 80 };
 
 export const MAP_PRESETS: Record<Exclude<MapPreset, "custom">, CompositionMap> = {
-  open: { preset: "open", segments: [], rooms: [], tiling: defaultTiling, wallHeight: 0, start: { position: [0, 0], direction: [0, -1] } },
+  open: { preset: "open", segments: [], rooms: [], platforms: [], tiling: defaultTiling, wallHeight: 0, start: { position: [0, 0], direction: [0, -1] } },
   line: {
     preset: "line",
     wallHeight: 2.1,
     rooms: [],
+    platforms: [],
     tiling: defaultTiling,
     start: { position: [0, 36], direction: [0, -1] },
     segments: [{ id: "line", start: [0, 40.5], end: [0, -40.5], width: 7.5 }],
@@ -109,6 +130,7 @@ export const MAP_PRESETS: Record<Exclude<MapPreset, "custom">, CompositionMap> =
     preset: "y",
     wallHeight: 2.1,
     rooms: [],
+    platforms: [],
     tiling: defaultTiling,
     start: { position: [0, 36], direction: [0, -1] },
     segments: [
@@ -126,6 +148,7 @@ export function normalizeMap(value: Partial<CompositionMap> | undefined): Compos
   const fallback = preset === "custom" ? defaultMap : MAP_PRESETS[preset];
   const segments = Array.isArray(value?.segments) ? value.segments.filter(isWalkableSegment) : fallback.segments;
   const rooms = Array.isArray(value?.rooms) ? value.rooms.filter(isMapRoom).map(normalizeRoom) : fallback.rooms;
+  const platforms = Array.isArray(value?.platforms) ? value.platforms.filter(isMapPlatform).map(normalizePlatform) : fallback.platforms;
   const startPosition = isPoint(value?.start?.position) ? value.start.position : fallback.start.position;
   const startDirection = normalizeDirection(isPoint(value?.start?.direction) ? value.start.direction : fallback.start.direction);
   const legacyLoop = isMapLoop(value?.loop) ? value.loop : undefined;
@@ -134,6 +157,7 @@ export function normalizeMap(value: Partial<CompositionMap> | undefined): Compos
     preset,
     segments,
     rooms,
+    platforms,
     tiling,
     loop: tiling.type === "path-loop" ? tiling.pathLoop : legacyLoop,
     wallHeight: clamp(value?.wallHeight ?? fallback.wallHeight, 0, 8),
@@ -174,9 +198,13 @@ function normalizeElevations(value: unknown, segments: WalkableSegment[]): Recor
   return out;
 }
 
+function hasWalkableBounds(map: Pick<CompositionMap, "segments" | "rooms" | "platforms">): boolean {
+  return map.segments.length > 0 || map.rooms.length > 0 || map.platforms.length > 0;
+}
+
 export function clampToMap(map: CompositionMap, point: [number, number]): [number, number] {
-  // No constraints on a fully open map (no segments and no rooms).
-  if (!map.segments.length && !map.rooms.length) return point;
+  // No constraints on a fully open map (no segments, rooms, or platforms).
+  if (!hasWalkableBounds(map)) return point;
   if (isPointInsideMap(map, point)) return point;
 
   let best: [number, number] = point;
@@ -192,6 +220,7 @@ export function clampToMap(map: CompositionMap, point: [number, number]): [numbe
   };
   for (const segment of map.segments) consider(closestPointInSegment(point, segment));
   for (const room of map.rooms) for (const rect of roomRegionRects(room)) consider(fromRoomLocal(room, closestInRect(toRoomLocal(room, point), rect)));
+  for (const platform of map.platforms) consider(closestPointInPlatform(platform, point));
   return best;
 }
 
@@ -201,7 +230,7 @@ export interface MapStep {
 }
 
 export function mapSupportAt(map: CompositionMap, point: [number, number], previous?: MapSupport | null): MapSupport {
-  if (!map.segments.length && !map.rooms.length) return { kind: "open" };
+  if (!hasWalkableBounds(map)) return { kind: "open" };
   const previousSupport = previous && supportExists(map, previous) ? previous : null;
   if (previousSupport && supportContains(map, previousSupport, point)) return previousSupport;
 
@@ -211,14 +240,20 @@ export function mapSupportAt(map: CompositionMap, point: [number, number], previ
   const segment = nearestSegmentContaining(map, point);
   if (segment) return { kind: "segment", segmentId: segment.id };
 
+  const platform = containingPlatform(map, point);
+  if (platform) return { kind: "platform", platformId: platform.id };
+
   const clamped = clampToMap(map, point);
   const clampedRoom = containingRoom(map, clamped);
   if (clampedRoom) return { kind: "room", roomId: clampedRoom.id };
+  const clampedPlatform = containingPlatform(map, clamped);
+  if (clampedPlatform) return { kind: "platform", platformId: clampedPlatform.id };
+  if (!map.segments.length) return { kind: "platform", platformId: map.platforms[0]?.id ?? "" };
   return { kind: "segment", segmentId: nearestSegment(map.segments, clamped)?.id ?? map.segments[0]?.id ?? "" };
 }
 
 export function stepOnMap(map: CompositionMap, previous: [number, number], attempted: [number, number], previousSupport?: MapSupport | null): MapStep {
-  if (!map.segments.length && !map.rooms.length) return { position: attempted, support: { kind: "open" } };
+  if (!hasWalkableBounds(map)) return { position: attempted, support: { kind: "open" } };
   const support = previousSupport && supportExists(map, previousSupport) ? previousSupport : mapSupportAt(map, previous, previousSupport);
 
   if (supportContains(map, support, attempted)) return { position: attempted, support };
@@ -233,8 +268,12 @@ export function stepOnMap(map: CompositionMap, previous: [number, number], attem
 }
 
 export function isPointInsideMap(map: CompositionMap, point: [number, number]): boolean {
-  if (!map.segments.length && !map.rooms.length) return true;
-  return map.segments.some((segment) => pointInSegment(point, segment)) || map.rooms.some((room) => roomContains(room, point));
+  if (!hasWalkableBounds(map)) return true;
+  return (
+    map.segments.some((segment) => pointInSegment(point, segment)) ||
+    map.rooms.some((room) => roomContains(room, point)) ||
+    map.platforms.some((platform) => platformContains(platform, point))
+  );
 }
 
 // --- Room geometry ---
@@ -356,6 +395,59 @@ export function tunnelObstructionCount(map: Pick<CompositionMap, "segments">, fr
   return count;
 }
 
+// --- Platform geometry ---
+
+// Local-space outline of a rect/hex platform (circles are tested analytically).
+// Hex vertices match `circleGeometry(radius, 6)` so the mesh and the walkable
+// area agree.
+export function platformLocalPolygon(platform: MapPlatform): Array<[number, number]> {
+  if (platform.shape === "rect") {
+    const hw = platform.width / 2;
+    const hd = platform.depth / 2;
+    return [
+      [hw, hd],
+      [-hw, hd],
+      [-hw, -hd],
+      [hw, -hd],
+    ];
+  }
+  const r = platform.width / 2;
+  return Array.from({ length: 6 }, (_, i) => {
+    const a = (i / 6) * Math.PI * 2;
+    return [Math.cos(a) * r, Math.sin(a) * r] as [number, number];
+  });
+}
+
+export function platformContains(platform: MapPlatform, point: [number, number]): boolean {
+  const local = toLocalXZ(platform.center, platform.rotation, point);
+  if (platform.shape === "circle") {
+    const r = platform.width / 2;
+    return local[0] * local[0] + local[1] * local[1] <= r * r;
+  }
+  return pointInPolygon(local, platformLocalPolygon(platform));
+}
+
+export function containingPlatform(map: Pick<CompositionMap, "platforms">, point: [number, number]): MapPlatform | null {
+  return map.platforms.find((platform) => platformContains(platform, point)) ?? null;
+}
+
+export function platformElevation(platform: MapPlatform): number {
+  return Number.isFinite(platform.elevation) ? platform.elevation : 0;
+}
+
+function closestPointInPlatform(platform: MapPlatform, point: [number, number]): [number, number] {
+  const local = toLocalXZ(platform.center, platform.rotation, point);
+  let clamped: [number, number];
+  if (platform.shape === "circle") {
+    const r = platform.width / 2;
+    const d = Math.hypot(local[0], local[1]);
+    clamped = d <= r || d === 0 ? local : [(local[0] / d) * r, (local[1] / d) * r];
+  } else {
+    clamped = closestPointInPolygon(local, platformLocalPolygon(platform));
+  }
+  return fromLocalXZ(platform.center, platform.rotation, clamped);
+}
+
 export function mapPointKey(point: [number, number]): string {
   return `${point[0].toFixed(3)},${point[1].toFixed(3)}`;
 }
@@ -379,9 +471,11 @@ export function roomElevation(map: Pick<CompositionMap, "segments" | "elevations
 // The walkable surface height at an XZ point — the single source of truth shared
 // by the floor mesh and the player. Rooms are flat at their attachment height;
 // on a path the height ramps along the nearest segment's length.
-export function surfaceHeightAt(map: Pick<CompositionMap, "segments" | "rooms" | "elevations">, point: [number, number]): number {
+export function surfaceHeightAt(map: Pick<CompositionMap, "segments" | "rooms" | "platforms" | "elevations">, point: [number, number]): number {
   const room = containingRoom(map, point);
   if (room) return roomElevation(map, room);
+  const platform = containingPlatform(map, point);
+  if (platform) return platformElevation(platform);
   let best = 0;
   let bestDistSq = Infinity;
   for (const segment of map.segments) {
@@ -400,13 +494,17 @@ export function surfaceHeightAt(map: Pick<CompositionMap, "segments" | "rooms" |
 }
 
 export function surfaceHeightOnSupport(
-  map: Pick<CompositionMap, "segments" | "rooms" | "elevations">,
+  map: Pick<CompositionMap, "segments" | "rooms" | "platforms" | "elevations">,
   point: [number, number],
   support?: MapSupport | null,
 ): number {
   if (support?.kind === "room") {
     const room = map.rooms.find((r) => r.id === support.roomId);
     if (room) return roomElevation(map, room);
+  }
+  if (support?.kind === "platform") {
+    const platform = map.platforms.find((p) => p.id === support.platformId);
+    if (platform) return platformElevation(platform);
   }
   if (support?.kind === "segment") {
     const segment = map.segments.find((s) => s.id === support.segmentId);
@@ -709,8 +807,9 @@ function endpointArm(map: Pick<CompositionMap, "segments">, endpoint: RoomAttach
 }
 
 function supportExists(map: CompositionMap, support: MapSupport): boolean {
-  if (support.kind === "open") return !map.segments.length && !map.rooms.length;
+  if (support.kind === "open") return !hasWalkableBounds(map);
   if (support.kind === "room") return map.rooms.some((room) => room.id === support.roomId);
+  if (support.kind === "platform") return map.platforms.some((platform) => platform.id === support.platformId);
   return map.segments.some((segment) => segment.id === support.segmentId);
 }
 
@@ -720,12 +819,30 @@ function supportContains(map: CompositionMap, support: MapSupport, point: [numbe
     const room = map.rooms.find((r) => r.id === support.roomId);
     return room ? roomContains(room, point) : false;
   }
+  if (support.kind === "platform") {
+    const platform = map.platforms.find((p) => p.id === support.platformId);
+    return platform ? platformContains(platform, point) : false;
+  }
   const segment = map.segments.find((s) => s.id === support.segmentId);
   return segment ? pointInSegment(point, segment) : false;
 }
 
 function transitionSupport(map: CompositionMap, support: MapSupport, previous: [number, number], attempted: [number, number]): MapStep | null {
   if (support.kind === "open") return { position: attempted, support };
+
+  // Platforms are open hubs: step onto any platform whose area you enter (from
+  // any support), and off a platform onto any segment/room you enter.
+  for (const platform of map.platforms) {
+    if (support.kind === "platform" && support.platformId === platform.id) continue;
+    if (platformContains(platform, attempted)) return { position: attempted, support: { kind: "platform", platformId: platform.id } };
+  }
+  if (support.kind === "platform") {
+    const segment = nearestSegmentContaining(map, attempted);
+    if (segment) return { position: attempted, support: { kind: "segment", segmentId: segment.id } };
+    const room = map.rooms.find((r) => roomContains(r, attempted));
+    if (room) return { position: attempted, support: { kind: "room", roomId: room.id } };
+    return null;
+  }
 
   if (support.kind === "room") {
     const room = map.rooms.find((r) => r.id === support.roomId);
@@ -774,6 +891,10 @@ function clampToSupport(map: CompositionMap, support: MapSupport, point: [number
       }
     }
     return best;
+  }
+  if (support.kind === "platform") {
+    const platform = map.platforms.find((p) => p.id === support.platformId);
+    return platform ? closestPointInPlatform(platform, point) : null;
   }
   const segment = map.segments.find((s) => s.id === support.segmentId);
   return segment ? closestPointInSegment(point, segment) : null;
@@ -845,18 +966,62 @@ function attachedRoomPlacement(map: Pick<CompositionMap, "segments">, room: MapR
   return { center, rotation };
 }
 
-function toRoomLocal(room: MapRoom, point: [number, number]): [number, number] {
-  const dx = point[0] - room.center[0];
-  const dz = point[1] - room.center[1];
-  const c = Math.cos(room.rotation);
-  const s = Math.sin(room.rotation);
+function toLocalXZ(center: [number, number], rotation: number, point: [number, number]): [number, number] {
+  const dx = point[0] - center[0];
+  const dz = point[1] - center[1];
+  const c = Math.cos(rotation);
+  const s = Math.sin(rotation);
   return [dx * c - dz * s, dx * s + dz * c];
 }
 
+function fromLocalXZ(center: [number, number], rotation: number, point: [number, number]): [number, number] {
+  const c = Math.cos(rotation);
+  const s = Math.sin(rotation);
+  return [center[0] + point[0] * c + point[1] * s, center[1] - point[0] * s + point[1] * c];
+}
+
+function toRoomLocal(room: MapRoom, point: [number, number]): [number, number] {
+  return toLocalXZ(room.center, room.rotation, point);
+}
+
 function fromRoomLocal(room: MapRoom, point: [number, number]): [number, number] {
-  const c = Math.cos(room.rotation);
-  const s = Math.sin(room.rotation);
-  return [room.center[0] + point[0] * c + point[1] * s, room.center[1] - point[0] * s + point[1] * c];
+  return fromLocalXZ(room.center, room.rotation, point);
+}
+
+// Even-odd ray cast; works for any simple polygon.
+function pointInPolygon(point: [number, number], polygon: Array<[number, number]>): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const [xi, yi] = polygon[i];
+    const [xj, yj] = polygon[j];
+    if (yi > point[1] !== yj > point[1] && point[0] < ((xj - xi) * (point[1] - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+function closestPointInPolygon(point: [number, number], polygon: Array<[number, number]>): [number, number] {
+  if (pointInPolygon(point, polygon)) return point;
+  let best: [number, number] = point;
+  let bestDistSq = Infinity;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const candidate = closestPointOnSegment(point, polygon[j], polygon[i]);
+    const dx = point[0] - candidate[0];
+    const dz = point[1] - candidate[1];
+    const distSq = dx * dx + dz * dz;
+    if (distSq < bestDistSq) {
+      best = candidate;
+      bestDistSq = distSq;
+    }
+  }
+  return best;
+}
+
+function closestPointOnSegment(point: [number, number], a: [number, number], b: [number, number]): [number, number] {
+  const dx = b[0] - a[0];
+  const dz = b[1] - a[1];
+  const lenSq = dx * dx + dz * dz;
+  const t = lenSq === 0 ? 0 : clamp(((point[0] - a[0]) * dx + (point[1] - a[1]) * dz) / lenSq, 0, 1);
+  return [a[0] + dx * t, a[1] + dz * t];
 }
 
 function lineHitsSolidRoomWall(room: MapRoom, from: [number, number], to: [number, number]): boolean {
@@ -957,6 +1122,28 @@ function isMapRoom(value: unknown): value is RawMapRoom {
     typeof r.width === "number" &&
     typeof r.depth === "number"
   );
+}
+
+function isMapPlatform(value: unknown): value is MapPlatform {
+  const p = value as MapPlatform;
+  return typeof p?.id === "string" && isPoint(p.center) && typeof p.width === "number" && Number.isFinite(p.width);
+}
+
+function isPlatformShape(value: unknown): value is PlatformShape {
+  return value === "rect" || value === "hex" || value === "circle";
+}
+
+function normalizePlatform(platform: MapPlatform): MapPlatform {
+  const width = clamp(platform.width, 4, 200);
+  return {
+    id: platform.id,
+    center: platform.center,
+    rotation: Number.isFinite(platform.rotation) ? platform.rotation : 0,
+    shape: isPlatformShape(platform.shape) ? platform.shape : "rect",
+    width,
+    depth: clamp(Number.isFinite(platform.depth) ? platform.depth : width, 4, 200),
+    elevation: Number.isFinite(platform.elevation) ? platform.elevation : 0,
+  };
 }
 
 function isRoomEntrance(value: unknown): value is RoomEntrance {

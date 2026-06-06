@@ -1,9 +1,9 @@
 import { ThreeEvent, useFrame, useThree } from "@react-three/fiber";
-import { TransformControls } from "@react-three/drei";
+import { Line, TransformControls } from "@react-three/drei";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
-import { canAddBranchAtPoint, clampToMap, CompositionMap, isTunnelSegment, loopRoleForPoint, MapRoom, roomAttachedToPoint, roomElevation, ROOM_WALL_THICKNESS, solidWallSpans, surfaceHeightAt, tunnelSideWalls, wallOpenings, WalkableSegment } from "../map";
+import { canAddBranchAtPoint, clampToMap, CompositionMap, isTunnelSegment, loopRoleForPoint, MapPlatform, MapRoom, platformElevation, platformLocalPolygon, roomAttachedToPoint, roomElevation, ROOM_WALL_THICKNESS, solidWallSpans, surfaceHeightAt, tunnelSideWalls, wallOpenings, WalkableSegment } from "../map";
 import { useStore } from "../store";
 import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 
@@ -47,6 +47,7 @@ export function MapScene({
         />
       ))}
       <Rooms map={map} editMode={editMode} />
+      <Platforms map={map} editMode={editMode} />
       <Tunnels map={map} editMode={editMode} />
       {editMode && <BranchPlacementLayer map={map} />}
       {editMode && <EndpointEditor map={map} endpointCounts={endpointCounts} />}
@@ -210,6 +211,87 @@ function buildBufferGeometry(vertices: number[], indices: number[]): THREE.Buffe
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   return geometry;
+}
+
+// Open walkable areas (rect/hex/circle) — like rooms without walls or ceilings.
+// Selected in edit mode and moved with the same drei gizmo the start marker uses.
+const PLATFORM_FLOOR_Y = 0.06;
+
+function Platforms({ map, editMode }: { map: CompositionMap; editMode: boolean }) {
+  const selectedPlatformId = useStore((s) => s.selectedPlatformId);
+  if (!map.platforms.length) return null;
+  return (
+    <group>
+      {map.platforms.map((platform) => (
+        <Platform key={platform.id} platform={platform} editMode={editMode} selected={editMode && selectedPlatformId === platform.id} />
+      ))}
+    </group>
+  );
+}
+
+function Platform({ platform, editMode, selected }: { platform: MapPlatform; editMode: boolean; selected: boolean }) {
+  const selectPlatform = useStore((s) => s.selectPlatform);
+  const updatePlatform = useStore((s) => s.updatePlatform);
+  const [obj, setObj] = useState<THREE.Group | null>(null);
+  const outline = useMemo(() => platformOutlinePoints(platform), [platform]);
+  const elevationY = platformElevation(platform);
+
+  function handleObjectChange() {
+    if (!obj) return;
+    updatePlatform(platform.id, { center: [obj.position.x, obj.position.z] });
+  }
+
+  return (
+    <>
+      <group
+        ref={setObj}
+        position={[platform.center[0], elevationY, platform.center[1]]}
+        rotation={[0, platform.rotation, 0]}
+        onClick={(e) => {
+          if (!editMode) return;
+          e.stopPropagation();
+          selectPlatform(platform.id);
+        }}
+        onPointerOver={(e) => {
+          if (!editMode) return;
+          e.stopPropagation();
+          document.body.style.cursor = "pointer";
+        }}
+        onPointerOut={() => {
+          document.body.style.cursor = "auto";
+        }}
+      >
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, PLATFORM_FLOOR_Y, 0]}>
+          <PlatformGeometry platform={platform} />
+          <meshStandardMaterial color={selected ? "#16302e" : "#14161e"} roughness={0.9} metalness={0.08} side={THREE.DoubleSide} />
+        </mesh>
+        <Line points={outline} color={selected ? "#8fffe8" : "#5d6b86"} lineWidth={selected ? 2.4 : 1.4} transparent opacity={selected ? 0.95 : 0.6} />
+      </group>
+      {selected && obj && <TransformControls object={obj} mode="translate" showX showZ showY={false} size={0.9} onObjectChange={handleObjectChange} />}
+    </>
+  );
+}
+
+function PlatformGeometry({ platform }: { platform: MapPlatform }) {
+  const r = platform.width / 2;
+  if (platform.shape === "circle") return <circleGeometry args={[r, 48]} />;
+  if (platform.shape === "hex") return <circleGeometry args={[r, 6]} />;
+  return <planeGeometry args={[platform.width, platform.depth]} />;
+}
+
+// Closed outline ring in the platform's local XZ frame, lifted just above the
+// floor so it reads as an edge.
+function platformOutlinePoints(platform: MapPlatform): Array<[number, number, number]> {
+  const y = PLATFORM_FLOOR_Y + 0.04;
+  if (platform.shape === "circle") {
+    const r = platform.width / 2;
+    return Array.from({ length: 49 }, (_, i) => {
+      const a = (i / 48) * Math.PI * 2;
+      return [Math.cos(a) * r, y, Math.sin(a) * r] as [number, number, number];
+    });
+  }
+  const polygon = platformLocalPolygon(platform);
+  return [...polygon, polygon[0]].map(([x, z]) => [x, y, z] as [number, number, number]);
 }
 
 function ReflectiveUnderfloor({

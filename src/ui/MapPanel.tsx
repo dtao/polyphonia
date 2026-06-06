@@ -19,6 +19,7 @@ export function MapPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () 
   const map = useStore((s) => s.composition.map);
   const tracks = useStore((s) => s.composition.tracks);
   const setMap = useStore((s) => s.setMap);
+  const addPlatform = useStore((s) => s.addPlatform);
   const setTrackPosition = useStore((s) => s.setTrackPosition);
   const warnings = validateMap(map, tracks);
   const outsideTrackCount = countTracksOutsideMap(map, tracks);
@@ -85,6 +86,9 @@ export function MapPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () 
           disabled={!outsideTrackCount}
         >
           Snap stems to map
+        </button>
+        <button style={{ ...actionBtn, width: "100%", marginTop: 6 }} onClick={addPlatform} title="Add an open walkable platform">
+          + Add platform
         </button>
         <div style={hint}>Select a path segment to set its width, or a terminal point to grow the path or attach a room.</div>
       </div>
