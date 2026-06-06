@@ -1,6 +1,6 @@
 import { useGLTF } from "@react-three/drei";
-import { useThree } from "@react-three/fiber";
-import { Component, Suspense, useCallback, useEffect, useMemo } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import { Component, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import * as THREE from "three";
 import { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
@@ -8,7 +8,12 @@ import type { EnvironmentSettings } from "../environment";
 import { environmentPackAsset, environmentPackById, resolvedEnvironmentQuality } from "../environmentPacks";
 import type { EnvironmentPackDefinition } from "../environmentPacks";
 import type { CompositionMap } from "../map";
+import { tiledMapTransforms } from "../map";
+import { arWalk, viewState } from "../store";
 import { DetailMapDressing } from "./DetailMapDressing";
+import { environmentInstanceBatches } from "./environmentInstances";
+
+const AUTHORED_SCENE_TILE_RADIUS = 130;
 
 export function AuthoredEnvironmentScene({
   environment,
@@ -92,7 +97,7 @@ function EnvironmentAsset({
 
   return (
     <>
-      {!hasMapGeometry && <primitive object={scene} />}
+      {!hasMapGeometry && <AuthoredSceneInstances scene={scene} map={map} editMode={editMode} />}
       {detailGeometry && (
         <DetailMapDressing
           map={map}
@@ -104,6 +109,52 @@ function EnvironmentAsset({
       )}
       <PackLighting profile={pack.profile} enabled={!editMode} quality={quality} />
     </>
+  );
+}
+
+function AuthoredSceneInstances({
+  scene,
+  map,
+  editMode,
+}: {
+  scene: THREE.Object3D;
+  map: CompositionMap;
+  editMode: boolean;
+}) {
+  const camera = useThree((state) => state.camera);
+  const tiled = !editMode && map.tiling.type !== "none";
+  const [viewer, setViewer] = useState<[number, number]>([0, 0]);
+  useFrame(() => {
+    if (!tiled) return;
+    const next: [number, number] = arWalk.active ? [viewState.x, viewState.z] : [camera.position.x, camera.position.z];
+    setViewer((current) => (Math.hypot(current[0] - next[0], current[1] - next[1]) > 1.5 ? next : current));
+  });
+  const previews = useMemo(
+    () => (tiled ? tiledMapTransforms(map, viewer, AUTHORED_SCENE_TILE_RADIUS) : []),
+    [map, tiled, viewer],
+  );
+  const batches = useMemo(() => environmentInstanceBatches(scene, map, previews), [map, previews, scene]);
+  const meshes = useMemo(
+    () =>
+      batches.map((batch) => {
+        const mesh = new THREE.InstancedMesh(batch.geometry, batch.material, batch.matrices.length);
+        batch.matrices.forEach((matrix, index) => mesh.setMatrixAt(index, matrix));
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        mesh.instanceMatrix.needsUpdate = true;
+        mesh.computeBoundingSphere();
+        return mesh;
+      }),
+    [batches],
+  );
+  useEffect(() => () => meshes.forEach((mesh) => mesh.dispose()), [meshes]);
+
+  return (
+    <group>
+      {meshes.map((mesh) => (
+        <primitive key={mesh.uuid} object={mesh} />
+      ))}
+    </group>
   );
 }
 
