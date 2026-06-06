@@ -8,7 +8,7 @@ import type { EnvironmentSettings } from "../environment";
 import { environmentPackAsset, environmentPackById, resolvedEnvironmentQuality } from "../environmentPacks";
 import type { EnvironmentPackDefinition } from "../environmentPacks";
 import type { CompositionMap } from "../map";
-import { CavernMapDressing } from "./CavernMapDressing";
+import { DetailMapDressing } from "./CavernMapDressing";
 
 export function AuthoredEnvironmentScene({
   environment,
@@ -81,20 +81,28 @@ function EnvironmentAsset({
     return clone;
   }, [gltf.scene]);
 
-  const rockGeometry = useMemo(() => {
+  const detailGeometry = useMemo(() => {
     let geometry: THREE.BufferGeometry | undefined;
     gltf.scene.traverse((object) => {
-      if (!geometry && object instanceof THREE.Mesh && object.name.startsWith("WallRock_")) geometry = object.geometry;
+      if (!geometry && object instanceof THREE.Mesh && object.name.startsWith(pack.geometryPrefix)) geometry = object.geometry;
     });
     return geometry;
-  }, [gltf.scene]);
+  }, [gltf.scene, pack.geometryPrefix]);
   const hasMapGeometry = map.segments.length > 0 || map.rooms.length > 0 || map.platforms.length > 0 || map.walls.length > 0;
 
   return (
     <>
       {!hasMapGeometry && <primitive object={scene} />}
-      {rockGeometry && <CavernMapDressing map={map} rockGeometry={rockGeometry} editMode={editMode} quality={quality} />}
-      <AtlasLighting enabled={!editMode} quality={quality} />
+      {detailGeometry && (
+        <DetailMapDressing
+          map={map}
+          detailGeometry={detailGeometry}
+          profile={pack.profile}
+          editMode={editMode}
+          quality={quality}
+        />
+      )}
+      <PackLighting profile={pack.profile} enabled={!editMode} quality={quality} />
     </>
   );
 }
@@ -127,8 +135,50 @@ function validateAssetBudget(scene: THREE.Object3D, pack: EnvironmentPackDefinit
   }
 }
 
-function AtlasLighting({ enabled, quality }: { enabled: boolean; quality: "low" | "high" }) {
+function PackLighting({
+  profile,
+  enabled,
+  quality,
+}: {
+  profile: EnvironmentPackDefinition["profile"];
+  enabled: boolean;
+  quality: "low" | "high";
+}) {
   if (!enabled) return null;
+  if (profile === "forest") {
+    return (
+      <>
+        <directionalLight
+          position={[-8, 18, 6]}
+          color="#d8f0bc"
+          intensity={quality === "high" ? 2.1 : 1.45}
+          castShadow={quality === "high"}
+          shadow-mapSize-width={1024}
+          shadow-mapSize-height={1024}
+        />
+        <pointLight position={[9, 3, -10]} color="#95c86e" intensity={0.8} distance={34} />
+      </>
+    );
+  }
+  if (profile === "crystal") {
+    return (
+      <>
+        <spotLight
+          position={[0, 15, 4]}
+          color="#a7d9ff"
+          intensity={quality === "high" ? 3.8 : 2.4}
+          angle={0.78}
+          penumbra={0.82}
+          distance={80}
+          castShadow={quality === "high"}
+          shadow-mapSize-width={1024}
+          shadow-mapSize-height={1024}
+        />
+        <pointLight position={[-12, 3, -8]} color="#8c66ff" intensity={1.8} distance={32} />
+        <pointLight position={[13, 2.5, 12]} color="#4fe6dd" intensity={1.5} distance={34} />
+      </>
+    );
+  }
   return (
     <>
       <spotLight

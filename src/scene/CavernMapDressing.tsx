@@ -5,26 +5,23 @@ import * as THREE from "three";
 import type { CompositionMap, MapPlatform, MapRoom, WalkableSegment } from "../map";
 import { mapPointKey, platformElevation, roomElevation } from "../map";
 
-const TEXTURES: string[] = [
-  "/environments/atlas-cavern/textures/stone-albedo.webp",
-  "/environments/atlas-cavern/textures/stone-normal.webp",
-  "/environments/atlas-cavern/textures/stone-roughness.webp",
-  "/environments/atlas-cavern/textures/stone-ao.webp",
-];
+type DetailProfile = "cavern" | "forest" | "crystal";
 
-export function CavernMapDressing({
+export function DetailMapDressing({
   map,
-  rockGeometry,
+  detailGeometry,
+  profile,
   editMode,
   quality,
 }: {
   map: CompositionMap;
-  rockGeometry: THREE.BufferGeometry;
+  detailGeometry: THREE.BufferGeometry;
+  profile: DetailProfile;
   editMode: boolean;
   quality: "low" | "high";
 }) {
-  const material = useStoneMaterial(editMode);
-  const rocks = useMemo(() => rockTransforms(map, quality), [map, quality]);
+  const material = usePackMaterial(profile, editMode);
+  const details = useMemo(() => detailTransforms(map, quality, profile), [map, quality, profile]);
 
   return (
     <group>
@@ -54,7 +51,7 @@ export function CavernMapDressing({
           </mesh>
         );
       })}
-      <RockInstances geometry={rockGeometry} material={material} transforms={rocks} quality={quality} />
+      <DetailInstances geometry={detailGeometry} material={material} transforms={details} quality={quality} profile={profile} />
     </group>
   );
 }
@@ -153,18 +150,20 @@ function PlatformFloor({
   );
 }
 
-function RockInstances({
+function DetailInstances({
   geometry,
   material,
   transforms,
   quality,
+  profile,
 }: {
   geometry: THREE.BufferGeometry;
   material: THREE.Material;
   transforms: THREE.Matrix4[];
   quality: "low" | "high";
+  profile: DetailProfile;
 }) {
-  const lowGeometry = useMemo(() => new THREE.DodecahedronGeometry(1, 0), []);
+  const lowGeometry = useMemo(() => lowDetailGeometry(profile), [profile]);
   const nearMesh = useMemo(() => emptyInstancedMesh(geometry, material, transforms.length), [geometry, material, transforms.length]);
   const farMesh = useMemo(() => emptyInstancedMesh(lowGeometry, material, transforms.length), [lowGeometry, material, transforms.length]);
   const lastUpdate = useRef(-Infinity);
@@ -216,15 +215,16 @@ function emptyInstancedMesh(geometry: THREE.BufferGeometry, material: THREE.Mate
   return mesh;
 }
 
-function useStoneMaterial(editMode: boolean): THREE.MeshStandardMaterial {
-  const loaded = useTexture(TEXTURES) as THREE.Texture[];
+function usePackMaterial(profile: DetailProfile, editMode: boolean): THREE.MeshStandardMaterial {
+  const config = PROFILE_CONFIG[profile];
+  const loaded = useTexture(config.textures) as THREE.Texture[];
   const textures = useMemo(
     () =>
       loaded.map((source, index) => {
         const texture = source.clone();
         texture.wrapS = THREE.RepeatWrapping;
         texture.wrapT = THREE.RepeatWrapping;
-        texture.repeat.set(2.5, 2.5);
+        texture.repeat.set(config.repeat, config.repeat);
         if (index === 0) texture.colorSpace = THREE.SRGBColorSpace;
         if (index === 3) texture.channel = 0;
         texture.needsUpdate = true;
@@ -239,15 +239,17 @@ function useStoneMaterial(editMode: boolean): THREE.MeshStandardMaterial {
         normalMap: textures[1],
         normalScale: new THREE.Vector2(0.7, 0.7),
         roughnessMap: textures[2],
-        roughness: 0.92,
+        roughness: config.roughness,
         aoMap: textures[3],
-        aoMapIntensity: 0.75,
-        metalness: 0.02,
+        aoMapIntensity: config.ao,
+        metalness: config.metalness,
+        emissive: config.emissive,
+        emissiveIntensity: config.emissiveIntensity,
         transparent: editMode,
         opacity: editMode ? 0.58 : 1,
         depthWrite: !editMode,
       }),
-    [editMode, textures],
+    [config, editMode, textures],
   );
 
   useEffect(
@@ -261,7 +263,8 @@ function useStoneMaterial(editMode: boolean): THREE.MeshStandardMaterial {
   return material;
 }
 
-function rockTransforms(map: CompositionMap, quality: "low" | "high"): THREE.Matrix4[] {
+function detailTransforms(map: CompositionMap, quality: "low" | "high", profile: DetailProfile): THREE.Matrix4[] {
+  const config = PROFILE_CONFIG[profile];
   const transforms: THREE.Matrix4[] = [];
   for (const segment of map.segments) {
     if (segment.kind === "tunnel") continue;
@@ -271,7 +274,7 @@ function rockTransforms(map: CompositionMap, quality: "low" | "high"): THREE.Mat
     if (length < 0.01) continue;
     const nx = -dz / length;
     const nz = dx / length;
-    const count = Math.max(2, Math.floor(length / (quality === "high" ? 4.5 : 8)));
+    const count = Math.max(2, Math.floor(length / (quality === "high" ? config.spacing : config.spacing * 1.7)));
     for (let index = 0; index <= count; index += 1) {
       const t = index / count;
       const x = segment.start[0] + dx * t;
@@ -281,11 +284,12 @@ function rockTransforms(map: CompositionMap, quality: "low" | "high"): THREE.Mat
       const y = THREE.MathUtils.lerp(startY, endY, t);
       for (const side of [-1, 1]) {
         const seed = hash(`${segment.id}:${index}:${side}`);
-        const offset = segment.width / 2 + 0.7 + seeded(seed, 1) * 1.2;
+        const offset = segment.width / 2 + config.edgeOffset + seeded(seed, 1) * config.edgeJitter;
+        const scale = detailScale(profile, seed);
         transforms.push(
           transform(
-            [x + nx * offset * side, y + 0.35, z + nz * offset * side],
-            [1.1 + seeded(seed, 2) * 1.5, 0.8 + seeded(seed, 3) * 1.8, 1 + seeded(seed, 4) * 1.3],
+            [x + nx * offset * side, y + config.baseY, z + nz * offset * side],
+            scale,
             seeded(seed, 5) * Math.PI,
           ),
         );
@@ -294,7 +298,7 @@ function rockTransforms(map: CompositionMap, quality: "low" | "high"): THREE.Mat
   }
 
   for (const room of map.rooms) {
-    const y = roomElevation(map, room) + 0.4;
+    const y = roomElevation(map, room) + config.baseY;
     const rockCount = quality === "high" ? 8 : 4;
     for (let index = 0; index < rockCount; index += 1) {
       const angle = (index / rockCount) * Math.PI * 2 + room.rotation;
@@ -303,7 +307,7 @@ function rockTransforms(map: CompositionMap, quality: "low" | "high"): THREE.Mat
       transforms.push(
         transform(
           [room.center[0] + Math.cos(angle) * radiusX, y, room.center[1] + Math.sin(angle) * radiusZ],
-          [1.2, 1.5 + (index % 3) * 0.4, 1.2],
+          detailScale(profile, hash(`${room.id}:${index}`)),
           angle,
         ),
       );
@@ -311,6 +315,25 @@ function rockTransforms(map: CompositionMap, quality: "low" | "high"): THREE.Mat
   }
 
   return transforms;
+}
+
+function lowDetailGeometry(profile: DetailProfile): THREE.BufferGeometry {
+  if (profile === "forest") return new THREE.ConeGeometry(0.8, 4, 7);
+  if (profile === "crystal") return new THREE.OctahedronGeometry(1, 0);
+  return new THREE.DodecahedronGeometry(1, 0);
+}
+
+function detailScale(profile: DetailProfile, seed: number): [number, number, number] {
+  if (profile === "forest") {
+    const width = 0.75 + seeded(seed, 2) * 0.65;
+    const height = 0.8 + seeded(seed, 3) * 0.8;
+    return [width, height, width];
+  }
+  if (profile === "crystal") {
+    const width = 0.65 + seeded(seed, 2) * 1.15;
+    return [width, 1 + seeded(seed, 3) * 2.3, width];
+  }
+  return [1.1 + seeded(seed, 2) * 1.5, 0.8 + seeded(seed, 3) * 1.8, 1 + seeded(seed, 4) * 1.3];
 }
 
 function transform(position: [number, number, number], scale: [number, number, number], rotationY: number): THREE.Matrix4 {
@@ -334,3 +357,75 @@ function seeded(seed: number, salt: number): number {
   const value = Math.sin(seed * 0.0001 + salt * 91.713) * 43758.5453;
   return value - Math.floor(value);
 }
+
+const PROFILE_CONFIG: Record<
+  DetailProfile,
+  {
+    textures: string[];
+    repeat: number;
+    roughness: number;
+    metalness: number;
+    ao: number;
+    emissive: string;
+    emissiveIntensity: number;
+    spacing: number;
+    edgeOffset: number;
+    edgeJitter: number;
+    baseY: number;
+  }
+> = {
+  cavern: {
+    textures: [
+      "/environments/atlas-cavern/textures/stone-albedo.webp",
+      "/environments/atlas-cavern/textures/stone-normal.webp",
+      "/environments/atlas-cavern/textures/stone-roughness.webp",
+      "/environments/atlas-cavern/textures/stone-ao.webp",
+    ],
+    repeat: 2.5,
+    roughness: 0.92,
+    metalness: 0.02,
+    ao: 0.75,
+    emissive: "#000000",
+    emissiveIntensity: 0,
+    spacing: 4.5,
+    edgeOffset: 0.7,
+    edgeJitter: 1.2,
+    baseY: 0.35,
+  },
+  forest: {
+    textures: [
+      "/environments/verdant-grove/textures/forest-albedo.webp",
+      "/environments/verdant-grove/textures/forest-normal.webp",
+      "/environments/verdant-grove/textures/forest-roughness.webp",
+      "/environments/verdant-grove/textures/forest-ao.webp",
+    ],
+    repeat: 3.2,
+    roughness: 0.96,
+    metalness: 0,
+    ao: 0.9,
+    emissive: "#000000",
+    emissiveIntensity: 0,
+    spacing: 6.5,
+    edgeOffset: 2.2,
+    edgeJitter: 2.6,
+    baseY: 0,
+  },
+  crystal: {
+    textures: [
+      "/environments/prismatic-reach/textures/crystal-albedo.webp",
+      "/environments/prismatic-reach/textures/crystal-normal.webp",
+      "/environments/prismatic-reach/textures/crystal-roughness.webp",
+      "/environments/prismatic-reach/textures/crystal-ao.webp",
+    ],
+    repeat: 2.1,
+    roughness: 0.38,
+    metalness: 0.16,
+    ao: 0.62,
+    emissive: "#183859",
+    emissiveIntensity: 0.34,
+    spacing: 5.2,
+    edgeOffset: 1.1,
+    edgeJitter: 1.7,
+    baseY: 0.2,
+  },
+};

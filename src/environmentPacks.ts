@@ -17,6 +17,8 @@ export interface EnvironmentPackAsset {
 export interface EnvironmentPackDefinition {
   id: string;
   name: string;
+  profile: "cavern" | "forest" | "crystal";
+  geometryPrefix: string;
   description: string;
   variants: readonly string[];
   assets: readonly EnvironmentPackAsset[];
@@ -46,6 +48,8 @@ export const ENVIRONMENT_PACKS: readonly EnvironmentPackDefinition[] = [
   {
     id: "atlas-cavern",
     name: "Atlas Cavern",
+    profile: "cavern",
+    geometryPrefix: "WallRock_",
     description: "Authored rock chambers, columns, and overhead formations",
     variants: ["ember"],
     assets: [
@@ -76,6 +80,43 @@ export const ENVIRONMENT_PACKS: readonly EnvironmentPackDefinition[] = [
       contrast: 1.06,
       saturation: 0.9,
       tint: [1.02, 0.99, 0.96],
+    },
+  },
+  {
+    id: "verdant-grove",
+    name: "Verdant Grove",
+    profile: "forest",
+    geometryPrefix: "Tree_",
+    description: "Moss-covered paths framed by authored evergreen landmarks",
+    variants: ["temperate"],
+    assets: [
+      {
+        url: "/environments/verdant-grove/verdant-grove-kit.glb",
+        quality: "high",
+      },
+    ],
+    attribution: [
+      {
+        title: "Verdant Grove",
+        author: "Polyphonia",
+        license: "Project asset",
+      },
+    ],
+    budgets: {
+      maxTextureSize: 2048,
+      maxTriangles: 160_000,
+      maxDrawCalls: 100,
+    },
+    effects: {
+      exposure: 1.12,
+      bloomStrength: 0.08,
+      bloomThreshold: 0.86,
+      bloomRadius: 0.28,
+      ambientOcclusion: true,
+      vignette: 0.16,
+      contrast: 1.04,
+      saturation: 1.08,
+      tint: [0.98, 1.04, 0.94],
     },
   },
 ];
