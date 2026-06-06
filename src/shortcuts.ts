@@ -14,6 +14,17 @@ import { useStore } from "./store";
 
 export type EditPanel = "environment" | "map" | "loop" | null;
 
+export type ShortcutId =
+  | "toggle-fullscreen"
+  | "clear-selection"
+  | "delete-selected"
+  | "branch-at-point"
+  | "duplicate-stem"
+  | "undo"
+  | "redo"
+  | "add-stem"
+  | "toggle-mode";
+
 // App-owned callbacks the shortcut actions need. Store state and actions are
 // read directly via `useStore.getState()` inside the handlers, so only the
 // pieces of UI state that live in React land are threaded through here.
@@ -25,9 +36,11 @@ export interface ShortcutContext {
 }
 
 export interface Shortcut {
-  id: string;
+  id: ShortcutId;
   // Human-readable binding + description, suitable for a help/cheatsheet
-  // surface. Kept next to the behavior so the two never drift.
+  // surface. Kept next to the behavior so the two never drift. Use the literal
+  // "Mod" token for the platform modifier; `shortcutKeys` resolves it to
+  // Cmd/Ctrl for display.
   keys: string;
   description: string;
   // Whether the event's keys/modifiers match this shortcut. Pure.
@@ -50,6 +63,18 @@ export function isTextFieldFocused(): boolean {
 }
 
 const hasModifier = (e: KeyboardEvent) => e.metaKey || e.ctrlKey;
+
+// The platform's command modifier, for display in help text.
+export function modKeyLabel(): string {
+  return navigator.platform.toLowerCase().includes("mac") ? "Cmd" : "Ctrl";
+}
+
+// Display label for a shortcut's keys, with the "Mod" token resolved to the
+// platform modifier. This is the source of truth for any help/tooltip text.
+export function shortcutKeys(id: ShortcutId): string {
+  const sc = SHORTCUTS.find((s) => s.id === id);
+  return sc ? sc.keys.replace("Mod", modKeyLabel()) : "";
+}
 
 // The hidden "Add stem" file input lives in the AddStem component. It registers
 // an opener here so the central dispatcher can trigger it without lifting the
@@ -155,7 +180,7 @@ export const SHORTCUTS: Shortcut[] = [
   },
   {
     id: "duplicate-stem",
-    keys: "Cmd/Ctrl+D",
+    keys: "Mod+D",
     description: "Duplicate the selected stem",
     match: (e) => hasModifier(e) && e.code === "KeyD",
     enabled: () => useStore.getState().mode === "edit" && !!useStore.getState().selectedId,
@@ -168,7 +193,7 @@ export const SHORTCUTS: Shortcut[] = [
   },
   {
     id: "undo",
-    keys: "Cmd/Ctrl+Z",
+    keys: "Mod+Z",
     description: "Undo the last edit",
     match: (e) => hasModifier(e) && e.key.toLowerCase() === "z" && !e.shiftKey,
     enabled: () => useStore.getState().entered,
@@ -179,7 +204,7 @@ export const SHORTCUTS: Shortcut[] = [
   },
   {
     id: "redo",
-    keys: "Cmd/Ctrl+Shift+Z",
+    keys: "Mod+Shift+Z",
     description: "Redo the last undone edit",
     match: (e) =>
       hasModifier(e) &&
@@ -192,7 +217,7 @@ export const SHORTCUTS: Shortcut[] = [
   },
   {
     id: "add-stem",
-    keys: "Cmd/Ctrl+O",
+    keys: "Mod+O",
     description: "Open the file picker to add a stem",
     match: (e) => hasModifier(e) && e.code === "KeyO",
     enabled: () => !!useStore.getState().engine && !!stemDialogOpener,

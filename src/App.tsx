@@ -22,11 +22,7 @@ import { ARWalkControls } from "./ui/ARWalkControls";
 import { GeoWalkControls } from "./ui/GeoWalkControls";
 import { useStore } from "./store";
 import { exportComposition } from "./persistence";
-import { dispatchShortcut, type EditPanel } from "./shortcuts";
-
-function modKey(): string {
-  return navigator.platform.toLowerCase().includes("mac") ? "Cmd" : "Ctrl";
-}
+import { dispatchShortcut, shortcutKeys, type EditPanel } from "./shortcuts";
 
 function hudShortcutHint({
   mode,
@@ -45,15 +41,17 @@ function hudShortcutHint({
   selectedStart: boolean;
   selectedLandmarkId: string | null;
 }): string {
-  const mod = modKey();
-  if (mode === "explore") return "WASD + mouse to move · click scene for mouse look · Esc releases cursor · Tab to edit · F fullscreen";
-  if (selectedId) return `drag to move stem · Delete removes · ${mod}+D duplicates · Esc clears`;
-  if (selectedLandmarkId) return "drag to place landmark · adjust rotation and scale below · Delete removes · Esc clears";
-  if (branchStartPointKey) return "click floor to place branch · B cancels · Delete removes point · Esc clears";
-  if (selectedMapPointKey) return "drag point to reshape · terminal points can branch or become rooms · Delete removes point · Esc clears";
-  if (selectedMapSegmentId) return "adjust segment width · click point to edit branches · Esc clears";
-  if (selectedStart) return "drag start marker · choose Move/Rotate in Map · Esc clears";
-  return `WASD to move · Q/E down/up · drag to orbit · click a track or map point · ${mod}+O adds stem · ${mod}+Z undo · F fullscreen`;
+  const del = shortcutKeys("delete-selected");
+  const esc = shortcutKeys("clear-selection");
+  if (mode === "explore")
+    return `WASD + mouse to move · click scene for mouse look · Esc releases cursor · ${shortcutKeys("toggle-mode")} to edit · ${shortcutKeys("toggle-fullscreen")} fullscreen`;
+  if (selectedId) return `drag to move stem · ${del} removes · ${shortcutKeys("duplicate-stem")} duplicates · ${esc} clears`;
+  if (selectedLandmarkId) return `drag to place landmark · adjust rotation and scale below · ${del} removes · ${esc} clears`;
+  if (branchStartPointKey) return `click floor to place branch · ${shortcutKeys("branch-at-point")} cancels · ${del} removes point · ${esc} clears`;
+  if (selectedMapPointKey) return `drag point to reshape · terminal points can branch or become rooms · ${del} removes point · ${esc} clears`;
+  if (selectedMapSegmentId) return `adjust segment width · click point to edit branches · ${esc} clears`;
+  if (selectedStart) return `drag start marker · choose Move/Rotate in Map · ${esc} clears`;
+  return `WASD to move · Q/E down/up · drag to orbit · click a track or map point · ${shortcutKeys("add-stem")} adds stem · ${shortcutKeys("undo")} undo · ${shortcutKeys("toggle-fullscreen")} fullscreen`;
 }
 
 export default function App() {
@@ -251,7 +249,11 @@ export default function App() {
                 <button style={exitBtn} onClick={exit} title="Stop and return to the start screen">
                   ⏏ Exit
                 </button>
-                <button style={iconBtn} onClick={toggleFullscreen} title={fullscreen ? "Exit fullscreen (F)" : "Enter fullscreen (F)"}>
+                <button
+                  style={iconBtn}
+                  onClick={toggleFullscreen}
+                  title={`${fullscreen ? "Exit" : "Enter"} fullscreen (${shortcutKeys("toggle-fullscreen")})`}
+                >
                   {fullscreen ? "⤢" : "⛶"}
                 </button>
                 {mode === "edit" && (
@@ -260,7 +262,7 @@ export default function App() {
                       style={{ ...historyBtn, ...(canUndo ? null : disabledBtn) }}
                       onClick={() => void useStore.getState().undo()}
                       disabled={!canUndo}
-                      title="Undo"
+                      title={`Undo (${shortcutKeys("undo")})`}
                     >
                       ↶
                     </button>
@@ -268,13 +270,13 @@ export default function App() {
                       style={{ ...historyBtn, ...(canRedo ? null : disabledBtn) }}
                       onClick={() => void useStore.getState().redo()}
                       disabled={!canRedo}
-                      title="Redo"
+                      title={`Redo (${shortcutKeys("redo")})`}
                     >
                       ↷
                     </button>
                   </div>
                 )}
-                <button style={modeBtn} onClick={handleToggleMode} title="Toggle with Tab">
+                <button style={modeBtn} onClick={handleToggleMode} title={`Toggle with ${shortcutKeys("toggle-mode")}`}>
                   {mode === "explore" ? "✎ Edit" : "✦ Explore"}
                 </button>
               </div>

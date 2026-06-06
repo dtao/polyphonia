@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
-import { registerStemDialogOpener } from "../shortcuts";
+import { registerStemDialogOpener, shortcutKeys } from "../shortcuts";
 
 const AUDIO_RE = /\.(mp3|wav|ogg|flac|m4a|aac|opus|webm)$/i;
 const isAudio = (f: File) => f.type.startsWith("audio/") || AUDIO_RE.test(f.name);
@@ -68,7 +68,7 @@ export function AddStem() {
 
   return (
     <>
-      <button style={addBtn} onClick={() => inputRef.current?.click()} title="Add stem (Cmd/Ctrl+O)">
+      <button style={addBtn} onClick={() => inputRef.current?.click()} title={`Add stem (${shortcutKeys("add-stem")})`}>
         ＋ Add stem
       </button>
       <input
