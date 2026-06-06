@@ -68,7 +68,7 @@ earlier ones.
 - [x] **M6.3 Hero environment prototype** — build one hand-composed AAA-style cavern scene with modular assets, authored lighting, landmarks, and an edit-friendly visibility mode.
 - [x] **M6.4 Postprocessing pass** — add a restrained configurable stack for bloom, ambient occlusion, tone mapping, color grading, vignette, and depth fog.
 - [x] **M6.5 Runtime optimization pass** — introduce instancing/LOD/culling/texture budgets so high-detail environments stay responsive in the browser.
-- [x] **M6.6 Environment authoring workflow** — document how new environment packs are produced, reviewed, optimized, licensed, and wired into composition metadata.
+- [x] **M6.6 Environment authoring workflow** — support both reviewed environment packs and independently imported licensed PBR materials/GLB landmarks, with validation, reusable local records, composition assignment, portable exports, cloud delivery, and authoring documentation.
 
 ## Polish & fixes
 

@@ -26,9 +26,10 @@ these spatial compositions.
   used for movement or acoustics. High-quality mode adds restrained bloom,
   ambient occlusion, tone mapping, vignette, and shadowed authored lighting;
   automatic low quality keeps the dressing while reducing repeated assets and
-  expensive effects. Creators can also build or import local detail packs,
-  upload floor/wall/ceiling material channels, place pack landmarks directly,
-  and carry those assets through export or cloud publishing.
+  expensive effects. Creators can also import reusable PBR materials and
+  self-contained GLB landmarks separately, assign different materials to
+  floors/walls/ceilings, place models directly, and carry those assets through
+  export or cloud publishing. A full detail pack is optional.
   Editable path maps can define terminal loop points for corridor-like
   spaces that wrap back on themselves. Path segments can be marked as enclosed
   **tunnels** whose walls and ceiling muffle sound passing in or out the sides,
@@ -46,12 +47,12 @@ these spatial compositions.
   artist name for local-only use) and add stems by file picker or
   drag-and-drop; uploads drop into the running loop in time.
 - **Local-first** — your work autosaves to the browser (manifests in
-  `localStorage`, stem audio and custom detail-pack assets in IndexedDB) and
+  `localStorage`, stem audio and creator environment assets in IndexedDB) and
   survives reloads. Keep a library of compositions in a searchable, sortable
   home grid and switch between them.
 - **Portable** — export a composition as a single self-contained
-  `.polyphonia.json` (audio and any custom detail pack embedded) and re-import
-  it anywhere.
+  `.polyphonia.json` (audio, custom packs, and every referenced creator asset
+  embedded) and re-import it anywhere.
 - **Share** — publish a composition to the cloud and get a stable read-only link
   (`/c/:id`) anyone can open, with visible audio-loading progress for first
   plays. *(Requires Supabase config — see below.)*
@@ -77,6 +78,8 @@ a version string.
 
 High-fidelity environment production is documented in
 [`docs/environment-authoring.md`](docs/environment-authoring.md).
+For ready-to-import free assets and supported formats, see
+[`docs/creator-assets.md`](docs/creator-assets.md).
 
 For performance diagnostics, append `?debug=1` to the local URL. This enables a
 small overlay and exportable JSON log. Optional A/B flags include
@@ -94,7 +97,8 @@ Audio quality can be A/B tested with `audioQuality=full` or
   move it. Selected stems show Near/Far rings and a rolloff gradient on the
   ground; the pillar size reflects volume. The Loop panel can audition the seam,
   trim loop start/end, adjust crossfade, or disable looping. The Environment
-  panel switches visual presets and ambience.
+  panel selects optional detail packs, imports materials/models, assigns map
+  surfaces, and places landmarks.
 
 ## Sharing setup (optional)
 
@@ -110,6 +114,8 @@ custom server. In a Supabase project:
      avatar metadata, and per-artist composition title uniqueness.
    - `202606060001_custom_detail_packs.sql` adds immutable creator pack
      manifests and the public `environment-assets` bucket.
+   - `202606060002_creator_assets.sql` adds independently reusable material and
+     landmark manifests.
 
    The resulting schema is:
 
@@ -215,7 +221,7 @@ src/
   scene/        React Three Fiber scene: detail packs, Player, EditControls, gizmo, markers
   ui/           EntryScreen, PropertiesPanel, AddStem, EnvironmentPanel, LoopPanel, PublishControl, Account, Viewer, Gallery, ArtistPage
   artist.ts       artist identity helpers (slugs, artist routes)
-  environment.ts  optional detail-pack selection metadata
+  environment.ts  optional detail-pack, surface-material, and landmark metadata
   composition.ts  types + the built-in "Journey" demo
   store.ts        Zustand store
   persistence.ts  local-first save/load + export/import
