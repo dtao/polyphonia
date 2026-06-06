@@ -141,6 +141,7 @@ export const ROOM_WALL_THICKNESS = DEFAULT_WALL_THICKNESS;
 // How far the walkable doorway "threshold" extends outside the entrance wall, so
 // a room positioned against a path connects to it.
 export const DOOR_DEPTH = 2.6;
+const PLAYER_COLLISION_RADIUS = 0.35;
 
 type Rect = { minX: number; maxX: number; minZ: number; maxZ: number };
 
@@ -392,7 +393,7 @@ export function stepOnMap(map: CompositionMap, previous: [number, number], attem
   if (!hasWalkableBounds(map)) return { position: attempted, support: { kind: "open" } };
   const support = previousSupport && supportExists(map, previousSupport) ? previousSupport : mapSupportAt(map, previous, previousSupport);
 
-  if (stepHitsDoorPanel(map, previous, attempted)) return { position: previous, support };
+  if (stepHitsRoomWall(map, previous, attempted)) return { position: previous, support };
 
   if (supportContains(map, support, attempted)) return { position: attempted, support };
 
@@ -1238,38 +1239,13 @@ function clampToSupport(map: CompositionMap, support: MapSupport, point: [number
   return segment ? closestPointInSegment(point, segment) : null;
 }
 
-function stepHitsDoorPanel(map: CompositionMap, previous: [number, number], attempted: [number, number]): boolean {
+function stepHitsRoomWall(map: CompositionMap, previous: [number, number], attempted: [number, number]): boolean {
   for (const room of map.rooms) {
     const from = toRoomLocal(room, previous);
     const to = toRoomLocal(room, attempted);
-    for (const entrance of room.entrances) {
-      if (!entrance.door) continue;
-      if (doorOpenAmount(room, entrance, previous) < 0.95 && lineCrossesDoorway(from, to, room, entrance)) return true;
-    }
+    if (lineHitsMovementRoomWall(room, from, to, previous)) return true;
   }
   return false;
-}
-
-function lineCrossesDoorway(from: [number, number], to: [number, number], room: MapRoom, entrance: RoomEntrance): boolean {
-  const r = interiorRect(room);
-  const halfWidth = Math.max(0.5, entrance.width) / 2;
-  const epsilon = 0.000001;
-  if (entrance.side === "north" || entrance.side === "south") {
-    const z = entrance.side === "north" ? r.minZ : r.maxZ;
-    const dz = to[1] - from[1];
-    if (Math.abs(dz) < epsilon) return false;
-    const t = (z - from[1]) / dz;
-    if (t < -epsilon || t > 1 + epsilon) return false;
-    const x = from[0] + (to[0] - from[0]) * clamp(t, 0, 1);
-    return x >= entrance.offset - halfWidth - epsilon && x <= entrance.offset + halfWidth + epsilon;
-  }
-  const x = entrance.side === "west" ? r.minX : r.maxX;
-  const dx = to[0] - from[0];
-  if (Math.abs(dx) < epsilon) return false;
-  const t = (x - from[0]) / dx;
-  if (t < -epsilon || t > 1 + epsilon) return false;
-  const z = from[1] + (to[1] - from[1]) * clamp(t, 0, 1);
-  return z >= entrance.offset - halfWidth - epsilon && z <= entrance.offset + halfWidth + epsilon;
 }
 
 function nearestSegmentContaining(map: CompositionMap, point: [number, number]): WalkableSegment | null {
@@ -1424,6 +1400,22 @@ function lineHitsSolidRoomWall(room: MapRoom, from: [number, number], to: [numbe
   return walls.some(([a, b]) => lineSegmentsIntersect(from, to, a, b));
 }
 
+function lineHitsMovementRoomWall(room: MapRoom, from: [number, number], to: [number, number], listener: [number, number]): boolean {
+  const r = interiorRect(room);
+  const walls: Array<[[number, number], [number, number]]> = [];
+  for (const [s, e] of solidWallSpans(r.maxX, movementWallOpenings(room, "north", listener))) walls.push([[s, r.minZ], [e, r.minZ]]);
+  for (const [s, e] of solidWallSpans(r.maxX, movementWallOpenings(room, "south", listener))) walls.push([[s, r.maxZ], [e, r.maxZ]]);
+  for (const [s, e] of solidWallSpans(r.maxZ, movementWallOpenings(room, "west", listener))) walls.push([[r.minX, s], [r.minX, e]]);
+  for (const [s, e] of solidWallSpans(r.maxZ, movementWallOpenings(room, "east", listener))) walls.push([[r.maxX, s], [r.maxX, e]]);
+  return walls.some(([a, b]) => lineSegmentsIntersectInclusive(from, to, a, b));
+}
+
+function movementWallOpenings(room: MapRoom, side: RoomSide, listener: [number, number]): Array<[number, number]> {
+  return openWallOpenings(room, side, listener)
+    .map(([a, b]) => [a + PLAYER_COLLISION_RADIUS, b - PLAYER_COLLISION_RADIUS] as [number, number])
+    .filter(([a, b]) => a < b);
+}
+
 function lineSegmentsIntersect(a: [number, number], b: [number, number], c: [number, number], d: [number, number]): boolean {
   const abx = b[0] - a[0];
   const abz = b[1] - a[1];
@@ -1436,6 +1428,20 @@ function lineSegmentsIntersect(a: [number, number], b: [number, number], c: [num
   const t = cross(acx, acz, cdx, cdz) / denom;
   const u = cross(acx, acz, abx, abz) / denom;
   return t > 0.0001 && t < 0.9999 && u > 0.0001 && u < 0.9999;
+}
+
+function lineSegmentsIntersectInclusive(a: [number, number], b: [number, number], c: [number, number], d: [number, number]): boolean {
+  const abx = b[0] - a[0];
+  const abz = b[1] - a[1];
+  const acx = c[0] - a[0];
+  const acz = c[1] - a[1];
+  const cdx = d[0] - c[0];
+  const cdz = d[1] - c[1];
+  const denom = cross(abx, abz, cdx, cdz);
+  if (Math.abs(denom) < 0.000001) return false;
+  const t = cross(acx, acz, cdx, cdz) / denom;
+  const u = cross(acx, acz, abx, abz) / denom;
+  return t >= -0.0001 && t <= 1.0001 && u >= -0.0001 && u <= 1.0001;
 }
 
 function cross(ax: number, az: number, bx: number, bz: number): number {
