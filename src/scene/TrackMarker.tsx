@@ -307,7 +307,12 @@ const flareFragmentShader = `
     float d = length(p);
     float core = smoothstep(radius, 0.0, d);
     float haze = exp(-d * 5.6);
-    float alpha = (core * 0.85 + haze * 0.38) * opacity;
+    // The haze never reaches zero, so without this it leaks all the way to the
+    // billboard plane's square corners — invisible on the black void but a hard
+    // square halo over a lit detail-pack floor. Fade to zero inside the plane's
+    // inscribed circle (d = 0.5) so only a round glow survives.
+    float edge = smoothstep(0.5, 0.4, d);
+    float alpha = (core * 0.85 + haze * 0.38) * opacity * edge;
     vec3 hot = mix(color, vec3(1.0), core * 0.72);
     gl_FragColor = vec4(hot, alpha);
   }
@@ -339,7 +344,9 @@ const starRayFragmentShader = `
     rays += ray(p, normalize(vec2(-0.74,  0.66)), 70.0, 0.28, 0.38);
     rays += ray(p, normalize(vec2( 0.58, -0.82)), 46.0, 0.40, 0.62);
     float center = smoothstep(radius, 0.0, d);
-    float alpha = (rays + center * 0.5) * smoothstep(0.56, 0.02, d) * opacity;
+    // Vanish within the plane's inscribed circle (d = 0.5) so the rays/glow can't
+    // paint the square plane edges over a lit detail-pack floor (see flare).
+    float alpha = (rays + center * 0.5) * smoothstep(0.5, 0.02, d) * opacity;
     vec3 hot = mix(color, vec3(1.0), center * 0.85);
     gl_FragColor = vec4(hot, alpha);
   }
