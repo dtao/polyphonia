@@ -5,6 +5,7 @@ import { PropertiesPanel } from "./ui/PropertiesPanel";
 import { MapPointPanel } from "./ui/MapPointPanel";
 import { MapSegmentPanel } from "./ui/MapSegmentPanel";
 import { RoomPanel } from "./ui/RoomPanel";
+import { EntrancePanel } from "./ui/EntrancePanel";
 import { PlatformPanel } from "./ui/PlatformPanel";
 import { WallPanel } from "./ui/WallPanel";
 import { AddStem } from "./ui/AddStem";
@@ -184,6 +185,11 @@ export default function App() {
         if (s.selectedId) {
           e.preventDefault();
           s.deleteTrack(s.selectedId);
+          return;
+        }
+        if (s.selectedRoomId && s.selectedEntranceIndex !== null) {
+          e.preventDefault();
+          s.removeEntrance(s.selectedRoomId, s.selectedEntranceIndex);
           return;
         }
         if (s.selectedRoomId) {
@@ -378,6 +384,7 @@ export default function App() {
           <MapPointPanel />
           <MapSegmentPanel />
           <RoomPanel />
+          <EntrancePanel />
           <PlatformPanel />
           <WallPanel />
           {mode === "explore" && <ARWalkControls map={comp.map} />}

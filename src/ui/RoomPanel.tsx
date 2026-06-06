@@ -1,51 +1,17 @@
-import { DoorConfig, RoomEntrance, RoomSide, ROOM_WALL_THICKNESS } from "../map";
 import { useStore } from "../store";
 
-type DoorMode = "none" | DoorConfig["openFrom"];
-const DOOR_MODES: Array<{ value: DoorMode; label: string }> = [
-  { value: "none", label: "Open" },
-  { value: "both", label: "Door" },
-  { value: "outside", label: "From out" },
-  { value: "inside", label: "From in" },
-];
-
-// Bottom-left inspector for the selected room (like the stem panel). Shown in
-// edit mode when a room is selected. A room can carry several doorways; the
-// first entrance of an attached room is locked to face its path.
+// Bottom-left inspector for the selected room. Entrances are edited in the 3D
+// view (a "+" on each wall adds one; drag a doorway to move it) and via the
+// EntrancePanel when a doorway is selected, so this panel stays room-level.
 export function RoomPanel() {
   const mode = useStore((s) => s.mode);
   const room = useStore((s) => s.composition.map.rooms.find((r) => r.id === s.selectedRoomId));
+  const selectedEntranceIndex = useStore((s) => s.selectedEntranceIndex);
   const { updateRoom, deleteRoom } = useStore.getState();
 
-  if (mode !== "edit" || !room) return null;
+  if (mode !== "edit" || !room || selectedEntranceIndex !== null) return null;
 
   const attached = !!room.attachment;
-
-  function setEntrance(index: number, patch: Partial<RoomEntrance>) {
-    if (!room) return;
-    updateRoom(room.id, { entrances: room.entrances.map((e, i) => (i === index ? { ...e, ...patch } : e)) });
-  }
-
-  function setDoor(index: number, mode: DoorMode) {
-    if (!room) return;
-    updateRoom(room.id, {
-      entrances: room.entrances.map((e, i) => {
-        if (i !== index) return e;
-        const { door: _door, ...rest } = e;
-        return mode === "none" ? rest : { ...rest, door: { openFrom: mode } };
-      }),
-    });
-  }
-
-  function addEntrance() {
-    if (!room) return;
-    updateRoom(room.id, { entrances: [...room.entrances, { side: "south", width: 5, offset: 0 }] });
-  }
-
-  function removeEntrance(index: number) {
-    if (!room || room.entrances.length <= 1) return;
-    updateRoom(room.id, { entrances: room.entrances.filter((_, i) => i !== index) });
-  }
 
   return (
     <div style={panel} data-inspector>
@@ -55,62 +21,13 @@ export function RoomPanel() {
       <Slider label="Depth" value={room.depth} min={3} max={40} step={0.5} onChange={(v) => updateRoom(room.id, { depth: v })} />
       <Slider label="Height" value={room.height} min={2} max={10} step={0.2} onChange={(v) => updateRoom(room.id, { height: v })} />
 
-      <div style={{ ...sliderHead, marginTop: 10, marginBottom: 6 }}>
-        <span>Entrances</span>
-        <span>{room.entrances.length}</span>
-      </div>
-      {room.entrances.map((entrance, index) => {
-        const locked = attached && index === 0;
-        const span = (entrance.side === "north" || entrance.side === "south" ? room.width : room.depth) - ROOM_WALL_THICKNESS * 2;
-        const maxOffset = Math.max(0, span / 2 - entrance.width / 2);
-        return (
-          <div key={index} style={entranceCard}>
-            <div style={entranceHead}>
-              <span style={{ opacity: 0.7, fontSize: 11 }}>{locked ? "Doorway (to path)" : `Doorway ${index + 1}`}</span>
-              {!locked && room.entrances.length > 1 && (
-                <button style={removeBtn} onClick={() => removeEntrance(index)} title="Remove this doorway">
-                  ×
-                </button>
-              )}
-            </div>
-            {!locked && (
-              <div style={sideGrid}>
-                {(["north", "south", "east", "west"] as RoomSide[]).map((side) => (
-                  <button
-                    key={side}
-                    style={{ ...sideBtn, ...(entrance.side === side ? sideActive : null) }}
-                    onClick={() => setEntrance(index, { side, offset: 0 })}
-                  >
-                    {side[0].toUpperCase() + side.slice(1)}
-                  </button>
-                ))}
-              </div>
-            )}
-            <Slider label="Width" value={entrance.width} min={1} max={Math.max(2, span - 1)} step={0.5} onChange={(v) => setEntrance(index, { width: v })} />
-            {!locked && maxOffset > 0.01 && (
-              <Slider label="Offset" value={entrance.offset} min={-maxOffset} max={maxOffset} step={0.5} onChange={(v) => setEntrance(index, { offset: v })} />
-            )}
-            <div style={doorGrid}>
-              {DOOR_MODES.map((m) => {
-                const current = (entrance.door?.openFrom ?? "none") === m.value;
-                return (
-                  <button key={m.value} style={{ ...doorBtn, ...(current ? sideActive : null) }} onClick={() => setDoor(index, m.value)} title={`Door: ${m.label}`}>
-                    {m.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
-      <button style={addBtn} onClick={addEntrance} title="Add another doorway to this room">
-        + Add doorway
-      </button>
-
       <button style={deleteBtn} onClick={() => deleteRoom(room.id)} title="Delete selected room (Delete)">
         Delete room
       </button>
-      <div style={hint}>{attached ? "Attached to a terminal path point. Move the path point to move the room; add doorways on other walls to connect more." : "Legacy room: place a doorway against a path so it stays connected."}</div>
+      <div style={hint}>
+        Click a <strong>+</strong> on any wall to add a doorway, then drag the doorway to position it or click it to edit its width and door.
+        {attached ? " This room is attached to a path point; move that point to move the room." : ""}
+      </div>
     </div>
   );
 }
@@ -140,8 +57,6 @@ const panel: React.CSSProperties = {
   bottom: 16,
   left: 16,
   width: 240,
-  maxHeight: "calc(100vh - 32px)",
-  overflowY: "auto",
   padding: 16,
   borderRadius: 12,
   background: "rgba(12,15,28,0.86)",
@@ -159,83 +74,6 @@ const sliderHead: React.CSSProperties = {
   fontSize: 12,
   opacity: 0.75,
   marginBottom: 2,
-};
-
-const entranceCard: React.CSSProperties = {
-  marginBottom: 8,
-  padding: 8,
-  borderRadius: 8,
-  border: "1px solid rgba(255,255,255,0.1)",
-  background: "rgba(255,255,255,0.03)",
-};
-
-const entranceHead: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  marginBottom: 6,
-};
-
-const removeBtn: React.CSSProperties = {
-  width: 20,
-  height: 20,
-  borderRadius: 999,
-  border: "1px solid rgba(255,122,107,0.4)",
-  background: "rgba(255,122,107,0.15)",
-  color: "#ff9b8f",
-  cursor: "pointer",
-  fontSize: 13,
-  lineHeight: 1,
-};
-
-const sideGrid: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "1fr 1fr",
-  gap: 6,
-  marginBottom: 8,
-};
-
-const sideBtn: React.CSSProperties = {
-  padding: "6px 8px",
-  borderRadius: 7,
-  border: "1px solid rgba(255,255,255,0.14)",
-  background: "rgba(255,255,255,0.06)",
-  color: "rgba(255,255,255,0.78)",
-  cursor: "pointer",
-  fontSize: 12,
-};
-
-const sideActive: React.CSSProperties = {
-  border: "1px solid rgba(91,140,255,0.75)",
-  background: "rgba(91,140,255,0.24)",
-  color: "white",
-};
-
-const doorGrid: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "1fr 1fr 1fr 1fr",
-  gap: 4,
-};
-
-const doorBtn: React.CSSProperties = {
-  padding: "5px 2px",
-  borderRadius: 6,
-  border: "1px solid rgba(255,255,255,0.14)",
-  background: "rgba(255,255,255,0.06)",
-  color: "rgba(255,255,255,0.74)",
-  cursor: "pointer",
-  fontSize: 10,
-};
-
-const addBtn: React.CSSProperties = {
-  width: "100%",
-  padding: "8px",
-  borderRadius: 7,
-  border: "1px solid rgba(91,140,255,0.4)",
-  background: "rgba(91,140,255,0.14)",
-  color: "rgba(199,216,255,0.95)",
-  cursor: "pointer",
-  fontSize: 13,
 };
 
 const deleteBtn: React.CSSProperties = {

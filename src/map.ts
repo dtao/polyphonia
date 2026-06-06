@@ -330,6 +330,36 @@ export function roomRegionRects(room: MapRoom): Rect[] {
   return [interiorRect(room), ...room.entrances.map((entrance) => doorwayRect(room, entrance))];
 }
 
+// Local-space (x,z) center of an entrance's doorway, on its wall line.
+export function entranceLocalCenter(room: MapRoom, entrance: RoomEntrance): [number, number] {
+  const hw = room.width / 2;
+  const hd = room.depth / 2;
+  switch (entrance.side) {
+    case "north":
+      return [entrance.offset, -hd];
+    case "south":
+      return [entrance.offset, hd];
+    case "west":
+      return [-hw, entrance.offset];
+    case "east":
+      return [hw, entrance.offset];
+  }
+}
+
+// Convert between world XZ and a room's local frame (for entrance editing).
+export function roomLocalPoint(room: MapRoom, worldPoint: [number, number]): [number, number] {
+  return toRoomLocal(room, worldPoint);
+}
+
+export function roomWorldPoint(room: MapRoom, localPoint: [number, number]): [number, number] {
+  return fromRoomLocal(room, localPoint);
+}
+
+// Largest doorway width allowed on a given wall.
+export function maxEntranceWidth(room: MapRoom, side: RoomSide): number {
+  return Math.max(1, entranceSpan(side, room.width, room.depth));
+}
+
 function openingInterval(entrance: RoomEntrance): [number, number] {
   const ew = Math.max(0.5, entrance.width);
   return [entrance.offset - ew / 2, entrance.offset + ew / 2];

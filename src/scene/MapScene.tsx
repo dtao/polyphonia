@@ -3,7 +3,7 @@ import { Line, TransformControls } from "@react-three/drei";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
-import { canAddBranchAtPoint, clampToMap, CompositionMap, doorOpenAmount, isTunnelSegment, loopRoleForPoint, MapPlatform, MapRoom, MapWall, platformElevation, platformLocalPolygon, RoomEntrance, roomAttachedToPoint, roomElevation, ROOM_WALL_THICKNESS, solidWallSpans, surfaceHeightAt, tunnelHeight, tunnelSideWalls, wallOpenings, WalkableSegment } from "../map";
+import { canAddBranchAtPoint, clampToMap, CompositionMap, doorOpenAmount, entranceLocalCenter, isTunnelSegment, loopRoleForPoint, MapPlatform, MapRoom, MapWall, platformElevation, platformLocalPolygon, RoomEntrance, roomAttachedToPoint, roomElevation, roomLocalPoint, RoomSide, ROOM_WALL_THICKNESS, solidWallSpans, surfaceHeightAt, tunnelHeight, tunnelSideWalls, wallOpenings, WalkableSegment } from "../map";
 import { useStore, viewState } from "../store";
 import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 
@@ -112,8 +112,128 @@ function Room({ room, elevationY, editMode, selected }: { room: MapRoom; elevati
           </mesh>
         ))}
         {room.entrances.map((entrance, i) => (entrance.door ? <DoorPanel key={`door-${i}`} room={room} entrance={entrance} editMode={editMode} /> : null))}
+        {editMode && selected && <RoomEntranceEditor room={room} elevationY={elevationY} />}
       </group>
     </>
+  );
+}
+
+// Edit-mode handles inside a room: a "+" on each wall to add a doorway, and a
+// draggable marker on each entrance that selects it and slides it along the
+// wall. Rendered in the room's local frame (a child of the room group).
+function RoomEntranceEditor({ room, elevationY }: { room: MapRoom; elevationY: number }) {
+  const selectedRoomId = useStore((s) => s.selectedRoomId);
+  const selectedEntranceIndex = useStore((s) => s.selectedEntranceIndex);
+  return (
+    <group>
+      {(["north", "south", "east", "west"] as RoomSide[]).map((side) => (
+        <WallAddButton key={side} room={room} side={side} />
+      ))}
+      {room.entrances.map((entrance, i) => (
+        <EntranceHandle key={i} room={room} entrance={entrance} index={i} elevationY={elevationY} selected={selectedRoomId === room.id && selectedEntranceIndex === i} />
+      ))}
+    </group>
+  );
+}
+
+function WallAddButton({ room, side }: { room: MapRoom; side: RoomSide }) {
+  const addEntrance = useStore((s) => s.addEntrance);
+  const hw = room.width / 2;
+  const hd = room.depth / 2;
+  const out = 1;
+  const pos: [number, number, number] =
+    side === "north" ? [0, 1, -hd - out] : side === "south" ? [0, 1, hd + out] : side === "west" ? [-hw - out, 1, 0] : [hw + out, 1, 0];
+  return (
+    <group
+      position={pos}
+      onClick={(e) => {
+        e.stopPropagation();
+        addEntrance(room.id, side);
+      }}
+      onPointerOver={(e) => {
+        e.stopPropagation();
+        document.body.style.cursor = "pointer";
+      }}
+      onPointerOut={() => {
+        document.body.style.cursor = "auto";
+      }}
+    >
+      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <circleGeometry args={[0.62, 24]} />
+        <meshBasicMaterial color="#13243a" transparent opacity={0.85} depthWrite={false} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.58, 0.66, 24]} />
+        <meshBasicMaterial color="#8fffe8" transparent opacity={0.8} depthWrite={false} toneMapped={false} />
+      </mesh>
+      <mesh position={[0, 0.03, 0]}>
+        <boxGeometry args={[0.5, 0.02, 0.12]} />
+        <meshBasicMaterial color="#8fffe8" toneMapped={false} />
+      </mesh>
+      <mesh position={[0, 0.03, 0]}>
+        <boxGeometry args={[0.12, 0.02, 0.5]} />
+        <meshBasicMaterial color="#8fffe8" toneMapped={false} />
+      </mesh>
+    </group>
+  );
+}
+
+function EntranceHandle({ room, entrance, index, elevationY, selected }: { room: MapRoom; entrance: RoomEntrance; index: number; elevationY: number; selected: boolean }) {
+  const updateEntrance = useStore((s) => s.updateEntrance);
+  const selectEntrance = useStore((s) => s.selectEntrance);
+  const controls = useThree((s) => s.controls as { enabled?: boolean } | undefined);
+  const dragging = useRef(false);
+  const plane = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), -elevationY), [elevationY]);
+  const hit = useMemo(() => new THREE.Vector3(), []);
+  const [lx, lz] = entranceLocalCenter(room, entrance);
+  const horizontal = entrance.side === "north" || entrance.side === "south";
+  const size: [number, number, number] = horizontal ? [entrance.width, room.height, 0.5] : [0.5, room.height, entrance.width];
+
+  function onMove(e: ThreeEvent<PointerEvent>) {
+    if (!dragging.current) return;
+    e.stopPropagation();
+    if (!e.ray.intersectPlane(plane, hit)) return;
+    const local = roomLocalPoint(room, [hit.x, hit.z]);
+    updateEntrance(room.id, index, { offset: horizontal ? local[0] : local[1] });
+  }
+
+  function onDown(e: ThreeEvent<PointerEvent>) {
+    e.stopPropagation();
+    dragging.current = true;
+    selectEntrance(room.id, index);
+    if (controls) controls.enabled = false;
+    (e.nativeEvent.target as Element | null)?.setPointerCapture?.(e.pointerId);
+    document.body.style.cursor = "grabbing";
+  }
+
+  function onUp(e?: ThreeEvent<PointerEvent>) {
+    dragging.current = false;
+    if (controls) controls.enabled = true;
+    (e?.nativeEvent.target as Element | null | undefined)?.releasePointerCapture?.(e?.pointerId ?? -1);
+    document.body.style.cursor = "auto";
+  }
+
+  return (
+    <mesh
+      position={[lx, room.height / 2, lz]}
+      onPointerDown={onDown}
+      onPointerMove={onMove}
+      onPointerUp={onUp}
+      onClick={(e) => {
+        e.stopPropagation();
+        selectEntrance(room.id, index);
+      }}
+      onPointerOver={(e) => {
+        e.stopPropagation();
+        document.body.style.cursor = "grab";
+      }}
+      onPointerOut={() => {
+        if (!dragging.current) document.body.style.cursor = "auto";
+      }}
+    >
+      <boxGeometry args={size} />
+      <meshBasicMaterial color={selected ? "#8fffe8" : "#5b8cff"} transparent opacity={selected ? 0.5 : 0.3} depthWrite={false} />
+    </mesh>
   );
 }
 
