@@ -80,3 +80,5 @@ earlier ones.
 - [x] P6 Stem orbs in maps with detail packs enabled have strange square-shaped light halos with clearly visible straight boundaries.
 - [x] P7 Floor textures of path segments, rooms, and platforms should all match for maps with detail packs.
 - [ ] P8 Floor texture goes away after changing detail pack for the first time and doesn't come back until browser refresh.
+- [ ] P9 Geo Drive mode should only be available on mobile, on tiled maps.
+- [ ] P10 Environmental objects (trees, crystals, etc.) should repeat on tiled maps just as stem orbs do.
