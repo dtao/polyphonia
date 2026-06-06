@@ -23,10 +23,16 @@ interface DetailPlacement {
 }
 
 // How far out (in world units) adjacent loop copies receive the textured floor
-// shells and dressing. Kept near the full-opacity band of the reactive floor
-// copies (which fade ~85–180); beyond it the copies are already fading, so the
-// plainer reactive-only floor reads fine and we save the extra draw calls.
-const DETAIL_TILE_RADIUS = 92;
+// shells. Kept near the full-opacity band of the reactive floor copies (which
+// fade ~85–180); beyond it the copies are already fading, so the plainer
+// reactive-only floor reads fine and we save the extra (per-mesh) draw calls.
+const DETAIL_FLOOR_TILE_RADIUS = 92;
+// Instanced environmental objects (rocks/trees/crystals) are cheap, so they
+// repeat across the wider visible field — like the stem orbs do — out to their
+// cull distance instead of stopping at the textured-floor band. Far instances
+// fall back to low-detail geometry (see DetailInstances) and are culled past
+// this radius.
+const DETAIL_OBJECT_CULL = 130;
 
 export function DetailMapDressing({
   map,
@@ -57,14 +63,19 @@ export function DetailMapDressing({
     // only resample once the listener has moved a couple of units.
     setViewer((current) => (Math.hypot(current[0] - next[0], current[1] - next[1]) > 1.5 ? next : current));
   });
-  const previews = useMemo(
-    () => (tiled ? tiledMapTransforms(map, viewer, DETAIL_TILE_RADIUS) : []),
+  // Floor shells cover a near band; objects repeat further out (a superset).
+  const floorPreviews = useMemo(
+    () => (tiled ? tiledMapTransforms(map, viewer, DETAIL_FLOOR_TILE_RADIUS) : []),
+    [tiled, map, viewer],
+  );
+  const objectPreviews = useMemo(
+    () => (tiled ? tiledMapTransforms(map, viewer, DETAIL_OBJECT_CULL) : []),
     [tiled, map, viewer],
   );
 
   const detailMatrices = useMemo(() => {
     const matrices = placements.map((p) => transform(p.position, p.scale, p.rotationY));
-    for (const preview of previews) {
+    for (const preview of objectPreviews) {
       const lift = loopPreviewElevationOffset(map, preview);
       for (const p of placements) {
         const [tx, tz] = transformLoopPoint(preview, [p.position[0], p.position[2]]);
@@ -72,12 +83,12 @@ export function DetailMapDressing({
       }
     }
     return matrices;
-  }, [placements, previews, map]);
+  }, [placements, objectPreviews, map]);
 
   return (
     <group>
       <MapShell map={map} material={material} />
-      {previews.map((preview) => (
+      {floorPreviews.map((preview) => (
         <group
           key={preview.id}
           position={[preview.anchor[0], loopPreviewElevationOffset(map, preview), preview.anchor[1]]}
@@ -281,7 +292,7 @@ function DetailInstances({
     for (const matrix of transforms) {
       position.setFromMatrixPosition(matrix);
       const distance = position.distanceTo(camera.position);
-      if (distance > 115) continue;
+      if (distance > DETAIL_OBJECT_CULL) continue;
       if (quality === "high" && distance < 42) nearMesh.setMatrixAt(nearCount++, matrix);
       else farMesh.setMatrixAt(farCount++, matrix);
     }
