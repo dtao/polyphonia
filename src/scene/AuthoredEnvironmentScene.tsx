@@ -19,15 +19,36 @@ export function AuthoredEnvironmentScene({
   map: CompositionMap;
   editMode: boolean;
 }) {
+  const gl = useThree((state) => state.gl);
+  const ktx2Loader = useMemo(
+    () => new KTX2Loader().setTranscoderPath("/basis/").detectSupport(gl),
+    [gl],
+  );
+  const extendLoader = useCallback((loader: any) => loader.setKTX2Loader(ktx2Loader), [ktx2Loader]);
   const pack = environmentPackById(environment.pack?.id);
   const quality = resolvedEnvironmentQuality(environment.pack?.quality ?? "auto");
   const asset = pack ? environmentPackAsset(pack, quality) : undefined;
+  useEffect(
+    () => () => {
+      ktx2Loader.dispose();
+    },
+    [ktx2Loader],
+  );
   if (!pack || !asset) return null;
+
+  useGLTF.preload(asset.url, "/draco-gltf/", true, extendLoader);
 
   return (
     <AssetErrorBoundary key={`${pack.id}:${asset.url}`}>
       <Suspense fallback={null}>
-        <EnvironmentAsset url={asset.url} map={map} editMode={editMode} quality={quality} pack={pack} />
+        <EnvironmentAsset
+          url={asset.url}
+          map={map}
+          editMode={editMode}
+          quality={quality}
+          pack={pack}
+          extendLoader={extendLoader}
+        />
       </Suspense>
     </AssetErrorBoundary>
   );
@@ -39,27 +60,16 @@ function EnvironmentAsset({
   editMode,
   quality,
   pack,
+  extendLoader,
 }: {
   url: string;
   map: CompositionMap;
   editMode: boolean;
   quality: "low" | "high";
   pack: EnvironmentPackDefinition;
+  extendLoader: (loader: any) => void;
 }) {
-  const gl = useThree((state) => state.gl);
-  const ktx2Loader = useMemo(
-    () => new KTX2Loader().setTranscoderPath("/basis/").detectSupport(gl),
-    [gl],
-  );
-  const extendLoader = useCallback((loader: any) => loader.setKTX2Loader(ktx2Loader), [ktx2Loader]);
   const gltf = useGLTF(url, "/draco-gltf/", true, extendLoader);
-
-  useEffect(() => {
-    useGLTF.preload(url, "/draco-gltf/", true, extendLoader);
-    return () => {
-      ktx2Loader.dispose();
-    };
-  }, [extendLoader, ktx2Loader, url]);
   useEffect(() => validateAssetBudget(gltf.scene, pack), [gltf.scene, pack]);
   const scene = useMemo(() => {
     const clone = gltf.scene.clone(true);
