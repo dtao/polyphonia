@@ -80,7 +80,8 @@ export interface MapPlatform {
   shape: PlatformShape;
   width: number; // rect: extent along x; circle/hex: outer diameter
   depth: number; // rect: extent along z (unused for circle/hex)
-  elevation: number; // flat surface height
+  elevation: number; // flat surface height (ignored when attached — inherits the branch point)
+  attachment?: RoomAttachment; // platforms attach to a terminal branch point, like rooms
 }
 
 export interface MapTiling {
@@ -559,7 +560,27 @@ export function containingPlatform(map: Pick<CompositionMap, "platforms">, point
   return map.platforms.find((platform) => platformContains(platform, point)) ?? null;
 }
 
-export function platformElevation(platform: MapPlatform): number {
+export function platformAttachmentPoint(map: Pick<CompositionMap, "segments">, platform: MapPlatform): [number, number] | null {
+  if (!platform.attachment) return null;
+  const segment = map.segments.find((s) => s.id === platform.attachment?.segmentId);
+  if (!segment) return null;
+  return platform.attachment.end === "start" ? segment.start : segment.end;
+}
+
+export function platformAttachedToPoint(map: Pick<CompositionMap, "segments" | "platforms">, key: string): MapPlatform | null {
+  return map.platforms.find((platform) => {
+    const point = platformAttachmentPoint(map, platform);
+    return point ? mapPointKey(point) === key : false;
+  }) ?? null;
+}
+
+// An attached platform inherits its branch point's height; a free platform uses
+// its stored elevation.
+export function platformElevation(map: Pick<CompositionMap, "segments" | "elevations">, platform: MapPlatform): number {
+  if (platform.attachment) {
+    const point = platformAttachmentPoint(map, platform);
+    if (point) return pointElevation(map, mapPointKey(point));
+  }
   return Number.isFinite(platform.elevation) ? platform.elevation : 0;
 }
 
@@ -603,7 +624,7 @@ export function surfaceHeightAt(map: Pick<CompositionMap, "segments" | "rooms" |
   const room = containingRoom(map, point);
   if (room) return roomElevation(map, room);
   const platform = containingPlatform(map, point);
-  if (platform) return platformElevation(platform);
+  if (platform) return platformElevation(map, platform);
   let best = 0;
   let bestDistSq = Infinity;
   for (const segment of map.segments) {
@@ -632,7 +653,7 @@ export function surfaceHeightOnSupport(
   }
   if (support?.kind === "platform") {
     const platform = map.platforms.find((p) => p.id === support.platformId);
-    if (platform) return platformElevation(platform);
+    if (platform) return platformElevation(map, platform);
   }
   if (support?.kind === "segment") {
     const segment = map.segments.find((s) => s.id === support.segmentId);
@@ -656,16 +677,25 @@ export function roomAttachedToPoint(map: Pick<CompositionMap, "segments" | "room
   }) ?? null;
 }
 
-export function canAddRoomAtPoint(map: Pick<CompositionMap, "segments" | "rooms">, key: string): boolean {
-  return isTerminalMapPoint(map, key) && !roomAttachedToPoint(map, key);
+// A terminal point can host at most one attached structure (a room or platform).
+export function pointHasAttachment(map: Pick<CompositionMap, "segments" | "rooms" | "platforms">, key: string): boolean {
+  return !!roomAttachedToPoint(map, key) || !!platformAttachedToPoint(map, key);
 }
 
-export function canAddBranchAtPoint(map: Pick<CompositionMap, "segments" | "rooms">, key: string): boolean {
-  return endpointCount(map, key) > 0 && !roomAttachedToPoint(map, key);
+export function canAddRoomAtPoint(map: Pick<CompositionMap, "segments" | "rooms" | "platforms">, key: string): boolean {
+  return isTerminalMapPoint(map, key) && !pointHasAttachment(map, key);
 }
 
-export function canSetLoopEndpoint(map: Pick<CompositionMap, "segments" | "rooms">, key: string): boolean {
-  return isTerminalMapPoint(map, key) && !roomAttachedToPoint(map, key);
+export function canAddPlatformAtPoint(map: Pick<CompositionMap, "segments" | "rooms" | "platforms">, key: string): boolean {
+  return isTerminalMapPoint(map, key) && !pointHasAttachment(map, key);
+}
+
+export function canAddBranchAtPoint(map: Pick<CompositionMap, "segments" | "rooms" | "platforms">, key: string): boolean {
+  return endpointCount(map, key) > 0 && !pointHasAttachment(map, key);
+}
+
+export function canSetLoopEndpoint(map: Pick<CompositionMap, "segments" | "rooms" | "platforms">, key: string): boolean {
+  return isTerminalMapPoint(map, key) && !pointHasAttachment(map, key);
 }
 
 export function roomAttachmentPoint(map: Pick<CompositionMap, "segments">, room: MapRoom): [number, number] | null {
@@ -851,7 +881,26 @@ export function alignAttachedRooms(map: CompositionMap): CompositionMap {
       const lockedPrimary: RoomEntrance = { side: "north", width: primary?.width ?? 5, offset: 0, ...(primary?.door ? { door: primary.door } : {}) };
       return { ...room, ...placed, entrances: [lockedPrimary, ...rest] };
     }),
+    platforms: map.platforms.map((platform) => {
+      if (!platform.attachment) return platform;
+      const placed = attachedPlatformPlacement(map, platform);
+      return placed ? { ...platform, ...placed } : platform;
+    }),
   };
+}
+
+// An attached platform sits just past its branch point, its near edge meeting
+// the path, oriented to face it.
+function attachedPlatformPlacement(map: Pick<CompositionMap, "segments">, platform: MapPlatform): Pick<MapPlatform, "center" | "rotation"> | null {
+  if (!platform.attachment) return null;
+  const segment = map.segments.find((s) => s.id === platform.attachment?.segmentId);
+  if (!segment) return null;
+  const point = platform.attachment.end === "start" ? segment.start : segment.end;
+  const other = platform.attachment.end === "start" ? segment.end : segment.start;
+  const out = normalizeDirection([point[0] - other[0], point[1] - other[1]]);
+  const extent = platform.shape === "rect" ? platform.depth / 2 : platform.width / 2;
+  const center: [number, number] = [point[0] + out[0] * extent, point[1] + out[1] * extent];
+  return { center, rotation: Math.atan2(out[0], out[1]) };
 }
 
 function normalizeMapLoop(map: CompositionMap): CompositionMap["loop"] {
@@ -1287,6 +1336,7 @@ function normalizePlatform(platform: MapPlatform): MapPlatform {
     width,
     depth: clamp(Number.isFinite(platform.depth) ? platform.depth : width, 4, 200),
     elevation: Number.isFinite(platform.elevation) ? platform.elevation : 0,
+    attachment: isRoomAttachment(platform.attachment) ? platform.attachment : undefined,
   };
 }
 

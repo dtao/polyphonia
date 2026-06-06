@@ -21,8 +21,8 @@ these spatial compositions.
   hall; editable path maps can define terminal loop points for corridor-like
   spaces that wrap back on themselves. Path segments can be marked as enclosed
   **tunnels** whose walls and ceiling muffle sound passing in or out the sides,
-  and open **platforms** (rectangle, hex, or circle) add wide walkable areas
-  that connect to any path, room, or platform they overlap. Room doorways can
+  and open **platforms** (rectangle, hex, or circle) attach to a terminal path
+  point — like rooms — to add wide walkable areas. Room doorways can
   carry sliding **doors** that open as you approach (from either side or just
   one) and muffle sound while shut, and free-standing **walls** can be placed
   anywhere to shape occlusion deliberately.

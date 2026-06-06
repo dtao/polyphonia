@@ -11,6 +11,7 @@ export function PlatformPanel() {
   if (mode !== "edit" || !platform) return null;
 
   const isRect = platform.shape === "rect";
+  const attached = !!platform.attachment;
 
   return (
     <div style={panel} data-inspector>
@@ -26,13 +27,13 @@ export function PlatformPanel() {
 
       <Slider label={isRect ? "Width" : "Diameter"} value={platform.width} min={4} max={120} step={1} onChange={(v) => updatePlatform(platform.id, { width: v })} />
       {isRect && <Slider label="Depth" value={platform.depth} min={4} max={120} step={1} onChange={(v) => updatePlatform(platform.id, { depth: v })} />}
-      <Slider label="Elevation" value={platform.elevation} min={-12} max={12} step={0.2} onChange={(v) => updatePlatform(platform.id, { elevation: v })} />
-      <Slider label="Rotation" value={(platform.rotation * 180) / Math.PI} min={-180} max={180} step={1} onChange={(v) => updatePlatform(platform.id, { rotation: (v * Math.PI) / 180 })} />
+      {!attached && <Slider label="Elevation" value={platform.elevation} min={-12} max={12} step={0.2} onChange={(v) => updatePlatform(platform.id, { elevation: v })} />}
+      {!attached && <Slider label="Rotation" value={(platform.rotation * 180) / Math.PI} min={-180} max={180} step={1} onChange={(v) => updatePlatform(platform.id, { rotation: (v * Math.PI) / 180 })} />}
 
       <button style={deleteBtn} onClick={() => deletePlatform(platform.id)} title="Delete selected platform (Delete)">
         Delete platform
       </button>
-      <div style={hint}>Drag the gizmo to move it. Platforms connect to any path, room, or platform whose area they overlap.</div>
+      <div style={hint}>{attached ? "Attached to a path point; move that point to move the platform." : "Connects to any path, room, or platform whose area it overlaps."}</div>
     </div>
   );
 }

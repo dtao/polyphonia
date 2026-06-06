@@ -1,4 +1,4 @@
-import { attachmentForPoint, canAddBranchAtPoint, canAddRoomAtPoint, canSetLoopEndpoint, endpointCount, loopRoleForPoint, pathLoopForMap, roomAttachedToPoint } from "../map";
+import { attachmentForPoint, canAddBranchAtPoint, canAddPlatformAtPoint, canAddRoomAtPoint, canSetLoopEndpoint, endpointCount, loopRoleForPoint, pathLoopForMap, platformAttachedToPoint, roomAttachedToPoint } from "../map";
 import { useStore } from "../store";
 
 // Bottom-left panel shown when a path point is selected in edit mode. Grow the
@@ -10,6 +10,7 @@ export function MapPointPanel() {
   const map = useStore((s) => s.composition.map);
   const addBranchAtPoint = useStore((s) => s.addBranchAtPoint);
   const addRoomAtPoint = useStore((s) => s.addRoomAtPoint);
+  const addPlatformAtPoint = useStore((s) => s.addPlatformAtPoint);
   const deleteMapPoint = useStore((s) => s.deleteMapPoint);
   const setMap = useStore((s) => s.setMap);
 
@@ -18,14 +19,18 @@ export function MapPointPanel() {
   const pointKey = selectedMapPointKey;
   const count = endpointCount(map, pointKey);
   const attachedRoom = roomAttachedToPoint(map, pointKey);
+  const attachedPlatform = platformAttachedToPoint(map, pointKey);
+  const attached = attachedRoom || attachedPlatform;
   const canAddBranch = canAddBranchAtPoint(map, pointKey);
   const canAddRoom = canAddRoomAtPoint(map, pointKey);
+  const canAddPlatform = canAddPlatformAtPoint(map, pointKey);
   const canSetLoop = canSetLoopEndpoint(map, pointKey);
   const loopRole = loopRoleForPoint(map, pointKey);
-  const state = attachedRoom ? "Room" : count > 1 ? "Joint" : "Terminal";
-  const branchTitle = attachedRoom ? "This terminal already leads into a room" : "Grow the path (B); drag the new point to place it";
-  const roomTitle = attachedRoom ? "This terminal already leads into a room" : "Rooms can only be added to terminal points";
-  const loopTitle = attachedRoom ? "Room endpoints cannot be map loop points" : "Loop points must be terminal path points";
+  const state = attachedRoom ? "Room" : attachedPlatform ? "Platform" : count > 1 ? "Joint" : "Terminal";
+  const branchTitle = attached ? "This terminal already leads somewhere" : "Grow the path (B); drag the new point to place it";
+  const roomTitle = attached ? "This terminal already leads somewhere" : "Rooms can only be added to terminal points";
+  const platformTitle = attached ? "This terminal already leads somewhere" : "Platforms can only be added to terminal points";
+  const loopTitle = attached ? "Attached endpoints cannot be map loop points" : "Loop points must be terminal path points";
 
   function setLoopEndpoint(which: "start" | "end") {
     if (!canSetLoop) return;
@@ -59,6 +64,14 @@ export function MapPointPanel() {
         title={canAddRoom ? "Attach a room with its doorway here" : roomTitle}
       >
         ⬚ Add room here
+      </button>
+      <button
+        style={{ ...btn, ...(!canAddPlatform ? disabledBtn : null) }}
+        onClick={() => canAddPlatform && addPlatformAtPoint(pointKey)}
+        disabled={!canAddPlatform}
+        title={canAddPlatform ? "Attach an open platform here" : platformTitle}
+      >
+        ◇ Add platform here
       </button>
       <button style={deleteBtn} onClick={() => deleteMapPoint(pointKey)} title="Delete selected point (Delete)">
         Delete point

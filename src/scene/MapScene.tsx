@@ -3,7 +3,7 @@ import { Line, TransformControls } from "@react-three/drei";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
-import { canAddBranchAtPoint, clampToMap, CompositionMap, doorOpenAmount, entranceLocalCenter, isTunnelSegment, loopRoleForPoint, MapPlatform, MapRoom, MapWall, platformElevation, platformLocalPolygon, RoomEntrance, roomAttachedToPoint, roomElevation, roomLocalPoint, RoomSide, ROOM_WALL_THICKNESS, solidWallSpans, surfaceHeightAt, tunnelHeight, tunnelSideWalls, wallOpenings, WalkableSegment } from "../map";
+import { canAddBranchAtPoint, clampToMap, CompositionMap, doorOpenAmount, entranceLocalCenter, isTunnelSegment, loopRoleForPoint, MapPlatform, MapRoom, MapWall, platformElevation, platformLocalPolygon, pointHasAttachment, RoomEntrance, roomElevation, roomLocalPoint, RoomSide, ROOM_WALL_THICKNESS, solidWallSpans, surfaceHeightAt, tunnelHeight, tunnelSideWalls, wallOpenings, WalkableSegment } from "../map";
 import { useStore, viewState } from "../store";
 import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 
@@ -376,7 +376,7 @@ function buildBufferGeometry(vertices: number[], indices: number[]): THREE.Buffe
 }
 
 // Open walkable areas (rect/hex/circle) — like rooms without walls or ceilings.
-// Selected in edit mode and moved with the same drei gizmo the start marker uses.
+// Attached to a terminal path point, so position/elevation follow that point.
 const PLATFORM_FLOOR_Y = 0.06;
 
 function Platforms({ map, editMode }: { map: CompositionMap; editMode: boolean }) {
@@ -385,52 +385,41 @@ function Platforms({ map, editMode }: { map: CompositionMap; editMode: boolean }
   return (
     <group>
       {map.platforms.map((platform) => (
-        <Platform key={platform.id} platform={platform} editMode={editMode} selected={editMode && selectedPlatformId === platform.id} />
+        <Platform key={platform.id} platform={platform} map={map} editMode={editMode} selected={editMode && selectedPlatformId === platform.id} />
       ))}
     </group>
   );
 }
 
-function Platform({ platform, editMode, selected }: { platform: MapPlatform; editMode: boolean; selected: boolean }) {
+function Platform({ platform, map, editMode, selected }: { platform: MapPlatform; map: CompositionMap; editMode: boolean; selected: boolean }) {
   const selectPlatform = useStore((s) => s.selectPlatform);
-  const updatePlatform = useStore((s) => s.updatePlatform);
-  const [obj, setObj] = useState<THREE.Group | null>(null);
   const outline = useMemo(() => platformOutlinePoints(platform), [platform]);
-  const elevationY = platformElevation(platform);
-
-  function handleObjectChange() {
-    if (!obj) return;
-    updatePlatform(platform.id, { center: [obj.position.x, obj.position.z] });
-  }
+  const elevationY = platformElevation(map, platform);
 
   return (
-    <>
-      <group
-        ref={setObj}
-        position={[platform.center[0], elevationY, platform.center[1]]}
-        rotation={[0, platform.rotation, 0]}
-        onClick={(e) => {
-          if (!editMode) return;
-          e.stopPropagation();
-          selectPlatform(platform.id);
-        }}
-        onPointerOver={(e) => {
-          if (!editMode) return;
-          e.stopPropagation();
-          document.body.style.cursor = "pointer";
-        }}
-        onPointerOut={() => {
-          document.body.style.cursor = "auto";
-        }}
-      >
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, PLATFORM_FLOOR_Y, 0]}>
-          <PlatformGeometry platform={platform} />
-          <meshStandardMaterial color={selected ? "#16302e" : "#14161e"} roughness={0.9} metalness={0.08} side={THREE.DoubleSide} />
-        </mesh>
-        <Line points={outline} color={selected ? "#8fffe8" : "#5d6b86"} lineWidth={selected ? 2.4 : 1.4} transparent opacity={selected ? 0.95 : 0.6} />
-      </group>
-      {selected && obj && <TransformControls object={obj} mode="translate" showX showZ showY={false} size={0.9} onObjectChange={handleObjectChange} />}
-    </>
+    <group
+      position={[platform.center[0], elevationY, platform.center[1]]}
+      rotation={[0, platform.rotation, 0]}
+      onClick={(e) => {
+        if (!editMode) return;
+        e.stopPropagation();
+        selectPlatform(platform.id);
+      }}
+      onPointerOver={(e) => {
+        if (!editMode) return;
+        e.stopPropagation();
+        document.body.style.cursor = "pointer";
+      }}
+      onPointerOut={() => {
+        document.body.style.cursor = "auto";
+      }}
+    >
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, PLATFORM_FLOOR_Y, 0]}>
+        <PlatformGeometry platform={platform} />
+        <meshStandardMaterial color={selected ? "#16302e" : "#14161e"} roughness={0.9} metalness={0.08} side={THREE.DoubleSide} />
+      </mesh>
+      <Line points={outline} color={selected ? "#8fffe8" : "#5d6b86"} lineWidth={selected ? 2.4 : 1.4} transparent opacity={selected ? 0.95 : 0.6} />
+    </group>
   );
 }
 
@@ -1377,7 +1366,7 @@ function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpoint
       key,
       point,
       shared: (endpointCounts.get(key) ?? 0) > 1,
-      hasRoom: !!roomAttachedToPoint(map, key),
+      hasRoom: pointHasAttachment(map, key),
       loopRole: loopRoleForPoint(map, key),
     }));
   }, [endpointCounts, map]);

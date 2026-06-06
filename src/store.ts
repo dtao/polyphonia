@@ -15,7 +15,7 @@ import {
 } from "./persistence";
 import { newId } from "./id";
 import { EnvironmentSettings, defaultEnvironment, normalizeEnvironment } from "./environment";
-import { attachmentForPoint, canAddBranchAtPoint, canAddRoomAtPoint, CompositionMap, MAP_PRESETS, MapPlatform, MapRoom, MapWall, RoomEntrance, RoomSide, defaultMap, mapPointKey, normalizeMap, pointInOriginalTile, surfaceHeightAt } from "./map";
+import { attachmentForPoint, canAddBranchAtPoint, canAddPlatformAtPoint, canAddRoomAtPoint, CompositionMap, MAP_PRESETS, MapPlatform, MapRoom, MapWall, RoomEntrance, RoomSide, defaultMap, mapPointKey, normalizeMap, pointInOriginalTile, surfaceHeightAt } from "./map";
 import { ArtistIdentity } from "./artist";
 import {
   AuthUser,
@@ -133,9 +133,9 @@ interface StoreState {
   updateEntrance: (roomId: string, index: number, patch: Partial<RoomEntrance>) => void;
   removeEntrance: (roomId: string, index: number) => void;
 
-  // Platforms (open walkable areas on the map).
+  // Platforms (open walkable areas on the map). Attach to a terminal point.
   selectPlatform: (id: string | null) => void;
-  addPlatform: () => void;
+  addPlatformAtPoint: (pointKey: string) => void;
   updatePlatform: (id: string, patch: Partial<MapPlatform>) => void;
   deletePlatform: (id: string) => void;
 
@@ -482,23 +482,25 @@ export const useStore = create<StoreState>((set, get) => ({
   selectPlatform: (selectedPlatformId) =>
     set({ selectedPlatformId, selectedWallId: null, selectedRoomId: null, selectedEntranceIndex: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
 
-  addPlatform: () => {
+  // Attach a platform to a terminal path point; alignment positions it just
+  // past that point so its near edge meets the path.
+  addPlatformAtPoint: (pointKey) => {
     const map = get().composition.map;
-    // Place the new platform a little ahead of the start.
-    const [sx, sz] = map.start.position;
-    const [, fz] = map.start.direction;
-    const forward = fz >= 0 ? 1 : -1;
+    if (!canAddPlatformAtPoint(map, pointKey)) return;
+    const attachment = attachmentForPoint(map, pointKey);
+    if (!attachment) return;
     const platform: MapPlatform = {
       id: newId(),
-      center: [sx, sz - forward * 16],
+      center: [0, 0],
       rotation: 0,
       shape: "rect",
       width: 18,
       depth: 18,
-      elevation: surfaceHeightAt(map, map.start.position),
+      elevation: 0,
+      attachment,
     };
     get().setMap({ preset: "custom", platforms: [...map.platforms, platform] });
-    set({ selectedPlatformId: platform.id, selectedWallId: null, selectedRoomId: null, selectedEntranceIndex: null, selectedId: null, selectedMapSegmentId: null, selectedMapPointKey: null, selectedStart: false });
+    set({ selectedPlatformId: platform.id, selectedWallId: null, selectedRoomId: null, selectedEntranceIndex: null, selectedId: null, selectedMapSegmentId: null, selectedMapPointKey: null, branchStartPointKey: null, selectedStart: false });
   },
 
   updatePlatform: (id, patch) => {
@@ -574,8 +576,9 @@ export const useStore = create<StoreState>((set, get) => ({
       preset: "custom",
       segments: map.segments.filter((s) => mapPointKey(s.start) !== pointKey && mapPointKey(s.end) !== pointKey),
       rooms: map.rooms.filter((room) => !room.attachment || !deletedSegmentIds.has(room.attachment.segmentId)),
+      platforms: map.platforms.filter((platform) => !platform.attachment || !deletedSegmentIds.has(platform.attachment.segmentId)),
     });
-    set({ selectedMapPointKey: null, branchStartPointKey: null, selectedRoomId: null, selectedEntranceIndex: null });
+    set({ selectedMapPointKey: null, branchStartPointKey: null, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null });
   },
 
   // Grow the path: add a new segment extending from the point, and select the
