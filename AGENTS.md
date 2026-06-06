@@ -3,9 +3,12 @@
 Orientation for coding agents working on Polyphonia. Read this, then
 [README.md](README.md) (product/features) and [BACKLOG.md](BACKLOG.md) (active
 roadmap). Keep README product guidance current when behavior changes. Treat
-BACKLOG as a forward-looking planning list: update existing relevant checkboxes
-when roadmap work is completed or priorities change, but do not add completed
-implementation notes after the fact. Git history is the record of changes.
+BACKLOG as a forward-looking planning list. Never mark a backlog item complete
+without the user's manual verification, even when implementing a requested
+range of items autonomously; finish the code and hand off the relevant manual
+checks while leaving the checkbox open. Update existing items when priorities
+change, but do not add completed implementation notes after the fact. Git
+history is the record of changes.
 
 ## What this is
 
