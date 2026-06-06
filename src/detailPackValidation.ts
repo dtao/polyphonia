@@ -159,7 +159,7 @@ function isTexture(asset: DetailPackBundleAsset): boolean {
   return /\.(png|jpe?g|webp|ktx2)$/i.test(asset.name) && ALLOWED_TEXTURE_TYPES.has(asset.type);
 }
 
-function inspectGlb(bytes: Uint8Array, name: string): { triangles: number; drawCalls: number } {
+export function inspectGlb(bytes: Uint8Array, name: string): { triangles: number; drawCalls: number } {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (bytes.byteLength < 20 || view.getUint32(0, true) !== 0x46546c67 || view.getUint32(4, true) !== 2) {
     throw new Error(`Model "${name}" is not a valid glTF 2.0 binary.`);
@@ -194,6 +194,23 @@ function inspectGlb(bytes: Uint8Array, name: string): { triangles: number; drawC
     }
   }
   return { triangles, drawCalls };
+}
+
+export async function validateLandmarkGlb(file: File): Promise<{ triangles: number; drawCalls: number }> {
+  if (!file.name.toLowerCase().endsWith(".glb")) {
+    throw new Error("Landmarks must be self-contained .glb files.");
+  }
+  if (file.size > MAX_MODEL_BYTES) {
+    throw new Error(`Model "${file.name}" exceeds 32 MB.`);
+  }
+  const metrics = inspectGlb(new Uint8Array(await file.arrayBuffer()), file.name);
+  if (metrics.triangles > 500_000) {
+    throw new Error(`Model "${file.name}" exceeds the 500,000 triangle limit.`);
+  }
+  if (metrics.drawCalls > 300) {
+    throw new Error(`Model "${file.name}" exceeds the 300 draw-call limit.`);
+  }
+  return metrics;
 }
 
 async function textureDimension(bytes: Uint8Array, type: string): Promise<number> {

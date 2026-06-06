@@ -42,6 +42,15 @@ import {
   EnvironmentPackDefinition,
   registerCustomEnvironmentPacks,
 } from "./environmentPacks";
+import {
+  CreatorAsset,
+  CreatorLandmarkImport,
+  CreatorMaterialImport,
+  importCreatorLandmark,
+  importCreatorMaterial,
+  loadCreatorAssets,
+  removeCreatorAssetRecord,
+} from "./creatorAssets";
 
 // Non-reactive registry of each track marker's 3D object, so the move-gizmo
 // can attach to the selected track's object without prop-drilling refs.
@@ -107,6 +116,7 @@ interface StoreState {
   undoStack: Composition[];
   redoStack: Composition[];
   customDetailPacks: EnvironmentPackDefinition[];
+  creatorAssets: CreatorAsset[];
 
   mode: Mode;
   selectedId: string | null;
@@ -133,6 +143,9 @@ interface StoreState {
   startAudio: () => Promise<void>;
   importDetailPack: (file: File) => Promise<void>;
   removeDetailPack: (id: string) => Promise<void>;
+  importMaterialAsset: (input: CreatorMaterialImport) => Promise<string>;
+  importLandmarkAsset: (input: CreatorLandmarkImport) => Promise<string>;
+  removeCreatorAsset: (id: string) => Promise<void>;
 
   // Auth (for publishing). Editing/playing never requires an account.
   initAuth: () => void;
@@ -579,6 +592,7 @@ export const useStore = create<StoreState>((set, get) => ({
   undoStack: [],
   redoStack: [],
   customDetailPacks: [],
+  creatorAssets: [],
   mode: "explore",
   selectedId: null,
   selectedMapPointKey: null,
@@ -639,6 +653,22 @@ export const useStore = create<StoreState>((set, get) => ({
             selectedLandmarkId: null,
           }
         : {}),
+    }));
+  },
+  importMaterialAsset: async (input) => {
+    const asset = await importCreatorMaterial(input);
+    set((state) => ({ creatorAssets: [...state.creatorAssets, asset] }));
+    return asset.id;
+  },
+  importLandmarkAsset: async (input) => {
+    const asset = await importCreatorLandmark(input);
+    set((state) => ({ creatorAssets: [...state.creatorAssets, asset] }));
+    return asset.id;
+  },
+  removeCreatorAsset: async (id) => {
+    await removeCreatorAssetRecord(id);
+    set((state) => ({
+      creatorAssets: state.creatorAssets.filter((asset) => asset.id !== id),
     }));
   },
 
@@ -1306,14 +1336,17 @@ export const useStore = create<StoreState>((set, get) => ({
 
   // Load the saved library (or seed/migrate) and resolve the current composition.
   initLibrary: async () => {
-    const customDetailPacks = await loadStoredDetailPacks();
+    const [customDetailPacks, creatorAssets] = await Promise.all([
+      loadStoredDetailPacks(),
+      loadCreatorAssets(),
+    ]);
     registerCustomEnvironmentPacks(customDetailPacks);
     const { library, currentId } = loadLibrary();
     const current = library.find((c) => c.id === currentId) ?? library[0];
     const composition = current ? await resolveComposition(current) : get().composition;
     moveViewToMapStart(composition.map);
     clearHistoryMarkers();
-    set({ library, composition, customDetailPacks, undoStack: [], redoStack: [] });
+    set({ library, composition, customDetailPacks, creatorAssets, undoStack: [], redoStack: [] });
   },
 
   // Switch the current composition. The outgoing one is flushed back into the
@@ -1362,7 +1395,10 @@ export const useStore = create<StoreState>((set, get) => ({
   // Load an exported bundle as a new composition in the library and switch to it.
   importComposition: async (file) => {
     const comp = normalizeComposition(await importBundle(file));
-    const customDetailPacks = await loadStoredDetailPacks();
+    const [customDetailPacks, creatorAssets] = await Promise.all([
+      loadStoredDetailPacks(),
+      loadCreatorAssets(),
+    ]);
     registerCustomEnvironmentPacks(customDetailPacks);
     const { composition, library } = get();
     revokeBlobUrls(composition);
@@ -1374,6 +1410,7 @@ export const useStore = create<StoreState>((set, get) => ({
       selectedId: null,
       selectedLandmarkId: null,
       customDetailPacks,
+      creatorAssets,
       library: next,
       undoStack: [],
       redoStack: [],
