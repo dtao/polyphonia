@@ -1,4 +1,9 @@
 import { Composition, TrackDef, defaultComposition, normalizeComposition } from "./composition";
+import {
+  detailPackBundleForId,
+  importDetailPackPayload,
+  type DetailPackBundle,
+} from "./detailPackStorage";
 import { newId } from "./id";
 import { databaseRequest, STEM_STORE } from "./localDatabase";
 import { normalizeMap } from "./map";
@@ -121,9 +126,9 @@ export async function copyComposition(s: SerializedComposition): Promise<Seriali
   };
 }
 
-// ===== Export / import: a single self-contained .polyphonia.json bundle =====
+// ===== Export / import: one self-contained composition + media bundle =====
 
-const BUNDLE_VERSION = 1;
+const BUNDLE_VERSION = 2;
 
 function toBase64(buf: ArrayBuffer): string {
   const bytes = new Uint8Array(buf);
@@ -144,7 +149,8 @@ function base64ToBlob(b64: string, type: string): Blob {
 
 type StemEntry = { name: string; type: string; data: string };
 
-// Download the composition with all stem audio embedded, fully portable.
+// Download the composition with uploaded stems and any local custom detail pack
+// embedded, so the map remains fully portable.
 export async function exportComposition(comp: Composition): Promise<void> {
   const normalized = normalizeComposition(comp);
   const stems: Record<string, StemEntry> = {};
@@ -159,7 +165,15 @@ export async function exportComposition(comp: Composition): Promise<void> {
     }
   }
 
-  const payload = { version: BUNDLE_VERSION, composition: { ...normalized, tracks }, stems };
+  const detailPack = normalized.environment.pack?.id
+    ? await detailPackBundleForId(normalized.environment.pack.id)
+    : undefined;
+  const payload = {
+    version: BUNDLE_VERSION,
+    composition: { ...normalized, tracks },
+    stems,
+    ...(detailPack ? { detailPack } : {}),
+  };
   const url = URL.createObjectURL(new Blob([JSON.stringify(payload)], { type: "application/json" }));
   const a = document.createElement("a");
   a.href = url;
@@ -172,7 +186,12 @@ export async function exportComposition(comp: Composition): Promise<void> {
 // in-memory composition (with object URLs) ready to become the current one.
 export async function importComposition(file: File): Promise<Composition> {
   const payload = JSON.parse(await file.text());
-  if (payload?.version !== BUNDLE_VERSION) throw new Error("Unrecognized or unsupported Polyphonia file.");
+  if (payload?.version !== 1 && payload?.version !== BUNDLE_VERSION) {
+    throw new Error("Unrecognized or unsupported Polyphonia file.");
+  }
+  if (payload.detailPack) {
+    await importDetailPackPayload(payload.detailPack as Partial<DetailPackBundle>);
+  }
   const saved: SerializedComposition = payload.composition;
   const stems: Record<string, StemEntry> = payload.stems ?? {};
 

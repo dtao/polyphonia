@@ -18,6 +18,12 @@ const objectUrls = new Map<string, string>();
 
 export async function importDetailPackBundle(file: File): Promise<EnvironmentPackDefinition> {
   const payload = JSON.parse(await file.text()) as Partial<DetailPackBundle>;
+  return importDetailPackPayload(payload);
+}
+
+export async function importDetailPackPayload(
+  payload: Partial<DetailPackBundle>,
+): Promise<EnvironmentPackDefinition> {
   if (payload.version !== 1 || !payload.manifest || !payload.assets) {
     throw new Error("Unrecognized or unsupported detail-pack bundle.");
   }
@@ -39,6 +45,30 @@ export async function importDetailPackBundle(file: File): Promise<EnvironmentPac
   const stored = rewritePackUrls(payload.manifest, (url) => replacements.get(url) ?? url);
   await databaseRequest<void>(DETAIL_PACK_STORE, "readwrite", (store) => store.put(stored, stored.id));
   return resolveStoredDetailPack(stored);
+}
+
+export async function detailPackBundleForId(id: string): Promise<DetailPackBundle | undefined> {
+  const manifest = await getStoredDetailPack(id);
+  if (!manifest) return undefined;
+  const assets: Record<string, DetailPackBundleAsset> = {};
+  for (const reference of [...new Set(packAssetReferences(manifest))]) {
+    if (!reference.startsWith("asset:")) continue;
+    const hash = reference.slice("asset:".length);
+    const entry = await storedAsset(hash);
+    if (!entry) throw new Error(`Detail-pack asset ${hash} is missing from local storage.`);
+    assets[hash] = {
+      name: entry.name,
+      type: entry.type || entry.blob.type || "application/octet-stream",
+      data: toBase64(await entry.blob.arrayBuffer()),
+    };
+  }
+  return {
+    version: 1,
+    manifest: rewritePackUrls(manifest, (url) =>
+      url.startsWith("asset:") ? `bundle:${url.slice("asset:".length)}` : url,
+    ),
+    assets,
+  };
 }
 
 function assertImportableManifest(manifest: EnvironmentPackDefinition): void {
@@ -158,4 +188,14 @@ function base64ToBlob(base64: string, type: string): Blob {
 async function sha256(blob: Blob): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function toBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+  return btoa(binary);
 }

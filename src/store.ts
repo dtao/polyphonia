@@ -1348,12 +1348,22 @@ export const useStore = create<StoreState>((set, get) => ({
   // Load an exported bundle as a new composition in the library and switch to it.
   importComposition: async (file) => {
     const comp = normalizeComposition(await importBundle(file));
+    const customDetailPacks = await loadStoredDetailPacks();
+    registerCustomEnvironmentPacks(customDetailPacks);
     const { composition, library } = get();
     revokeBlobUrls(composition);
     const next = upsert(upsert(library, serializeComposition(composition)), serializeComposition(comp));
     moveViewToMapStart(comp.map);
     clearHistoryMarkers();
-    set({ composition: comp, selectedId: null, library: next, undoStack: [], redoStack: [] });
+    set({
+      composition: comp,
+      selectedId: null,
+      selectedLandmarkId: null,
+      customDetailPacks,
+      library: next,
+      undoStack: [],
+      redoStack: [],
+    });
     persistLibrary(next, comp.id);
   },
 
