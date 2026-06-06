@@ -1,11 +1,20 @@
 export type EnvironmentType = "void" | "studio" | "cavern" | "forest" | "crystal" | "galaxy";
 export type EnvironmentMaterial = "neutral" | "stone" | "foliage" | "glass";
 export type SpaceTiling = "none" | "square" | "hex";
+export type EnvironmentQuality = "auto" | "low" | "high";
+
+export interface EnvironmentPackSelection {
+  id: string;
+  variant?: string;
+  quality: EnvironmentQuality;
+}
 
 export interface EnvironmentSettings {
   type: EnvironmentType;
   material: EnvironmentMaterial;
   ambience: number;
+  /** Optional authored visual layer. The map remains authoritative for gameplay. */
+  pack?: EnvironmentPackSelection;
   tiling: {
     mode: SpaceTiling;
     size: number;
@@ -35,6 +44,7 @@ export function normalizeEnvironment(value: Partial<EnvironmentSettings> | undef
     type,
     material: isEnvironmentMaterial(value?.material) ? value.material : preset.material,
     ambience: clamp(value?.ambience ?? preset.ambience, 0, 1),
+    ...(normalizePack(value?.pack) ? { pack: normalizePack(value?.pack) } : {}),
     tiling: {
       mode: isSpaceTiling(tiling?.mode) ? tiling.mode : defaultEnvironment.tiling.mode,
       size: clamp(tiling?.size ?? defaultEnvironment.tiling.size, 8, 256),
@@ -43,8 +53,22 @@ export function normalizeEnvironment(value: Partial<EnvironmentSettings> | undef
   };
 }
 
+function normalizePack(value: EnvironmentPackSelection | undefined): EnvironmentPackSelection | undefined {
+  if (!value || typeof value.id !== "string" || !value.id.trim()) return undefined;
+  const variant = typeof value.variant === "string" && value.variant.trim() ? value.variant.trim() : undefined;
+  return {
+    id: value.id.trim(),
+    ...(variant ? { variant } : {}),
+    quality: isEnvironmentQuality(value.quality) ? value.quality : "auto",
+  };
+}
+
 function isEnvironmentType(value: unknown): value is EnvironmentType {
   return value === "void" || value === "studio" || value === "cavern" || value === "forest" || value === "crystal" || value === "galaxy";
+}
+
+function isEnvironmentQuality(value: unknown): value is EnvironmentQuality {
+  return value === "auto" || value === "low" || value === "high";
 }
 
 function isEnvironmentMaterial(value: unknown): value is EnvironmentMaterial {

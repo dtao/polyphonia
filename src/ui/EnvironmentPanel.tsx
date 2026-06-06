@@ -1,4 +1,5 @@
 import { ENVIRONMENT_PRESETS, EnvironmentType } from "../environment";
+import { environmentPackById, environmentPacksForType } from "../environmentPacks";
 import { useStore } from "../store";
 
 const LABELS: Record<EnvironmentType, string> = {
@@ -13,6 +14,8 @@ const LABELS: Record<EnvironmentType, string> = {
 export function EnvironmentPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () => void; onClose: () => void }) {
   const environment = useStore((s) => s.composition.environment);
   const setEnvironment = useStore((s) => s.setEnvironment);
+  const packs = environmentPacksForType(environment.type);
+  const selectedPack = environmentPackById(environment.pack?.id);
 
   if (!open) {
     return (
@@ -38,7 +41,7 @@ export function EnvironmentPanel({ open, onOpen, onClose }: { open: boolean; onO
             <button
               key={type}
               style={{ ...presetBtn, ...(active ? presetActive : null) }}
-              onClick={() => setEnvironment({ ...ENVIRONMENT_PRESETS[type], tiling: environment.tiling })}
+              onClick={() => setEnvironment({ ...ENVIRONMENT_PRESETS[type], pack: undefined, tiling: environment.tiling })}
             >
               {LABELS[type]}
             </button>
@@ -62,8 +65,59 @@ export function EnvironmentPanel({ open, onOpen, onClose }: { open: boolean; onO
         />
       </label>
 
+      {packs.length > 0 && (
+        <label style={{ display: "block", marginTop: 10 }}>
+          <div style={sliderHead}>
+            <span>Detail pack</span>
+          </div>
+          <select
+            value={selectedPack?.id ?? ""}
+            onChange={(event) => {
+              const pack = environmentPackById(event.target.value);
+              setEnvironment({
+                pack: pack ? { id: pack.id, variant: pack.variants[0], quality: "auto" } : undefined,
+                ...(pack ? { material: pack.material } : {}),
+              });
+            }}
+            style={select}
+          >
+            <option value="">Procedural</option>
+            {packs.map((pack) => (
+              <option key={pack.id} value={pack.id}>
+                {pack.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      {selectedPack && (
+        <label style={{ display: "block", marginTop: 8 }}>
+          <div style={sliderHead}>
+            <span>Asset quality</span>
+          </div>
+          <select
+            value={environment.pack?.quality ?? "auto"}
+            onChange={(event) =>
+              setEnvironment({
+                pack: {
+                  ...environment.pack!,
+                  quality: event.target.value as "auto" | "low" | "high",
+                },
+              })
+            }
+            style={select}
+          >
+            <option value="auto">Auto</option>
+            <option value="low">Low</option>
+            <option value="high">High</option>
+          </select>
+        </label>
+      )}
+
       <div style={meta}>
         Material: {environment.material}
+        {selectedPack ? ` · ${selectedPack.description}` : ""}
       </div>
     </div>
   );
@@ -157,4 +211,15 @@ const meta: React.CSSProperties = {
   color: "rgba(255,255,255,0.5)",
   fontSize: 11,
   textTransform: "capitalize",
+};
+
+const select: React.CSSProperties = {
+  width: "100%",
+  marginTop: 4,
+  padding: "7px 8px",
+  borderRadius: 6,
+  border: "1px solid rgba(255,255,255,0.14)",
+  background: "#151a2b",
+  color: "white",
+  fontSize: 12,
 };

@@ -20,7 +20,9 @@ these spatial compositions.
   for car-scale exploration.
 - **Immersive spaces** — compositions carry environment metadata and can render
   procedural spaces such as a studio void, cavern, forest clearing, or crystal
-  hall; editable path maps can define terminal loop points for corridor-like
+  hall. Environment metadata can also select an optional authored detail pack
+  and quality tier while retaining the procedural preset as a safe fallback.
+  Editable path maps can define terminal loop points for corridor-like
   spaces that wrap back on themselves. Path segments can be marked as enclosed
   **tunnels** whose walls and ceiling muffle sound passing in or out the sides,
   and open **platforms** (rectangle, hex, or circle) attach to a terminal path
