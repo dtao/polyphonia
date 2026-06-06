@@ -85,8 +85,9 @@ earlier ones.
 - [x] P11 Floor textures have a visible gap at joints - where path segments connect at an angle.
 - [x] P12 Environmental objects (trees, crystals, etc.) should fade in from the distance as you approach rather than abruptly appear - same as stem orbs.
 - [x] P13 Environmental (trees, etc.) show visible flicker as player crosses the loop boundary on path-loop maps.
-- [ ] P14 Creating any new object (incl. landmark, wall) should set its location based on where the camera is looking in Edit mode. (Use same logic for stems, which are already created where the camera is pointed.)
-- [ ] P15 Cloning any object should create a copy at the same elevation.
-- [ ] P16 Placed landmarks should not disappear when changing detail packs in Edit mode.
-- [ ] P17 Default room/wall/tunnel height should be above eye height - maybe 1.5x (it would probably be best to actually make these values explicitly related so future adjustments to eye height will update the other values).
-- [ ] P18 Walls should have standard movement control (same control used to move stems) allowing users to drag along 3 dimensions.
+- [x] P14 Creating any new object (incl. landmark, wall) should set its location based on where the camera is looking in Edit mode. (Use same logic for stems, which are already created where the camera is pointed.)
+- [x] P15 Cloning any object should create a copy at the same elevation.
+- [x] P16 Placed landmarks should not disappear when changing detail packs in Edit mode.
+- [x] P17 Default room/wall/tunnel height should be above eye height - maybe 1.5x (it would probably be best to actually make these values explicitly related so future adjustments to eye height will update the other values).
+- [x] P18 Walls should have standard movement control (same control used to move stems) allowing users to drag along 3 dimensions.
+- [ ] P19 Crossing loop boundary can make landmark objects suddenly appear/disappear
