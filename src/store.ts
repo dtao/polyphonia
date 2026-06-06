@@ -829,7 +829,8 @@ export const useStore = create<StoreState>((set, get) => ({
     }),
   addLandmark: (assetId) => {
     const state = get();
-    const [x, z] = state.composition.map.start.position;
+    const x = viewState.x;
+    const z = viewState.z;
     const creatorAsset = state.creatorAssets.find(
       (asset) => asset.kind === "landmark" && asset.id === assetId,
     );
@@ -930,19 +931,16 @@ export const useStore = create<StoreState>((set, get) => ({
 
   addRoom: () => {
     const map = get().composition.map;
-    // Place the new room a little ahead of the start, entrance facing the start.
-    const [sx, sz] = map.start.position;
-    const [, fz] = map.start.direction;
-    const forward = fz >= 0 ? 1 : -1; // start usually faces -z
+    const forward = viewState.fz >= 0 ? 1 : -1;
     const room: MapRoom = {
       id: newId(),
-      center: [sx, sz - forward * 12],
+      center: [viewState.x, viewState.z],
       rotation: 0,
       width: 14,
       depth: 12,
       height: 3.4,
-      elevation: 0,
-      // opening back toward the start/path
+      elevation: surfaceHeightAt(map, [viewState.x, viewState.z]),
+      // Face the doorway toward the edit camera's horizontal look direction.
       entrances: [{ side: forward > 0 ? "south" : "north", width: 5, offset: 0 }],
     };
     get().setMap({ rooms: [...map.rooms, room] });
@@ -1178,15 +1176,13 @@ export const useStore = create<StoreState>((set, get) => ({
 
   addWall: () => {
     const map = get().composition.map;
-    // Place a short wall a little ahead of the start, perpendicular to facing.
-    const [sx, sz] = map.start.position;
-    const [fx, fz] = map.start.direction;
-    const ahead: [number, number] = [sx + fx * 8, sz + fz * 8];
-    const perp: [number, number] = [-fz, fx];
+    const facingLength = Math.hypot(viewState.fx, viewState.fz) || 1;
+    const facing: [number, number] = [viewState.fx / facingLength, viewState.fz / facingLength];
+    const perp: [number, number] = [-facing[1], facing[0]];
     const wall: MapWall = {
       id: newId(),
-      start: [ahead[0] - perp[0] * 4, ahead[1] - perp[1] * 4],
-      end: [ahead[0] + perp[0] * 4, ahead[1] + perp[1] * 4],
+      start: [viewState.x - perp[0] * 4, viewState.z - perp[1] * 4],
+      end: [viewState.x + perp[0] * 4, viewState.z + perp[1] * 4],
       height: 3,
     };
     get().setMap({ preset: "custom", walls: [...map.walls, wall] });

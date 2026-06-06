@@ -2,10 +2,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { defaultComposition, normalizeComposition } from "./composition";
 
 let useStore: typeof import("./store").useStore;
+let viewState: typeof import("./store").viewState;
 
 beforeAll(async () => {
   vi.stubGlobal("window", {});
-  ({ useStore } = await import("./store"));
+  ({ useStore, viewState } = await import("./store"));
 });
 
 beforeEach(() => {
@@ -127,5 +128,24 @@ describe("store edit contracts", () => {
     expect(useStore.getState().composition.environment.landmarks).toBeUndefined();
     await useStore.getState().undo();
     expect(useStore.getState().composition.environment.landmarks).toHaveLength(1);
+  });
+
+  it("creates free objects at the edit camera target", () => {
+    Object.assign(viewState, { x: 18, y: 0, z: -11, fx: 1, fz: 0 });
+
+    useStore.getState().addLandmark("evergreen");
+    useStore.getState().addRoom();
+    useStore.getState().addWall();
+
+    const state = useStore.getState();
+    expect(state.composition.environment.landmarks?.[0]?.position).toEqual([18, 0, -11]);
+    expect(state.composition.map.rooms[state.composition.map.rooms.length - 1]).toMatchObject({
+      center: [18, -11],
+      elevation: 0,
+    });
+    expect(state.composition.map.walls[state.composition.map.walls.length - 1]).toMatchObject({
+      start: [18, -15],
+      end: [18, -7],
+    });
   });
 });
