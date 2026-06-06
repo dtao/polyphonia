@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CompositionMap } from "../map";
 import { geoWalk, viewState } from "../store";
+import { isMobileTouchDevice } from "./TouchControls";
 
 type GeoStatus = "idle" | "starting" | "active" | "unsupported" | "error";
 
@@ -15,6 +16,9 @@ const POSITION_SMOOTHING = 0.35;
 
 export function GeoWalkControls({ map }: { map: CompositionMap }) {
   const tiled = map.tiling.type === "square" || map.tiling.type === "hex";
+  // Geo Drive follows real GPS movement (car-scale), so it only makes sense on a
+  // phone/tablet and on a tiled map that can wrap forever. Hide it elsewhere.
+  const available = tiled && isMobileTouchDevice();
   const [enabled, setEnabled] = useState(false);
   const [status, setStatus] = useState<GeoStatus>("idle");
   const [accuracy, setAccuracy] = useState<number | null>(null);
@@ -25,15 +29,15 @@ export function GeoWalkControls({ map }: { map: CompositionMap }) {
   const rotation = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!tiled && enabled) setEnabled(false);
-  }, [enabled, tiled]);
+    if (!available && enabled) setEnabled(false);
+  }, [enabled, available]);
 
   useEffect(() => {
-    geoWalk.active = enabled && tiled;
-    if (!enabled || !tiled) {
+    geoWalk.active = enabled && available;
+    if (!enabled || !available) {
       stopWatch();
       resetWalk();
-      if (!tiled) setStatus("idle");
+      if (!available) setStatus("idle");
       return;
     }
 
@@ -54,7 +58,7 @@ export function GeoWalkControls({ map }: { map: CompositionMap }) {
       stopWatch();
       resetWalk();
     };
-  }, [enabled, tiled]);
+  }, [enabled, available]);
 
   function stopWatch(): void {
     if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current);
@@ -119,7 +123,7 @@ export function GeoWalkControls({ map }: { map: CompositionMap }) {
     setStatus("error");
   }
 
-  if (!tiled) return null;
+  if (!available) return null;
 
   const active = enabled && status !== "error" && status !== "unsupported";
   const label = active ? "Geo Drive on" : "Geo Drive";

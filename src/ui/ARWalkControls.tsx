@@ -1,13 +1,7 @@
 import { useEffect, useState } from "react";
 import { AR_WALK_START_EVENT, AR_WALK_STATUS_EVENT, AR_WALK_STOP_EVENT, ARWalkStatus, idleARWalkStatus } from "../arWalk";
 import { CompositionMap } from "../map";
-import { isTouchDevice } from "./TouchControls";
-
-function isMobileTouchDevice(): boolean {
-  if (!isTouchDevice()) return false;
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return true;
-  return window.matchMedia("(hover: none) and (pointer: coarse)").matches;
-}
+import { isMobileTouchDevice } from "./TouchControls";
 
 export function ARWalkControls({ map }: { map: CompositionMap }) {
   const tiled = map.tiling.type === "square" || map.tiling.type === "hex";

@@ -81,6 +81,15 @@ export function isTouchDevice(): boolean {
   return typeof window !== "undefined" && (("ontouchstart" in window) || navigator.maxTouchPoints > 0);
 }
 
+// A touch device that also reports a coarse, hover-less pointer — i.e. a phone or
+// tablet, not a touchscreen laptop. Used to gate phone-only explore inputs (AR
+// Walk, Geo Drive).
+export function isMobileTouchDevice(): boolean {
+  if (!isTouchDevice()) return false;
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return true;
+  return window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+}
+
 const baseStyle: React.CSSProperties = {
   position: "absolute",
   left: 28,
