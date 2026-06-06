@@ -172,7 +172,6 @@ export function TrackMarker({
             ref={flare}
             transparent
             depthWrite={false}
-            depthTest={false}
             blending={THREE.AdditiveBlending}
             uniforms={{
               color: { value: new THREE.Color(track.color) },
@@ -189,7 +188,6 @@ export function TrackMarker({
             ref={rays}
             transparent
             depthWrite={false}
-            depthTest={false}
             blending={THREE.AdditiveBlending}
             uniforms={{
               color: { value: new THREE.Color(track.color) },
