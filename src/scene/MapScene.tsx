@@ -431,7 +431,16 @@ function PlatformAddButton({ platform, map, side, elevationY }: { platform: MapP
     const currentMap = useStore.getState().composition.map;
     setMap({
       preset: "custom",
-      segments: [...currentMap.segments, { id: newId(), start, end, width: averageWidth }],
+      segments: [
+        ...currentMap.segments,
+        {
+          id: newId(),
+          start,
+          end,
+          width: averageWidth,
+          connections: { start: { kind: "platform", platformId: platform.id, localPoint: localStart } },
+        },
+      ],
       elevations: elevationY ? { ...(currentMap.elevations ?? {}), [pointKey(start)]: elevationY, [pointKey(end)]: elevationY } : currentMap.elevations,
     });
     selectMapPoint(pointKey(end));

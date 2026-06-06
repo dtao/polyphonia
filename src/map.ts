@@ -11,11 +11,16 @@ export interface WalkableSegment {
   end: [number, number];
   width: number;
   kind?: SegmentKind; // absent = "path"
+  connections?: Partial<Record<SegmentEnd, SegmentEndpointConnection>>;
 }
 
 export type RoomSide = "north" | "south" | "east" | "west";
 export type SegmentEnd = "start" | "end";
 export type MapTilingType = "none" | "path-loop" | "square" | "hex";
+
+export type SegmentEndpointConnection =
+  | { kind: "room"; roomId: string; localPoint: [number, number]; entranceIndex?: number; entranceOffset?: number }
+  | { kind: "platform"; platformId: string; localPoint: [number, number] };
 
 export interface RoomAttachment {
   segmentId: string;
@@ -167,7 +172,7 @@ export const defaultMap: CompositionMap = MAP_PRESETS.open;
 export function normalizeMap(value: Partial<CompositionMap> | undefined): CompositionMap {
   const preset = isMapPreset(value?.preset) ? value.preset : defaultMap.preset;
   const fallback = preset === "custom" ? defaultMap : MAP_PRESETS[preset];
-  const segments = Array.isArray(value?.segments) ? value.segments.filter(isWalkableSegment) : fallback.segments;
+  const segments = Array.isArray(value?.segments) ? value.segments.filter(isWalkableSegment).map(normalizeSegment) : fallback.segments;
   const rooms = Array.isArray(value?.rooms) ? value.rooms.filter(isMapRoom).map(normalizeRoom) : fallback.rooms;
   const platforms = Array.isArray(value?.platforms) ? value.platforms.filter(isMapPlatform).map(normalizePlatform) : fallback.platforms;
   const walls = Array.isArray(value?.walls) ? value.walls.filter(isMapWall).map(normalizeWall) : fallback.walls;
@@ -175,7 +180,7 @@ export function normalizeMap(value: Partial<CompositionMap> | undefined): Compos
   const startDirection = normalizeDirection(isPoint(value?.start?.direction) ? value.start.direction : fallback.start.direction);
   const legacyLoop = isMapLoop(value?.loop) ? value.loop : undefined;
   const tiling = normalizeMapTiling(value?.tiling, legacyLoop, fallback.tiling);
-  const map = alignAttachedRooms({
+  const map = alignConnectedSegmentEndpoints(inferSegmentEndpointConnections(alignAttachedRooms({
     preset,
     segments,
     rooms,
@@ -188,7 +193,7 @@ export function normalizeMap(value: Partial<CompositionMap> | undefined): Compos
       position: startPosition,
       direction: startDirection,
     },
-  });
+  })));
   map.loop = normalizeMapLoop(map);
   map.tiling = normalizeMapTiling({ ...tiling, pathLoop: map.loop }, undefined, fallback.tiling);
   map.loop = map.tiling.type === "path-loop" ? map.tiling.pathLoop : undefined;
@@ -219,6 +224,106 @@ function normalizeElevations(value: unknown, segments: WalkableSegment[]): Recor
     if (keys.has(key) && typeof raw === "number" && Number.isFinite(raw) && raw !== 0) out[key] = raw;
   }
   return out;
+}
+
+function normalizeSegment(segment: WalkableSegment): WalkableSegment {
+  const connections = normalizeSegmentConnections(segment.connections);
+  return {
+    ...segment,
+    ...(connections ? { connections } : {}),
+  };
+}
+
+function normalizeSegmentConnections(value: unknown): WalkableSegment["connections"] | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = value as Partial<Record<SegmentEnd, unknown>>;
+  const start = normalizeSegmentConnection(raw.start);
+  const end = normalizeSegmentConnection(raw.end);
+  return start || end ? { ...(start ? { start } : {}), ...(end ? { end } : {}) } : undefined;
+}
+
+function normalizeSegmentConnection(value: unknown): SegmentEndpointConnection | undefined {
+  const connection = value as SegmentEndpointConnection | undefined;
+  if (!connection || typeof connection !== "object") return undefined;
+  if (connection.kind === "room" && typeof connection.roomId === "string" && isPoint(connection.localPoint)) {
+    const entranceIndex = typeof connection.entranceIndex === "number" && Number.isInteger(connection.entranceIndex) && connection.entranceIndex >= 0 ? connection.entranceIndex : undefined;
+    const entranceOffset = typeof connection.entranceOffset === "number" && Number.isFinite(connection.entranceOffset) ? connection.entranceOffset : undefined;
+    return { kind: "room", roomId: connection.roomId, localPoint: connection.localPoint, ...(entranceIndex !== undefined ? { entranceIndex } : {}), ...(entranceOffset !== undefined ? { entranceOffset } : {}) };
+  }
+  if (connection.kind === "platform" && typeof connection.platformId === "string" && isPoint(connection.localPoint)) {
+    return { kind: "platform", platformId: connection.platformId, localPoint: connection.localPoint };
+  }
+  return undefined;
+}
+
+function inferSegmentEndpointConnections(map: CompositionMap): CompositionMap {
+  return {
+    ...map,
+    segments: map.segments.map((segment) => {
+      const start = validConnection(map, segment.connections?.start) ?? inferEndpointConnection(map, segment, "start");
+      const end = validConnection(map, segment.connections?.end) ?? inferEndpointConnection(map, segment, "end");
+      return {
+        ...segment,
+        ...(start || end ? { connections: { ...(start ? { start } : {}), ...(end ? { end } : {}) } } : { connections: undefined }),
+      };
+    }),
+  };
+}
+
+function alignConnectedSegmentEndpoints(map: CompositionMap): CompositionMap {
+  return {
+    ...map,
+    segments: map.segments.map((segment) => {
+      let next = segment;
+      for (const end of ["start", "end"] as const) {
+        const point = segmentConnectionPoint(map, segment.connections?.[end]);
+        if (!point) continue;
+        next = { ...next, [end]: point };
+      }
+      return next;
+    }),
+  };
+}
+
+function validConnection(map: CompositionMap, connection: SegmentEndpointConnection | undefined): SegmentEndpointConnection | undefined {
+  if (!connection) return undefined;
+  if (connection.kind === "room") return map.rooms.some((room) => room.id === connection.roomId) ? connection : undefined;
+  return map.platforms.some((platform) => platform.id === connection.platformId) ? connection : undefined;
+}
+
+function inferEndpointConnection(map: CompositionMap, segment: WalkableSegment, end: SegmentEnd): SegmentEndpointConnection | undefined {
+  const point = end === "start" ? segment.start : segment.end;
+  for (const room of map.rooms) {
+    const localPoint = toRoomLocal(room, point);
+    const entranceIndex = room.entrances.findIndex((entrance) => pointInRect(localPoint, doorwayRect(room, entrance)));
+    if (entranceIndex >= 0) {
+      return { kind: "room", roomId: room.id, localPoint, entranceIndex, entranceOffset: room.entrances[entranceIndex].offset };
+    }
+  }
+  for (const platform of map.platforms) {
+    if (platformContains(platform, point)) return { kind: "platform", platformId: platform.id, localPoint: toPlatformLocal(platform, point) };
+  }
+  return undefined;
+}
+
+function segmentConnectionPoint(map: Pick<CompositionMap, "rooms" | "platforms">, connection: SegmentEndpointConnection | undefined): [number, number] | null {
+  if (!connection) return null;
+  if (connection.kind === "room") {
+    const room = map.rooms.find((r) => r.id === connection.roomId);
+    return room ? fromRoomLocal(room, roomConnectionLocalPoint(room, connection)) : null;
+  }
+  const platform = map.platforms.find((p) => p.id === connection.platformId);
+  return platform ? fromPlatformLocal(platform, connection.localPoint) : null;
+}
+
+function roomConnectionLocalPoint(room: MapRoom, connection: Extract<SegmentEndpointConnection, { kind: "room" }>): [number, number] {
+  const entrance = connection.entranceIndex !== undefined ? room.entrances[connection.entranceIndex] : undefined;
+  if (!entrance) return connection.localPoint;
+  const [cx, cz] = entranceLocalCenter(room, entrance);
+  const originalOffset = connection.entranceOffset ?? entrance.offset;
+  const local = connection.localPoint;
+  if (entrance.side === "north" || entrance.side === "south") return [entrance.offset + (local[0] - originalOffset), cz];
+  return [cx, entrance.offset + (local[1] - originalOffset)];
 }
 
 function hasWalkableBounds(map: Pick<CompositionMap, "segments" | "rooms" | "platforms">): boolean {
@@ -567,12 +672,20 @@ export function platformLocalPolygon(platform: MapPlatform): Array<[number, numb
 }
 
 export function platformContains(platform: MapPlatform, point: [number, number]): boolean {
-  const local = toLocalXZ(platform.center, platform.rotation, point);
+  const local = toPlatformLocal(platform, point);
   if (platform.shape === "circle") {
     const r = platform.width / 2;
     return local[0] * local[0] + local[1] * local[1] <= r * r;
   }
   return pointInPolygon(local, platformLocalPolygon(platform));
+}
+
+function toPlatformLocal(platform: MapPlatform, point: [number, number]): [number, number] {
+  return toLocalXZ(platform.center, platform.rotation, point);
+}
+
+function fromPlatformLocal(platform: MapPlatform, point: [number, number]): [number, number] {
+  return fromLocalXZ(platform.center, platform.rotation, point);
 }
 
 export function containingPlatform(map: Pick<CompositionMap, "platforms">, point: [number, number]): MapPlatform | null {

@@ -15,7 +15,7 @@ import {
 } from "./persistence";
 import { newId } from "./id";
 import { EnvironmentSettings, defaultEnvironment, normalizeEnvironment } from "./environment";
-import { attachmentForPoint, canAddBranchAtPoint, canAddPlatformAtPoint, canAddRoomAtPoint, CompositionMap, entranceDoorwayCenter, entranceOuterPoint, MAP_PRESETS, MapPlatform, MapRoom, MapWall, RoomEntrance, RoomSide, defaultMap, mapPointKey, normalizeMap, pointInOriginalTile, roomElevation, segmentEndTouchesRoomDoorway, surfaceHeightAt, WalkableSegment } from "./map";
+import { attachmentForPoint, canAddBranchAtPoint, canAddPlatformAtPoint, canAddRoomAtPoint, CompositionMap, entranceDoorwayCenter, entranceLocalCenter, entranceOuterPoint, MAP_PRESETS, MapPlatform, MapRoom, MapWall, RoomEntrance, RoomSide, defaultMap, mapPointKey, normalizeMap, pointInOriginalTile, roomElevation, surfaceHeightAt, WalkableSegment } from "./map";
 import { ArtistIdentity } from "./artist";
 import {
   AuthUser,
@@ -239,6 +239,21 @@ function moveEndpointElevations(elevations: Record<string, number> | undefined, 
   return Object.keys(next).length ? next : undefined;
 }
 
+function movedSegmentEndpoints(before: WalkableSegment[], after: WalkableSegment[]): Map<string, [number, number]> {
+  const moved = new Map<string, [number, number]>();
+  const previous = new Map(before.map((segment) => [segment.id, segment]));
+  for (const segment of after) {
+    const old = previous.get(segment.id);
+    if (!old) continue;
+    for (const end of ["start", "end"] as const) {
+      const oldPoint = old[end];
+      const nextPoint = segment[end];
+      if (mapPointKey(oldPoint) !== mapPointKey(nextPoint)) moved.set(mapPointKey(oldPoint), nextPoint);
+    }
+  }
+  return moved;
+}
+
 function pruneSelection(
   s: StoreState,
   composition: Composition,
@@ -459,29 +474,9 @@ export const useStore = create<StoreState>((set, get) => ({
     const map = get().composition.map;
     const room = map.rooms.find((r) => r.id === id);
     if (!room) return;
-    const centerDelta: [number, number] | null =
-      patch.center && (patch.center[0] !== room.center[0] || patch.center[1] !== room.center[1])
-        ? [patch.center[0] - room.center[0], patch.center[1] - room.center[1]]
-        : null;
-    if (!centerDelta) {
-      get().setMap({ rooms: map.rooms.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
-      return;
-    }
-
-    const movedEndpoints = new Map<string, [number, number]>();
-    const segments = map.segments.map((segment) => {
-      let next = segment;
-      for (const end of ["start", "end"] as const) {
-        if (!segmentEndTouchesRoomDoorway(room, segment, end)) continue;
-        const point = end === "start" ? segment.start : segment.end;
-        const moved: [number, number] = [point[0] + centerDelta[0], point[1] + centerDelta[1]];
-        movedEndpoints.set(mapPointKey(point), moved);
-        next = { ...next, [end]: moved };
-      }
-      return next;
-    });
-    const elevations = moveEndpointElevations(map.elevations, movedEndpoints);
-    get().setMap({ segments, rooms: map.rooms.map((r) => (r.id === id ? { ...r, ...patch } : r)), elevations });
+    const nextMap = normalizeMap({ ...map, rooms: map.rooms.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
+    const elevations = moveEndpointElevations(map.elevations, movedSegmentEndpoints(map.segments, nextMap.segments));
+    get().setMap({ ...nextMap, elevations });
   },
 
   deleteRoom: (id) => {
@@ -564,7 +559,13 @@ export const useStore = create<StoreState>((set, get) => ({
       // Seed a path stub at the doorway, aimed straight out of the wall.
       const end: [number, number] = [start[0] + dir[0] * 14, start[1] + dir[1] * 14];
       const width = Math.min(14, Math.max(4, entrance.width));
-      const segment: WalkableSegment = { id: newId(), start, end, width };
+      const segment: WalkableSegment = {
+        id: newId(),
+        start,
+        end,
+        width,
+        connections: { start: { kind: "room", roomId: room.id, localPoint: entranceLocalCenter(room, entrance), entranceIndex: index, entranceOffset: entrance.offset } },
+      };
       segments.push(segment);
       // Match the new path to the room's height so they stay flush.
       const elev = roomElevation(map, room);
@@ -613,7 +614,9 @@ export const useStore = create<StoreState>((set, get) => ({
 
   updatePlatform: (id, patch) => {
     const map = get().composition.map;
-    get().setMap({ preset: "custom", platforms: map.platforms.map((platform) => (platform.id === id ? { ...platform, ...patch } : platform)) });
+    const nextMap = normalizeMap({ ...map, preset: "custom", platforms: map.platforms.map((platform) => (platform.id === id ? { ...platform, ...patch } : platform)) });
+    const elevations = moveEndpointElevations(map.elevations, movedSegmentEndpoints(map.segments, nextMap.segments));
+    get().setMap({ ...nextMap, elevations });
   },
 
   deletePlatform: (id) => {
