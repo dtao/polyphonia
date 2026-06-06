@@ -10,7 +10,7 @@ type XRSystemLike = {
   requestSession: (mode: "immersive-ar", options?: { optionalFeatures?: string[]; domOverlay?: { root: Element } }) => Promise<EventTarget>;
 };
 
-const EYE_HEIGHT = 1.7;
+const EYE_HEIGHT = 3.0;
 const MIN_MOVEMENT_METERS = 0.001;
 const MAX_STEP_METERS = 2;
 const POSITION_SMOOTHING = 0.65;

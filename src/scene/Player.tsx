@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { useStore, viewState, touchMove, arWalk, geoWalk } from "../store";
 import { MapSupport, mapSupportAt, stepOnMap, surfaceHeightOnSupport, wrapLoopPosition } from "../map";
 
-const EYE_HEIGHT = 1.7;
+const EYE_HEIGHT = 3.0;
 const AR_HEADING_SMOOTHING = 0.45;
 const GEO_HEADING_SMOOTHING = 0.5;
 
