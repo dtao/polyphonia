@@ -53,6 +53,7 @@ import {
   registerCreatorAssets,
   removeCreatorAssetRecord,
 } from "./creatorAssets";
+import { DEFAULT_ENCLOSURE_HEIGHT } from "./spatialConstants";
 
 // Non-reactive registry of each track marker's 3D object, so the move-gizmo
 // can attach to the selected track's object without prop-drilling refs.
@@ -946,7 +947,7 @@ export const useStore = create<StoreState>((set, get) => ({
       rotation: 0,
       width: 14,
       depth: 12,
-      height: 3.4,
+      height: DEFAULT_ENCLOSURE_HEIGHT,
       elevation: surfaceHeightAt(map, [viewState.x, viewState.z]),
       // Face the doorway toward the edit camera's horizontal look direction.
       entrances: [{ side: forward > 0 ? "south" : "north", width: 5, offset: 0 }],
@@ -1191,7 +1192,7 @@ export const useStore = create<StoreState>((set, get) => ({
       id: newId(),
       start: [viewState.x - perp[0] * 4, viewState.z - perp[1] * 4],
       end: [viewState.x + perp[0] * 4, viewState.z + perp[1] * 4],
-      height: 3,
+      height: DEFAULT_ENCLOSURE_HEIGHT,
     };
     get().setMap({ preset: "custom", walls: [...map.walls, wall] });
     set({ selectedWallId: wall.id, selectedPlatformId: null, selectedRoomId: null, selectedEntranceIndex: null, selectedId: null, selectedMapSegmentId: null, selectedMapPointKey: null, selectedStart: false });
@@ -1239,7 +1240,7 @@ export const useStore = create<StoreState>((set, get) => ({
       rotation: 0,
       width,
       depth,
-      height: 3.4,
+      height: DEFAULT_ENCLOSURE_HEIGHT,
       entrances: [{ side: "north", width: 5, offset: 0 }],
       attachment,
     };

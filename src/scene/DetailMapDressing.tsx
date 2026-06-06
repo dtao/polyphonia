@@ -18,6 +18,7 @@ import {
   transformLoopPoint,
 } from "../map";
 import { arWalk, loopPreviewGroups, loopWrap, viewState } from "../store";
+import { DEFAULT_ENCLOSURE_HEIGHT } from "../spatialConstants";
 import {
   createFadedInstancedMesh,
   disposeFadedInstancedMesh,
@@ -411,7 +412,7 @@ function SegmentShell({
     (startY + endY) / 2 - 0.1,
     (segment.start[1] + segment.end[1]) / 2,
   ];
-  const wallHeight = Math.max(map.wallHeight, 3.2);
+  const wallHeight = Math.max(map.wallHeight, DEFAULT_ENCLOSURE_HEIGHT);
   const tunnel = segment.kind === "tunnel";
 
   return (

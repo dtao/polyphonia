@@ -21,6 +21,7 @@ import {
   type CompositionMap,
   type MapRoom,
 } from "./map";
+import { DEFAULT_ENCLOSURE_HEIGHT, EYE_HEIGHT } from "./spatialConstants";
 
 const noTiling = { type: "none" as const, origin: [0, 0] as [number, number], tileSize: 80 };
 
@@ -99,11 +100,17 @@ describe("map normalization", () => {
 
     expect(map.rooms[0]).toMatchObject({
       rotation: 0,
-      height: 3.2,
+      height: DEFAULT_ENCLOSURE_HEIGHT,
       wallThickness: DEFAULT_WALL_THICKNESS,
       entrances: [{ side: "east", width: 7.4, offset: 0 }],
     });
     expect(map.start.direction).toEqual([0, -1]);
+  });
+
+  it("keeps default enclosure height above listener eye height", () => {
+    expect(DEFAULT_ENCLOSURE_HEIGHT).toBe(EYE_HEIGHT * 1.5);
+    expect(MAP_PRESETS.line.wallHeight).toBe(DEFAULT_ENCLOSURE_HEIGHT);
+    expect(MAP_PRESETS.y.wallHeight).toBe(DEFAULT_ENCLOSURE_HEIGHT);
   });
 
   it("normalizes barriers and removes stale elevation entries", () => {

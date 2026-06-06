@@ -3,6 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { AR_WALK_START_EVENT, AR_WALK_STATUS_EVENT, AR_WALK_STOP_EVENT, ARWalkStatus, idleARWalkStatus } from "../arWalk";
 import { CompositionMap, MapSupport, mapSupportAt, stepOnMap, surfaceHeightOnSupport } from "../map";
+import { EYE_HEIGHT } from "../spatialConstants";
 import { arWalk, useStore, viewState } from "../store";
 
 type XRSystemLike = {
@@ -10,7 +11,6 @@ type XRSystemLike = {
   requestSession: (mode: "immersive-ar", options?: { optionalFeatures?: string[]; domOverlay?: { root: Element } }) => Promise<EventTarget>;
 };
 
-const EYE_HEIGHT = 3.0;
 const MIN_MOVEMENT_METERS = 0.001;
 const MAX_STEP_METERS = 2;
 const POSITION_SMOOTHING = 0.65;

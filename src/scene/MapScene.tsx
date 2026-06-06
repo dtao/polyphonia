@@ -6,6 +6,7 @@ import { TrackDef } from "../composition";
 import { newId } from "../id";
 import { canAddBranchAtPoint, clampToMap, CompositionMap, doorVisualOpenAmount, DOOR_DEPTH, entranceLocalCenter, isTunnelSegment, loopRoleForPoint, MapPlatform, MapRoom, MapWall, platformElevation, platformLocalPolygon, pointHasAttachment, RoomEntrance, roomElevation, roomLocalPoint, roomWorldPoint, RoomSide, solidWallSpans, surfaceHeightAt, tunnelHeight, tunnelSideWalls, wallOpenings, wallThickness, WalkableSegment } from "../map";
 import { useStore, viewState } from "../store";
+import { DEFAULT_ENCLOSURE_HEIGHT } from "../spatialConstants";
 import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 
 const MAX_TRACK_LIGHTS = 64;
@@ -305,8 +306,6 @@ function touchesWallEdge(value: number, edge: number): boolean {
 // walkable strip. The ceiling is hidden in edit mode so the overhead camera can
 // still click the floor to select the segment; the side walls stay (faint) so
 // the corridor reads as enclosed.
-const TUNNEL_HEIGHT = 3.4;
-
 function Tunnels({ map, editMode }: { map: CompositionMap; editMode: boolean }) {
   const tunnels = map.segments.filter(isTunnelSegment);
   if (!tunnels.length) return null;
@@ -320,7 +319,7 @@ function Tunnels({ map, editMode }: { map: CompositionMap; editMode: boolean }) 
 }
 
 function Tunnel({ segment, map, editMode }: { segment: WalkableSegment; map: CompositionMap; editMode: boolean }) {
-  const height = tunnelHeight(map, segment, TUNNEL_HEIGHT);
+  const height = tunnelHeight(map, segment, DEFAULT_ENCLOSURE_HEIGHT);
   const walls = useMemo(() => tunnelWallGeometry(map, segment, height), [segment, map.elevations, height]);
   const ceiling = useMemo(() => tunnelCeilingGeometry(map, segment, height), [segment, map.elevations, height]);
   return (

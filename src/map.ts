@@ -1,3 +1,5 @@
+import { DEFAULT_ENCLOSURE_HEIGHT } from "./spatialConstants";
+
 export type MapPreset = "open" | "line" | "y" | "custom";
 
 // A plain "path" is an open walkable strip. A "tunnel" is the same walkable
@@ -151,7 +153,7 @@ export const MAP_PRESETS: Record<Exclude<MapPreset, "custom">, CompositionMap> =
   open: { preset: "open", segments: [], rooms: [], platforms: [], walls: [], tiling: defaultTiling, wallHeight: 0, start: { position: [0, 0], direction: [0, -1] } },
   line: {
     preset: "line",
-    wallHeight: 2.1,
+    wallHeight: DEFAULT_ENCLOSURE_HEIGHT,
     rooms: [],
     platforms: [],
     walls: [],
@@ -161,7 +163,7 @@ export const MAP_PRESETS: Record<Exclude<MapPreset, "custom">, CompositionMap> =
   },
   y: {
     preset: "y",
-    wallHeight: 2.1,
+    wallHeight: DEFAULT_ENCLOSURE_HEIGHT,
     rooms: [],
     platforms: [],
     walls: [],
@@ -1770,7 +1772,7 @@ function normalizeWall(wall: MapWall): MapWall {
     id: wall.id,
     start: wall.start,
     end: wall.end,
-    height: clamp(Number.isFinite(wall.height) ? wall.height : 3, 0.5, 12),
+    height: clamp(Number.isFinite(wall.height) ? wall.height : DEFAULT_ENCLOSURE_HEIGHT, 0.5, 12),
     wallThickness: normalizeWallThickness(wall.wallThickness),
   };
 }
@@ -1833,7 +1835,7 @@ function normalizeRoom(room: RawMapRoom): MapRoom {
     rotation: Number.isFinite(room.rotation) ? (room.rotation as number) : 0,
     width,
     depth,
-    height: clamp(room.height ?? 3.2, 2, 12),
+    height: clamp(room.height ?? DEFAULT_ENCLOSURE_HEIGHT, 2, 12),
     wallThickness,
     ...(Number.isFinite(room.elevation) ? { elevation: clamp(room.elevation!, -20, 40) } : {}),
     entrances: rawEntrances.map((entrance) => normalizeEntrance(entrance, width, depth, wallThickness)),
