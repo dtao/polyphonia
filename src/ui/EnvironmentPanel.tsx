@@ -2,6 +2,8 @@ import { useRef, useState } from "react";
 import { environmentPackById, ENVIRONMENT_PACKS } from "../environmentPacks";
 import { useStore } from "../store";
 import { DetailPackBuilder } from "./DetailPackBuilder";
+import { CreatorAssetImporter } from "./CreatorAssetImporter";
+import type { CreatorLandmarkAsset, CreatorMaterialAsset } from "../creatorAssets";
 
 export function EnvironmentPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () => void; onClose: () => void }) {
   const environment = useStore((s) => s.composition.environment);
@@ -10,11 +12,16 @@ export function EnvironmentPanel({ open, onOpen, onClose }: { open: boolean; onO
   const customPacks = useStore((s) => s.customDetailPacks);
   const importDetailPack = useStore((s) => s.importDetailPack);
   const removeDetailPack = useStore((s) => s.removeDetailPack);
+  const creatorAssets = useStore((s) => s.creatorAssets);
+  const removeCreatorAsset = useStore((s) => s.removeCreatorAsset);
   const fileInput = useRef<HTMLInputElement>(null);
   const [importError, setImportError] = useState("");
   const [building, setBuilding] = useState(false);
+  const [importing, setImporting] = useState<"material" | "landmark" | null>(null);
   const selectedPack = environmentPackById(environment.pack?.id);
   const packs = [...ENVIRONMENT_PACKS, ...customPacks];
+  const materials = creatorAssets.filter((asset): asset is CreatorMaterialAsset => asset.kind === "material");
+  const landmarks = creatorAssets.filter((asset): asset is CreatorLandmarkAsset => asset.kind === "landmark");
 
   if (!open) {
     return (
@@ -112,6 +119,42 @@ export function EnvironmentPanel({ open, onOpen, onClose }: { open: boolean; onO
         </>
       )}
 
+      <div style={landmarkSection}>
+        <div style={label}>Surface materials</div>
+        {(["floor", "wall", "ceiling"] as const).map((surface) => (
+          <label key={surface} style={{ display: "block", marginTop: 6 }}>
+            <select
+              aria-label={`${surface} material`}
+              value={environment.surfaces?.[surface] ?? ""}
+              onChange={(event) => setEnvironment({
+                surfaces: {
+                  ...environment.surfaces,
+                  [surface]: event.target.value || undefined,
+                },
+              })}
+              style={select}
+            >
+              <option value="">{surface[0].toUpperCase() + surface.slice(1)}: pack/default</option>
+              {materials.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
+            </select>
+          </label>
+        ))}
+        <button style={landmarkButton} onClick={() => setImporting("material")}>Import material</button>
+      </div>
+
+      <div style={landmarkSection}>
+        <div style={label}>Reusable landmarks</div>
+        {landmarks.map((asset) => (
+          <div key={asset.id} style={assetRow}>
+            <button style={assetAddButton} onClick={() => addLandmark(asset.id)} title={`Place ${asset.name}`}>
+              {asset.name}
+            </button>
+            <button style={assetRemoveButton} onClick={() => void removeCreatorAsset(asset.id)} title={`Remove ${asset.name}`}>×</button>
+          </div>
+        ))}
+        <button style={landmarkButton} onClick={() => setImporting("landmark")}>Import landmark</button>
+      </div>
+
       <div style={importSection}>
         <input
           ref={fileInput}
@@ -144,6 +187,19 @@ export function EnvironmentPanel({ open, onOpen, onClose }: { open: boolean; onO
           onCreate={async (file) => {
             setImportError("");
             await importDetailPack(file);
+          }}
+        />
+      )}
+      {importing && (
+        <CreatorAssetImporter
+          mode={importing}
+          onClose={() => setImporting(null)}
+          onImported={(id) => {
+            if (importing === "material") {
+              setEnvironment({ surfaces: { ...environment.surfaces, floor: id } });
+            } else {
+              addLandmark(id);
+            }
           }}
         />
       )}
@@ -286,3 +342,7 @@ const errorText: React.CSSProperties = {
   fontSize: 10,
   lineHeight: 1.35,
 };
+
+const assetRow: React.CSSProperties = { display: "grid", gridTemplateColumns: "1fr 30px", gap: 5, marginTop: 6 };
+const assetAddButton: React.CSSProperties = { ...landmarkButton, marginTop: 0, justifyContent: "flex-start", paddingLeft: 10 };
+const assetRemoveButton: React.CSSProperties = { borderRadius: 6, border: "1px solid rgba(255,122,107,0.25)", background: "rgba(255,122,107,0.08)", color: "#ffaaa0", cursor: "pointer" };
