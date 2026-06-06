@@ -254,13 +254,21 @@ function movedSegmentEndpoints(before: WalkableSegment[], after: WalkableSegment
   return moved;
 }
 
-function setConnectedRoomEndpointElevations(elevations: Record<string, number> | undefined, segments: WalkableSegment[], roomId: string, elevation: number | undefined): Record<string, number> | undefined {
+function setConnectedEndpointElevations(
+  elevations: Record<string, number> | undefined,
+  segments: WalkableSegment[],
+  connectionKind: "room" | "platform",
+  targetId: string,
+  elevation: number | undefined,
+): Record<string, number> | undefined {
   if (elevation === undefined || !Number.isFinite(elevation)) return elevations;
   const next = { ...(elevations ?? {}) };
   for (const segment of segments) {
     for (const end of ["start", "end"] as const) {
       const connection = segment.connections?.[end];
-      if (connection?.kind !== "room" || connection.roomId !== roomId) continue;
+      if (!connection || connection.kind !== connectionKind) continue;
+      const id = connection.kind === "room" ? connection.roomId : connection.platformId;
+      if (id !== targetId) continue;
       const key = mapPointKey(segment[end]);
       if (elevation === 0) delete next[key];
       else next[key] = elevation;
@@ -487,12 +495,12 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   updateRoom: (id, patch) => {
-    const map = get().composition.map;
+    const map = normalizeMap(get().composition.map);
     const room = map.rooms.find((r) => r.id === id);
     if (!room) return;
     const nextMap = normalizeMap({ ...map, rooms: map.rooms.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
     const movedElevations = moveEndpointElevations(map.elevations, movedSegmentEndpoints(map.segments, nextMap.segments));
-    const elevations = setConnectedRoomEndpointElevations(movedElevations, nextMap.segments, id, patch.elevation);
+    const elevations = setConnectedEndpointElevations(movedElevations, nextMap.segments, "room", id, patch.elevation);
     get().setMap({ ...nextMap, elevations });
   },
 
@@ -631,10 +639,11 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   updatePlatform: (id, patch) => {
-    const map = get().composition.map;
+    const map = normalizeMap(get().composition.map);
     const nextMap = normalizeMap({ ...map, preset: "custom", platforms: map.platforms.map((platform) => (platform.id === id ? { ...platform, ...patch } : platform)) });
     const elevations = moveEndpointElevations(map.elevations, movedSegmentEndpoints(map.segments, nextMap.segments));
-    get().setMap({ ...nextMap, elevations });
+    const nextElevations = setConnectedEndpointElevations(elevations, nextMap.segments, "platform", id, patch.elevation);
+    get().setMap({ ...nextMap, elevations: nextElevations });
   },
 
   deletePlatform: (id) => {

@@ -385,34 +385,51 @@ function Platforms({ map, editMode }: { map: CompositionMap; editMode: boolean }
 
 function Platform({ platform, map, editMode, selected }: { platform: MapPlatform; map: CompositionMap; editMode: boolean; selected: boolean }) {
   const selectPlatform = useStore((s) => s.selectPlatform);
+  const updatePlatform = useStore((s) => s.updatePlatform);
+  const [obj, setObj] = useState<THREE.Group | null>(null);
   const outline = useMemo(() => platformOutlinePoints(platform), [platform]);
   const elevationY = platformElevation(map, platform);
 
+  function handleObjectChange() {
+    if (!obj) return;
+    updatePlatform(platform.id, {
+      center: [obj.position.x, obj.position.z],
+      elevation: Math.max(-20, Math.min(40, obj.position.y)),
+      attachment: undefined,
+    });
+  }
+
   return (
-    <group
-      position={[platform.center[0], elevationY, platform.center[1]]}
-      rotation={[0, platform.rotation, 0]}
-      onClick={(e) => {
-        if (!editMode) return;
-        e.stopPropagation();
-        selectPlatform(platform.id);
-      }}
-      onPointerOver={(e) => {
-        if (!editMode) return;
-        e.stopPropagation();
-        document.body.style.cursor = "pointer";
-      }}
-      onPointerOut={() => {
-        document.body.style.cursor = "auto";
-      }}
-    >
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, PLATFORM_FLOOR_Y, 0]}>
-        <PlatformGeometry platform={platform} />
-        <meshStandardMaterial color={selected ? "#16302e" : "#14161e"} roughness={0.9} metalness={0.08} side={THREE.DoubleSide} />
-      </mesh>
-      <Line points={outline} color={selected ? "#8fffe8" : "#5d6b86"} lineWidth={selected ? 2.4 : 1.4} transparent opacity={selected ? 0.95 : 0.6} />
-      {editMode && selected && <PlatformPathEditor platform={platform} map={map} elevationY={elevationY} />}
-    </group>
+    <>
+      <group
+        ref={setObj}
+        position={[platform.center[0], elevationY, platform.center[1]]}
+        rotation={[0, platform.rotation, 0]}
+        onClick={(e) => {
+          if (!editMode) return;
+          e.stopPropagation();
+          selectPlatform(platform.id);
+        }}
+        onPointerOver={(e) => {
+          if (!editMode) return;
+          e.stopPropagation();
+          document.body.style.cursor = "pointer";
+        }}
+        onPointerOut={() => {
+          document.body.style.cursor = "auto";
+        }}
+      >
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, PLATFORM_FLOOR_Y, 0]}>
+          <PlatformGeometry platform={platform} />
+          <meshStandardMaterial color={selected ? "#16302e" : "#14161e"} roughness={0.9} metalness={0.08} side={THREE.DoubleSide} />
+        </mesh>
+        <Line points={outline} color={selected ? "#8fffe8" : "#5d6b86"} lineWidth={selected ? 2.4 : 1.4} transparent opacity={selected ? 0.95 : 0.6} />
+        {editMode && selected && <PlatformPathEditor platform={platform} map={map} elevationY={elevationY} />}
+      </group>
+      {editMode && selected && obj && (
+        <TransformControls object={obj} mode="translate" showX showY showZ size={0.9} onObjectChange={handleObjectChange} />
+      )}
+    </>
   );
 }
 
