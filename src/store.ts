@@ -1193,6 +1193,7 @@ export const useStore = create<StoreState>((set, get) => ({
       start: [viewState.x - perp[0] * 4, viewState.z - perp[1] * 4],
       end: [viewState.x + perp[0] * 4, viewState.z + perp[1] * 4],
       height: DEFAULT_ENCLOSURE_HEIGHT,
+      elevation: surfaceHeightAt(map, [viewState.x, viewState.z]),
     };
     get().setMap({ preset: "custom", walls: [...map.walls, wall] });
     set({ selectedWallId: wall.id, selectedPlatformId: null, selectedRoomId: null, selectedEntranceIndex: null, selectedId: null, selectedMapSegmentId: null, selectedMapPointKey: null, selectedStart: false });

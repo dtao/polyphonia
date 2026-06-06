@@ -76,6 +76,7 @@ export interface MapWall {
   start: [number, number];
   end: [number, number];
   height: number;
+  elevation?: number;
   wallThickness?: number;
 }
 
@@ -1773,6 +1774,7 @@ function normalizeWall(wall: MapWall): MapWall {
     start: wall.start,
     end: wall.end,
     height: clamp(Number.isFinite(wall.height) ? wall.height : DEFAULT_ENCLOSURE_HEIGHT, 0.5, 12),
+    elevation: clamp(Number.isFinite(wall.elevation) ? wall.elevation! : 0, -20, 40),
     wallThickness: normalizeWallThickness(wall.wallThickness),
   };
 }

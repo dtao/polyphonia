@@ -281,7 +281,7 @@ function MapShell({ map, materials }: { map: CompositionMap; materials: PackMate
           <mesh
             key={wall.id}
             material={materials.wall}
-            position={[(wall.start[0] + wall.end[0]) / 2, wall.height / 2, (wall.start[1] + wall.end[1]) / 2]}
+            position={[(wall.start[0] + wall.end[0]) / 2, (wall.elevation ?? 0) + wall.height / 2, (wall.start[1] + wall.end[1]) / 2]}
             rotation={[0, Math.atan2(dx, dz), 0]}
             castShadow
             receiveShadow

@@ -124,7 +124,7 @@ describe("map normalization", () => {
       ],
       rooms: [],
       platforms: [],
-      walls: [{ id: "wall", start: [-2, 5], end: [2, 5], height: 99, wallThickness: 0 }],
+      walls: [{ id: "wall", start: [-2, 5], end: [2, 5], height: 99, elevation: 99, wallThickness: 0 }],
       tiling: noTiling,
       elevations: { [startKey]: 2, [endKey]: 0, "missing,point": 8 },
       wallHeight: 2,
@@ -133,7 +133,7 @@ describe("map normalization", () => {
 
     expect(map.segments[0].wallThickness).toBeUndefined();
     expect(map.segments[1].wallThickness).toBe(3);
-    expect(map.walls[0]).toMatchObject({ height: 12, wallThickness: 0.15 });
+    expect(map.walls[0]).toMatchObject({ height: 12, elevation: 40, wallThickness: 0.15 });
     expect(map.elevations).toEqual({ [startKey]: 2 });
   });
 

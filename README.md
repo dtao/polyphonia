@@ -99,7 +99,8 @@ Audio quality can be A/B tested with `audioQuality=full` or
   ground; the pillar size reflects volume. The Loop panel can audition the seam,
   trim loop start/end, adjust crossfade, or disable looping. The Environment
   panel selects optional detail packs, imports materials/models, assigns map
-  surfaces, and places landmarks.
+  surfaces, and places landmarks. Selected walls use the same three-axis move
+  gizmo as stems, with endpoint handles for reshaping.
 
 ## Sharing setup (optional)
 

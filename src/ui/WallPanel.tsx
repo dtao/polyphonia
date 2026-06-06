@@ -47,12 +47,14 @@ export function WallPanel() {
         />
       </label>
 
-      <div style={meta}>Length {length.toFixed(1)}</div>
+      <div style={meta}>
+        Length {length.toFixed(1)} · Elevation {(wall.elevation ?? 0).toFixed(1)}
+      </div>
 
       <button style={deleteBtn} onClick={() => deleteWall(wall.id)} title="Delete selected wall (Delete)">
         Delete wall
       </button>
-      <div style={hint}>Drag the green handles to move each end. Walls only occlude sound; they don't block walking.</div>
+      <div style={hint}>Use the axis gizmo to move the wall in 3D. Drag the green handles to reshape it. Walls only occlude sound; they don't block walking.</div>
     </div>
   );
 }

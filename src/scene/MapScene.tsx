@@ -579,39 +579,71 @@ function StandaloneWalls({ map, editMode }: { map: CompositionMap; editMode: boo
 
 function WallMesh({ wall, editMode, selected }: { wall: MapWall; editMode: boolean; selected: boolean }) {
   const selectWall = useStore((s) => s.selectWall);
+  const updateWall = useStore((s) => s.updateWall);
+  const [object, setObject] = useState<THREE.Mesh | null>(null);
   const dx = wall.end[0] - wall.start[0];
   const dz = wall.end[1] - wall.start[1];
   const length = Math.max(0.02, Math.hypot(dx, dz));
   const angle = Math.atan2(-dz, dx);
   const mid: [number, number] = [(wall.start[0] + wall.end[0]) / 2, (wall.start[1] + wall.end[1]) / 2];
+  const elevation = wall.elevation ?? 0;
+
+  function handleObjectChange() {
+    if (!object) return;
+    const offset: [number, number] = [
+      object.position.x - mid[0],
+      object.position.z - mid[1],
+    ];
+    updateWall(wall.id, {
+      start: [wall.start[0] + offset[0], wall.start[1] + offset[1]],
+      end: [wall.end[0] + offset[0], wall.end[1] + offset[1]],
+      elevation: object.position.y - wall.height / 2,
+    });
+  }
+
   return (
-    <mesh
-      position={[mid[0], wall.height / 2, mid[1]]}
-      rotation={[0, angle, 0]}
-      onClick={(e) => {
-        if (!editMode) return;
-        e.stopPropagation();
-        selectWall(wall.id);
-      }}
-      onPointerOver={(e) => {
-        if (!editMode) return;
-        e.stopPropagation();
-        document.body.style.cursor = "pointer";
-      }}
-      onPointerOut={() => {
-        document.body.style.cursor = "auto";
-      }}
-    >
-      <boxGeometry args={[length, wall.height, wallThickness(wall.wallThickness)]} />
-      <meshStandardMaterial color={selected ? "#8fffe8" : "#9aa6bd"} roughness={0.8} metalness={0.1} transparent={editMode} opacity={editMode ? 0.55 : 1} depthWrite={!editMode} side={THREE.DoubleSide} />
-    </mesh>
+    <>
+      <mesh
+        ref={setObject}
+        position={[mid[0], elevation + wall.height / 2, mid[1]]}
+        rotation={[0, angle, 0]}
+        onClick={(e) => {
+          if (!editMode) return;
+          e.stopPropagation();
+          selectWall(wall.id);
+        }}
+        onPointerOver={(e) => {
+          if (!editMode) return;
+          e.stopPropagation();
+          document.body.style.cursor = "pointer";
+        }}
+        onPointerOut={() => {
+          document.body.style.cursor = "auto";
+        }}
+      >
+        <boxGeometry args={[length, wall.height, wallThickness(wall.wallThickness)]} />
+        <meshStandardMaterial color={selected ? "#8fffe8" : "#9aa6bd"} roughness={0.8} metalness={0.1} transparent={editMode} opacity={editMode ? 0.55 : 1} depthWrite={!editMode} side={THREE.DoubleSide} />
+      </mesh>
+      {editMode && selected && object && (
+        <TransformControls
+          object={object}
+          mode="translate"
+          size={0.85}
+          onObjectChange={handleObjectChange}
+        />
+      )}
+    </>
   );
 }
 
 function WallHandles({ wall }: { wall: MapWall }) {
   const updateWall = useStore((s) => s.updateWall);
   const controls = useThree((s) => s.controls as { enabled?: boolean } | undefined);
-  const ground = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), []);
+  const elevation = wall.elevation ?? 0;
+  const ground = useMemo(
+    () => new THREE.Plane(new THREE.Vector3(0, 1, 0), -elevation),
+    [elevation],
+  );
   const hit = useMemo(() => new THREE.Vector3(), []);
   const drag = useRef<"start" | "end" | null>(null);
 
@@ -651,7 +683,7 @@ function WallHandles({ wall }: { wall: MapWall }) {
         return (
           <mesh
             key={which}
-            position={[point[0], wall.height + 0.4, point[1]]}
+            position={[point[0], elevation + wall.height + 0.4, point[1]]}
             onPointerDown={(e) => startDrag(e, which)}
             onPointerMove={move}
             onPointerUp={endDrag}

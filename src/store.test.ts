@@ -146,6 +146,7 @@ describe("store edit contracts", () => {
     expect(state.composition.map.walls[state.composition.map.walls.length - 1]).toMatchObject({
       start: [18, -15],
       end: [18, -7],
+      elevation: 0,
     });
   });
 
@@ -194,5 +195,19 @@ describe("store edit contracts", () => {
     });
 
     expect(useStore.getState().composition.environment.landmarks).toEqual([landmark]);
+  });
+
+  it("persists vertical wall movement and keeps it when cloning", () => {
+    Object.assign(viewState, { x: 0, y: 0, z: 0, fx: 0, fz: -1 });
+    useStore.getState().addWall();
+    const wall = useStore.getState().composition.map.walls[0];
+
+    useStore.getState().updateWall(wall.id, { elevation: 6 });
+    useStore.getState().duplicateWall(wall.id);
+
+    expect(useStore.getState().composition.map.walls).toMatchObject([
+      { id: wall.id, elevation: 6 },
+      { elevation: 6 },
+    ]);
   });
 });
