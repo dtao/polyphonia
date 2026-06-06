@@ -51,6 +51,7 @@ export function TrackMarker({
   const volume = track.volume ?? 1;
   const orbRadius = 0.42 + volume * 0.32;
   const showPointLight = !preview && !debugFlag("debugNoPointLights");
+  const showStarRays = !debugFlag("debugNoStarRays");
   const markerDebugId = debugId ?? `base:${track.id}`;
   const markerDebugPosition = debugPosition ?? [x, z];
 
@@ -182,22 +183,24 @@ export function TrackMarker({
             fragmentShader={flareFragmentShader}
           />
         </mesh>
-        <mesh ref={starburst} scale={[orbRadius * 10.8, orbRadius * 10.8, 1]} rotation={[0, 0, seed]}>
-          <planeGeometry args={[1, 1]} />
-          <shaderMaterial
-            ref={rays}
-            transparent
-            depthWrite={false}
-            blending={THREE.AdditiveBlending}
-            uniforms={{
-              color: { value: new THREE.Color(track.color) },
-              opacity: { value: 0.38 },
-              radius: { value: 0.22 },
-            }}
-            vertexShader={flareVertexShader}
-            fragmentShader={starRayFragmentShader}
-          />
-        </mesh>
+        {showStarRays && (
+          <mesh ref={starburst} scale={[orbRadius * 10.8, orbRadius * 10.8, 1]} rotation={[0, 0, seed]}>
+            <planeGeometry args={[1, 1]} />
+            <shaderMaterial
+              ref={rays}
+              transparent
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+              uniforms={{
+                color: { value: new THREE.Color(track.color) },
+                opacity: { value: 0.38 },
+                radius: { value: 0.22 },
+              }}
+              vertexShader={flareVertexShader}
+              fragmentShader={starRayFragmentShader}
+            />
+          </mesh>
+        )}
       </Billboard>
       <mesh ref={core} position={[0, 0, 0]}>
         <sphereGeometry args={[orbRadius * 0.62, 32, 20]} />

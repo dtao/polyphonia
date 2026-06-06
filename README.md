@@ -76,7 +76,8 @@ High-fidelity environment production is documented in
 
 For performance diagnostics, append `?debug=1` to the local URL. This enables a
 small overlay and exportable JSON log. Optional A/B flags include
-`debugNoPointLights=1`, `debugNoLoopPreview=1`, and `debugNoLoopLights=1`.
+`debugNoPointLights=1`, `debugNoLoopPreview=1`, `debugNoLoopLights=1`, and
+`debugNoStarRays=1`.
 Audio quality can be A/B tested with `audioQuality=full` or
 `audioQuality=reduced`.
 
