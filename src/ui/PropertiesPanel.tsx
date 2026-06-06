@@ -1,4 +1,5 @@
 import { useStore } from "../store";
+import { shortcutKeys } from "../shortcuts";
 
 // Edit-mode inspector for the selected track. Every control applies live —
 // volume and falloff flow straight to the audio engine as you drag.
@@ -83,7 +84,7 @@ export function PropertiesPanel() {
         <button
           style={duplicateBtn}
           onClick={() => duplicateTrack(track.id).catch((err) => console.error("Failed to duplicate track", err))}
-          title="Duplicate track (Cmd/Ctrl+D)"
+          title={`Duplicate track (${shortcutKeys("clone")})`}
         >
           Duplicate
         </button>

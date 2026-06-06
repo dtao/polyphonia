@@ -22,19 +22,7 @@ import { ARWalkControls } from "./ui/ARWalkControls";
 import { GeoWalkControls } from "./ui/GeoWalkControls";
 import { useStore } from "./store";
 import { exportComposition } from "./persistence";
-
-type EditPanel = "environment" | "map" | "loop" | null;
-
-function deleteSelectedMapPoint(): void {
-  const s = useStore.getState();
-  const key = s.selectedMapPointKey;
-  if (!key) return;
-  s.deleteMapPoint(key);
-}
-
-function modKey(): string {
-  return navigator.platform.toLowerCase().includes("mac") ? "Cmd" : "Ctrl";
-}
+import { dispatchShortcut, shortcutKeys, type EditPanel } from "./shortcuts";
 
 function hudShortcutHint({
   mode,
@@ -53,15 +41,18 @@ function hudShortcutHint({
   selectedStart: boolean;
   selectedLandmarkId: string | null;
 }): string {
-  const mod = modKey();
-  if (mode === "explore") return "WASD + mouse to move · click scene for mouse look · Esc releases cursor · Tab to edit · F fullscreen";
-  if (selectedId) return `drag to move stem · Delete removes · ${mod}+D duplicates · Esc clears`;
-  if (selectedLandmarkId) return "drag to place landmark · adjust rotation and scale below · Delete removes · Esc clears";
-  if (branchStartPointKey) return "click floor to place branch · B cancels · Delete removes point · Esc clears";
-  if (selectedMapPointKey) return "drag point to reshape · terminal points can branch or become rooms · Delete removes point · Esc clears";
-  if (selectedMapSegmentId) return "adjust segment width · click point to edit branches · Esc clears";
-  if (selectedStart) return "drag start marker · choose Move/Rotate in Map · Esc clears";
-  return `WASD to move · Q/E down/up · drag to orbit · click a track or map point · ${mod}+O adds stem · ${mod}+Z undo · F fullscreen`;
+  const del = shortcutKeys("delete-selected");
+  const esc = shortcutKeys("clear-selection");
+  const clone = shortcutKeys("clone");
+  if (mode === "explore")
+    return `WASD + mouse to move · click scene for mouse look · Esc releases cursor · ${shortcutKeys("toggle-mode")} to edit · ${shortcutKeys("toggle-fullscreen")} fullscreen`;
+  if (selectedId) return `drag to move stem · ${del} removes · ${clone} clones · ${esc} clears`;
+  if (selectedLandmarkId) return `drag to place landmark · adjust rotation and scale below · ${del} removes · ${clone} clones · ${esc} clears`;
+  if (branchStartPointKey) return `click floor to place branch · ${del} removes point · ${esc} clears`;
+  if (selectedMapPointKey) return `drag point to reshape · ${clone} branches · ${del} removes point · ${esc} clears`;
+  if (selectedMapSegmentId) return `adjust segment width · click point to edit branches · ${esc} clears`;
+  if (selectedStart) return `drag start marker · choose Move/Rotate in Map · ${esc} clears`;
+  return `WASD to move · Q/E down/up · drag to orbit · click a track or map point · ${shortcutKeys("undo")} undo · ${shortcutKeys("toggle-fullscreen")} fullscreen`;
 }
 
 export default function App() {
@@ -160,107 +151,17 @@ export default function App() {
     useStore.getState().setAudioLoading({ status: "idle" });
   }
 
-  // Tab toggles Explore/Edit. Cmd/Ctrl+Z and Shift+Cmd/Ctrl+Z handle edit
-  // history when focus is not inside a native text field.
+  // All discrete keyboard shortcuts are declared in src/shortcuts.ts; here we
+  // just feed keydown events to the central dispatcher with the bits of UI
+  // state and callbacks it needs.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.code === "KeyF") {
-        const el = document.activeElement;
-        if (!el || (el.tagName !== "INPUT" && el.tagName !== "TEXTAREA")) {
-          e.preventDefault();
-          toggleFullscreen();
-          return;
-        }
-      }
-      if (e.key === "Escape" && document.fullscreenElement) return;
-      if (e.key === "Escape" && useStore.getState().mode === "edit") {
-        if (openEditPanel) {
-          e.preventDefault();
-          setOpenEditPanel(null);
-          return;
-        }
-        if (useStore.getState().selectedId) {
-          e.preventDefault();
-          useStore.getState().select(null);
-          return;
-        }
-        if (useStore.getState().selectedLandmarkId) {
-          e.preventDefault();
-          useStore.getState().selectLandmark(null);
-          return;
-        }
-      }
-      const el = document.activeElement;
-      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return;
-      const modifier = e.metaKey || e.ctrlKey;
-      const s = useStore.getState();
-      if (s.mode === "edit" && (e.code === "Delete" || e.code === "Backspace")) {
-        if (s.selectedLandmarkId) {
-          e.preventDefault();
-          s.deleteLandmark(s.selectedLandmarkId);
-          return;
-        }
-        if (s.selectedId) {
-          e.preventDefault();
-          s.deleteTrack(s.selectedId);
-          return;
-        }
-        if (s.selectedRoomId && s.selectedEntranceIndex !== null) {
-          e.preventDefault();
-          s.removeEntrance(s.selectedRoomId, s.selectedEntranceIndex);
-          return;
-        }
-        if (s.selectedRoomId) {
-          e.preventDefault();
-          s.deleteRoom(s.selectedRoomId);
-          return;
-        }
-        if (s.selectedPlatformId) {
-          e.preventDefault();
-          s.deletePlatform(s.selectedPlatformId);
-          return;
-        }
-        if (s.selectedWallId) {
-          e.preventDefault();
-          s.deleteWall(s.selectedWallId);
-          return;
-        }
-        if (s.selectedMapPointKey) {
-          e.preventDefault();
-          deleteSelectedMapPoint();
-          return;
-        }
-      }
-      if (s.mode === "edit" && e.code === "KeyB" && !modifier && !e.altKey) {
-        if (s.selectedMapPointKey) {
-          e.preventDefault();
-          s.addBranchAtPoint(s.selectedMapPointKey);
-          return;
-        }
-      }
-      if (s.mode === "edit" && modifier && e.code === "KeyD") {
-        if (s.selectedId) {
-          e.preventDefault();
-          void s.duplicateTrack(s.selectedId);
-          return;
-        }
-      }
-      if (modifier && e.key.toLowerCase() === "z" && useStore.getState().entered) {
-        e.preventDefault();
-        if (e.shiftKey) void useStore.getState().redo();
-        else void useStore.getState().undo();
-        return;
-      }
-      if (modifier && e.key.toLowerCase() === "y" && useStore.getState().entered) {
-        e.preventDefault();
-        void useStore.getState().redo();
-        return;
-      }
-      if (e.code === "Tab" && useStore.getState().engine) {
-        e.preventDefault();
-        handleToggleMode();
-      }
-    };
+    const onKey = (e: KeyboardEvent) =>
+      dispatchShortcut(e, {
+        toggleMode: handleToggleMode,
+        toggleFullscreen,
+        openEditPanel,
+        setOpenEditPanel,
+      });
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [handleToggleMode, openEditPanel, toggleFullscreen]);
@@ -349,7 +250,11 @@ export default function App() {
                 <button style={exitBtn} onClick={exit} title="Stop and return to the start screen">
                   ⏏ Exit
                 </button>
-                <button style={iconBtn} onClick={toggleFullscreen} title={fullscreen ? "Exit fullscreen (F)" : "Enter fullscreen (F)"}>
+                <button
+                  style={iconBtn}
+                  onClick={toggleFullscreen}
+                  title={`${fullscreen ? "Exit" : "Enter"} fullscreen (${shortcutKeys("toggle-fullscreen")})`}
+                >
                   {fullscreen ? "⤢" : "⛶"}
                 </button>
                 {mode === "edit" && (
@@ -358,7 +263,7 @@ export default function App() {
                       style={{ ...historyBtn, ...(canUndo ? null : disabledBtn) }}
                       onClick={() => void useStore.getState().undo()}
                       disabled={!canUndo}
-                      title="Undo"
+                      title={`Undo (${shortcutKeys("undo")})`}
                     >
                       ↶
                     </button>
@@ -366,13 +271,13 @@ export default function App() {
                       style={{ ...historyBtn, ...(canRedo ? null : disabledBtn) }}
                       onClick={() => void useStore.getState().redo()}
                       disabled={!canRedo}
-                      title="Redo"
+                      title={`Redo (${shortcutKeys("redo")})`}
                     >
                       ↷
                     </button>
                   </div>
                 )}
-                <button style={modeBtn} onClick={handleToggleMode} title="Toggle with Tab">
+                <button style={modeBtn} onClick={handleToggleMode} title={`Toggle with ${shortcutKeys("toggle-mode")}`}>
                   {mode === "explore" ? "✎ Edit" : "✦ Explore"}
                 </button>
               </div>

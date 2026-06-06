@@ -32,20 +32,6 @@ export function AddStem() {
   // Global drag-and-drop.
   useEffect(() => {
     if (!engine) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      const el = document.activeElement;
-      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return;
-      if ((e.metaKey || e.ctrlKey) && e.code === "KeyO") {
-        e.preventDefault();
-        inputRef.current?.click();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [engine]);
-
-  useEffect(() => {
-    if (!engine) return;
     const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files");
     const onOver = (e: DragEvent) => {
       if (!hasFiles(e)) return;
@@ -74,7 +60,7 @@ export function AddStem() {
 
   return (
     <>
-      <button style={addBtn} onClick={() => inputRef.current?.click()} title="Add stem (Cmd/Ctrl+O)">
+      <button style={addBtn} onClick={() => inputRef.current?.click()} title="Add stem">
         ＋ Add stem
       </button>
       <input

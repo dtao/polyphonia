@@ -179,6 +179,7 @@ interface StoreState {
   addLandmark: (assetId: string) => void;
   updateLandmark: (id: string, patch: Partial<EnvironmentLandmarkPlacement>) => void;
   deleteLandmark: (id: string) => void;
+  duplicateLandmark: (id: string) => void;
 
   // Rooms (enclosed spaces on the map).
   selectRoom: (id: string | null) => void;
@@ -187,6 +188,7 @@ interface StoreState {
   addBranchAtPoint: (pointKey: string) => void;
   updateRoom: (id: string, patch: Partial<MapRoom>) => void;
   deleteRoom: (id: string) => void;
+  duplicateRoom: (id: string) => void;
   deleteMapPoint: (pointKey: string) => void;
 
   // Room entrances (doorways). An entrance is a sub-selection of its room.
@@ -202,12 +204,14 @@ interface StoreState {
   addPlatformAtPoint: (pointKey: string) => void;
   updatePlatform: (id: string, patch: Partial<MapPlatform>) => void;
   deletePlatform: (id: string) => void;
+  duplicatePlatform: (id: string) => void;
 
   // Standalone walls (sound occluders, not walkable boundaries).
   selectWall: (id: string | null) => void;
   addWall: () => void;
   updateWall: (id: string, patch: Partial<MapWall>) => void;
   deleteWall: (id: string) => void;
+  duplicateWall: (id: string) => void;
 
   // Track edits. Those that affect audio also push the change to the engine,
   // so a playing composition responds live without ever restarting.
@@ -563,6 +567,11 @@ function copyName(name: string, tracks: TrackDef[]): string {
   }
 }
 
+// How far (in map x/z units) a cloned map structure or landmark is nudged from
+// its source so the copy is visible and grabbable. Because clone selects the new
+// copy, repeated clones cascade diagonally instead of stacking.
+const CLONE_OFFSET = 6;
+
 function offsetCopyPosition([x, y, z]: [number, number, number], copyIndex: number): [number, number, number] {
   const angle = copyIndex * 0.9;
   return [x + Math.cos(angle) * 1.5, y, z + Math.sin(angle) * 1.5];
@@ -879,6 +888,42 @@ export const useStore = create<StoreState>((set, get) => ({
       },
       selectedLandmarkId: s.selectedLandmarkId === id ? null : s.selectedLandmarkId,
     })),
+  duplicateLandmark: (id) => {
+    const state = get();
+    const landmarks = state.composition.environment.landmarks ?? [];
+    const source = landmarks.find((landmark) => landmark.id === id);
+    if (!source) return;
+    const nx = source.position[0] + CLONE_OFFSET;
+    const nz = source.position[2] + CLONE_OFFSET;
+    const copy: EnvironmentLandmarkPlacement = {
+      ...source,
+      id: newId(),
+      position: [nx, surfaceHeightAt(state.composition.map, [nx, nz]), nz],
+      rotation: [...source.rotation],
+      scale: [...source.scale],
+    };
+    set((s) => ({
+      ...withHistory(s, `landmark:${copy.id}:duplicate`),
+      composition: {
+        ...touchComposition(s.composition),
+        environment: normalizeEnvironment({
+          ...s.composition.environment,
+          landmarks: [...(s.composition.environment.landmarks ?? []), copy],
+        }),
+      },
+      selectedLandmarkId: copy.id,
+      selectedId: null,
+      selectedMapPointKey: null,
+      selectedMapSegmentId: null,
+      branchStartPointKey: null,
+      selectedStart: false,
+      selectedRoomId: null,
+      selectedEntranceIndex: null,
+      selectedPlatformId: null,
+      selectedWallId: null,
+      mode: "edit",
+    }));
+  },
 
   selectRoom: (selectedRoomId) =>
     set({ selectedRoomId, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
@@ -933,6 +978,24 @@ export const useStore = create<StoreState>((set, get) => ({
     const map = get().composition.map;
     get().setMap({ rooms: map.rooms.filter((room) => room.id !== id) });
     if (get().selectedRoomId === id) set({ selectedRoomId: null, selectedEntranceIndex: null });
+  },
+
+  // Clone a room as a detached, nearby copy (drops any path attachment so the
+  // copy doesn't claim the source's branch point) and select it.
+  duplicateRoom: (id) => {
+    const map = normalizeMap(get().composition.map);
+    const room = map.rooms.find((r) => r.id === id);
+    if (!room) return;
+    const { attachment: _attachment, ...rest } = room;
+    const copy: MapRoom = {
+      ...rest,
+      id: newId(),
+      center: [room.center[0] + CLONE_OFFSET, room.center[1] + CLONE_OFFSET],
+      elevation: roomElevation(map, room),
+      entrances: room.entrances.map((entrance) => ({ ...entrance })),
+    };
+    get().setMap({ rooms: [...map.rooms, copy] });
+    set({ selectedRoomId: copy.id, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false });
   },
 
   selectEntrance: (roomId, index) =>
@@ -1094,6 +1157,22 @@ export const useStore = create<StoreState>((set, get) => ({
     if (get().selectedPlatformId === id) set({ selectedPlatformId: null });
   },
 
+  // Clone a platform as a detached, nearby copy and select it.
+  duplicatePlatform: (id) => {
+    const map = normalizeMap(get().composition.map);
+    const platform = map.platforms.find((p) => p.id === id);
+    if (!platform) return;
+    const { attachment: _attachment, ...rest } = platform;
+    const copy: MapPlatform = {
+      ...rest,
+      id: newId(),
+      center: [platform.center[0] + CLONE_OFFSET, platform.center[1] + CLONE_OFFSET],
+      elevation: platformElevation(map, platform),
+    };
+    get().setMap({ preset: "custom", platforms: [...map.platforms, copy] });
+    set({ selectedPlatformId: copy.id, selectedWallId: null, selectedRoomId: null, selectedEntranceIndex: null, selectedLandmarkId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false });
+  },
+
   selectWall: (selectedWallId) =>
     set({ selectedWallId, selectedPlatformId: null, selectedLandmarkId: null, selectedRoomId: null, selectedEntranceIndex: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
 
@@ -1123,6 +1202,21 @@ export const useStore = create<StoreState>((set, get) => ({
     const map = get().composition.map;
     get().setMap({ preset: "custom", walls: map.walls.filter((wall) => wall.id !== id) });
     if (get().selectedWallId === id) set({ selectedWallId: null });
+  },
+
+  // Clone a wall as a nearby copy and select it.
+  duplicateWall: (id) => {
+    const map = get().composition.map;
+    const wall = map.walls.find((w) => w.id === id);
+    if (!wall) return;
+    const copy: MapWall = {
+      ...wall,
+      id: newId(),
+      start: [wall.start[0] + CLONE_OFFSET, wall.start[1] + CLONE_OFFSET],
+      end: [wall.end[0] + CLONE_OFFSET, wall.end[1] + CLONE_OFFSET],
+    };
+    get().setMap({ preset: "custom", walls: [...map.walls, copy] });
+    set({ selectedWallId: copy.id, selectedPlatformId: null, selectedRoomId: null, selectedEntranceIndex: null, selectedLandmarkId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false });
   },
 
   // Create a room whose doorway is centered on the given path point and aligned
