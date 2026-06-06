@@ -15,7 +15,7 @@ import {
 } from "./persistence";
 import { newId } from "./id";
 import { EnvironmentSettings, defaultEnvironment, normalizeEnvironment } from "./environment";
-import { attachmentForPoint, canAddBranchAtPoint, canAddPlatformAtPoint, canAddRoomAtPoint, CompositionMap, MAP_PRESETS, MapPlatform, MapRoom, MapWall, RoomEntrance, RoomSide, defaultMap, mapPointKey, normalizeMap, pointInOriginalTile, surfaceHeightAt } from "./map";
+import { attachmentForPoint, canAddBranchAtPoint, canAddPlatformAtPoint, canAddRoomAtPoint, CompositionMap, entranceDoorwayCenter, entranceOuterPoint, MAP_PRESETS, MapPlatform, MapRoom, MapWall, RoomEntrance, RoomSide, defaultMap, mapPointKey, normalizeMap, pointInOriginalTile, roomElevation, surfaceHeightAt, WalkableSegment } from "./map";
 import { ArtistIdentity } from "./artist";
 import {
   AuthUser,
@@ -132,6 +132,8 @@ interface StoreState {
   addEntrance: (roomId: string, side: RoomSide) => void;
   updateEntrance: (roomId: string, index: number, patch: Partial<RoomEntrance>) => void;
   removeEntrance: (roomId: string, index: number) => void;
+  // Grow a path (optionally ending in a room or platform) out of a doorway.
+  growFromEntrance: (roomId: string, index: number, kind: "path" | "room" | "platform") => void;
 
   // Platforms (open walkable areas on the map). Attach to a terminal point.
   selectPlatform: (id: string | null) => void;
@@ -477,6 +479,56 @@ export const useStore = create<StoreState>((set, get) => ({
     if (!room || room.entrances.length <= 1) return;
     get().updateRoom(roomId, { entrances: room.entrances.filter((_, i) => i !== index) });
     if (get().selectedRoomId === roomId && get().selectedEntranceIndex === index) set({ selectedEntranceIndex: null });
+  },
+
+  growFromEntrance: (roomId, index, kind) => {
+    const map = get().composition.map;
+    const room = map.rooms.find((r) => r.id === roomId);
+    const entrance = room?.entrances[index];
+    if (!room || !entrance) return;
+
+    // Seed a path stub at the doorway, aimed straight out of the wall.
+    const start = entranceDoorwayCenter(room, entrance);
+    const outer = entranceOuterPoint(room, entrance);
+    const dir = unitDir([outer[0] - start[0], outer[1] - start[1]]);
+    const end: [number, number] = [start[0] + dir[0] * 14, start[1] + dir[1] * 14];
+    const width = Math.min(14, Math.max(4, entrance.width));
+    const segmentId = newId();
+    const segment: WalkableSegment = { id: segmentId, start, end, width };
+    const attachment = { segmentId, end: "end" as const };
+
+    // Match the new path to the room's height so they stay flush.
+    const elev = roomElevation(map, room);
+    const elevations = elev ? { ...(map.elevations ?? {}), [mapPointKey(start)]: elev, [mapPointKey(end)]: elev } : map.elevations;
+
+    let selection: Partial<StoreState> = {};
+    const rooms = [...map.rooms];
+    const platforms = [...map.platforms];
+    if (kind === "room") {
+      const id = newId();
+      rooms.push({ id, center: [0, 0], rotation: 0, width: 14, depth: 12, height: room.height, entrances: [{ side: "north", width: 5, offset: 0 }], attachment });
+      selection = { selectedRoomId: id, selectedEntranceIndex: null };
+    } else if (kind === "platform") {
+      const id = newId();
+      platforms.push({ id, center: [0, 0], rotation: 0, shape: "rect", width: 18, depth: 18, elevation: 0, attachment });
+      selection = { selectedPlatformId: id };
+    } else {
+      selection = { selectedMapPointKey: mapPointKey(end) };
+    }
+
+    get().setMap({ preset: "custom", segments: [...map.segments, segment], rooms, platforms, elevations });
+    set({
+      selectedRoomId: null,
+      selectedEntranceIndex: null,
+      selectedPlatformId: null,
+      selectedWallId: null,
+      selectedId: null,
+      selectedMapSegmentId: null,
+      selectedMapPointKey: null,
+      branchStartPointKey: null,
+      selectedStart: false,
+      ...selection,
+    });
   },
 
   selectPlatform: (selectedPlatformId) =>

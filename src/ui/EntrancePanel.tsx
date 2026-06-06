@@ -1,4 +1,4 @@
-import { DoorConfig, maxEntranceWidth } from "../map";
+import { DoorConfig, entranceConnects, maxEntranceWidth } from "../map";
 import { useStore } from "../store";
 
 type DoorMode = "none" | DoorConfig["openFrom"];
@@ -12,9 +12,10 @@ const DOOR_MODES: Array<{ value: DoorMode; label: string }> = [
 // Bottom-left inspector for a selected room doorway.
 export function EntrancePanel() {
   const mode = useStore((s) => s.mode);
+  const map = useStore((s) => s.composition.map);
   const room = useStore((s) => s.composition.map.rooms.find((r) => r.id === s.selectedRoomId));
   const index = useStore((s) => s.selectedEntranceIndex);
-  const { updateEntrance, removeEntrance } = useStore.getState();
+  const { updateEntrance, removeEntrance, growFromEntrance } = useStore.getState();
 
   if (mode !== "edit" || !room || index === null) return null;
   const entrance = room.entrances[index];
@@ -22,6 +23,7 @@ export function EntrancePanel() {
 
   const locked = !!room.attachment && index === 0;
   const maxWidth = maxEntranceWidth(room, entrance.side);
+  const leadsNowhere = !entranceConnects(map, room, entrance);
 
   function setDoorMode(value: DoorMode) {
     if (!room) return;
@@ -59,6 +61,23 @@ export function EntrancePanel() {
           );
         })}
       </div>
+
+      {leadsNowhere && (
+        <>
+          <div style={sectionLabel}>Connect this doorway to…</div>
+          <div style={growGrid}>
+            <button style={growBtn} onClick={() => growFromEntrance(room.id, index!, "path")} title="Grow a path out of this doorway">
+              Path
+            </button>
+            <button style={growBtn} onClick={() => growFromEntrance(room.id, index!, "platform")} title="Add a platform out of this doorway">
+              Platform
+            </button>
+            <button style={growBtn} onClick={() => growFromEntrance(room.id, index!, "room")} title="Add a room out of this doorway">
+              Room
+            </button>
+          </div>
+        </>
+      )}
 
       {!locked && (
         <button style={deleteBtn} onClick={() => removeEntrance(room.id, index!)} title="Remove this doorway (Delete)">
@@ -116,6 +135,23 @@ const doorActive: React.CSSProperties = {
   border: "1px solid rgba(91,140,255,0.75)",
   background: "rgba(91,140,255,0.24)",
   color: "white",
+};
+
+const growGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr 1fr",
+  gap: 4,
+  marginBottom: 4,
+};
+
+const growBtn: React.CSSProperties = {
+  padding: "8px 4px",
+  borderRadius: 7,
+  border: "1px solid rgba(143,255,232,0.4)",
+  background: "rgba(143,255,232,0.14)",
+  color: "rgba(199,255,244,0.95)",
+  cursor: "pointer",
+  fontSize: 12,
 };
 
 const deleteBtn: React.CSSProperties = {

@@ -361,6 +361,25 @@ export function maxEntranceWidth(room: MapRoom, side: RoomSide): number {
   return Math.max(1, entranceSpan(side, room.width, room.depth));
 }
 
+// World point a short distance outside an entrance's doorway. Used to test
+// whether the doorway leads anywhere, and to aim a path grown from it.
+export function entranceOuterPoint(room: MapRoom, entrance: RoomEntrance, distance = 1.6): [number, number] {
+  const [lx, lz] = entranceLocalCenter(room, entrance);
+  const n: [number, number] =
+    entrance.side === "north" ? [0, -1] : entrance.side === "south" ? [0, 1] : entrance.side === "west" ? [-1, 0] : [1, 0];
+  return roomWorldPoint(room, [lx + n[0] * distance, lz + n[1] * distance]);
+}
+
+// A doorway "leads nowhere" when nothing walkable sits just outside it.
+export function entranceConnects(map: Pick<CompositionMap, "segments" | "rooms" | "platforms">, room: MapRoom, entrance: RoomEntrance): boolean {
+  const outer = entranceOuterPoint(room, entrance);
+  return (
+    map.segments.some((segment) => pointInSegment(outer, segment)) ||
+    map.rooms.some((other) => other.id !== room.id && roomContains(other, outer)) ||
+    map.platforms.some((platform) => platformContains(platform, outer))
+  );
+}
+
 function openingInterval(entrance: RoomEntrance): [number, number] {
   const ew = Math.max(0.5, entrance.width);
   return [entrance.offset - ew / 2, entrance.offset + ew / 2];
@@ -1023,20 +1042,21 @@ function transitionSupport(map: CompositionMap, support: MapSupport, previous: [
 
   if (support.kind === "room") {
     const room = map.rooms.find((r) => r.id === support.roomId);
-    const attachment = room?.attachment;
-    if (!room || !attachment) return null;
-    const segment = map.segments.find((s) => s.id === attachment.segmentId);
-    if (segment && pointInSegment(attempted, segment) && nearEndpoint(map, attachment, previous, attempted)) {
-      return { position: attempted, support: { kind: "segment", segmentId: segment.id } };
+    if (!room) return null;
+    // Step out through any doorway onto a segment that reaches into it.
+    for (const segment of map.segments) {
+      if (pointInSegment(attempted, segment) && segmentTouchesRoomDoorway(room, segment)) {
+        return { position: attempted, support: { kind: "segment", segmentId: segment.id } };
+      }
     }
     return null;
   }
 
   const segment = map.segments.find((s) => s.id === support.segmentId);
   if (!segment) return null;
+  // Step into any room whose doorway this segment reaches.
   for (const room of map.rooms) {
-    if (!room.attachment || room.attachment.segmentId !== segment.id) continue;
-    if (roomContains(room, attempted) && nearEndpoint(map, room.attachment, previous, attempted)) {
+    if (roomContains(room, attempted) && segmentTouchesRoomDoorway(room, segment)) {
       return { position: attempted, support: { kind: "room", roomId: room.id } };
     }
   }
@@ -1117,11 +1137,15 @@ function sharedEndpoint(a: WalkableSegment, b: WalkableSegment): [number, number
   return null;
 }
 
-function nearEndpoint(map: Pick<CompositionMap, "segments">, endpoint: RoomAttachment, previous: [number, number], attempted: [number, number]): boolean {
-  const arm = endpointArm(map, endpoint);
-  if (!arm) return false;
-  const threshold = arm.width * 0.65 + 0.8;
-  return Math.hypot(previous[0] - arm.point[0], previous[1] - arm.point[1]) <= threshold || Math.hypot(attempted[0] - arm.point[0], attempted[1] - arm.point[1]) <= threshold;
+// A segment is "connected" to a room through a doorway when one of its
+// endpoints lands inside that doorway's threshold rect.
+function segmentTouchesRoomDoorway(room: MapRoom, segment: WalkableSegment): boolean {
+  const startLocal = toRoomLocal(room, segment.start);
+  const endLocal = toRoomLocal(room, segment.end);
+  return room.entrances.some((entrance) => {
+    const rect = doorwayRect(room, entrance);
+    return pointInRect(startLocal, rect) || pointInRect(endLocal, rect);
+  });
 }
 
 function segmentHeightAt(map: Pick<CompositionMap, "elevations">, segment: WalkableSegment, point: [number, number]): number {
