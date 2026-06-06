@@ -111,9 +111,7 @@ function MapShell({ map, material }: { map: CompositionMap; material: THREE.Mesh
   return (
     <group>
       {map.segments.length === 0 && map.rooms.length === 0 && map.platforms.length === 0 && (
-        <mesh material={material} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.13, 0]} receiveShadow>
-          <circleGeometry args={[56, 96]} />
-        </mesh>
+        <FallbackFloor map={map} material={material} />
       )}
       {map.segments.map((segment) => (
         <SegmentShell key={segment.id} map={map} segment={segment} material={material} />
@@ -142,6 +140,34 @@ function MapShell({ map, material }: { map: CompositionMap; material: THREE.Mesh
         );
       })}
     </group>
+  );
+}
+
+function FallbackFloor({ map, material }: { map: CompositionMap; material: THREE.MeshStandardMaterial }) {
+  const [x, z] = map.tiling.origin;
+  if (map.tiling.type === "square") {
+    return (
+      <mesh material={material} rotation={[-Math.PI / 2, 0, 0]} position={[x, -0.13, z]} receiveShadow>
+        <planeGeometry args={[map.tiling.tileSize, map.tiling.tileSize]} />
+      </mesh>
+    );
+  }
+  if (map.tiling.type === "hex") {
+    // The hex centers use tileSize horizontally and sqrt(3)/2 * tileSize
+    // vertically, so this is the matching pointy-hex circumradius. Exact cell
+    // footprints meet only at their edges; the old 56-unit circles overlapped
+    // neighboring copies on the same plane and flickered from z-fighting.
+    const radius = map.tiling.tileSize / Math.sqrt(3);
+    return (
+      <mesh material={material} rotation={[-Math.PI / 2, 0, 0]} position={[x, -0.13, z]} receiveShadow>
+        <circleGeometry args={[radius, 6, Math.PI / 6]} />
+      </mesh>
+    );
+  }
+  return (
+    <mesh material={material} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.13, 0]} receiveShadow>
+      <circleGeometry args={[56, 96]} />
+    </mesh>
   );
 }
 
