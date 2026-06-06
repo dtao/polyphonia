@@ -16,22 +16,22 @@ import { CompositionMap, LoopPreviewTransform, loopPreviewElevationOffset, tiled
 import { TrackDef } from "../composition";
 import { debugFlag, debugValue } from "../debug";
 import { EnvironmentEffects } from "./EnvironmentEffects";
+import { radialFade } from "./fade";
 
 const VIEWER_SAMPLE_DISTANCE = 0.75;
 const TILE_PREVIEW_RADIUS = 180;
 const PREVIEW_FADE_EPSILON = 0.003;
-// Path-loop copies now chain to fill the corridor (see tiledMapTransforms), so
-// the floor stays solid through the near/medium distance and only fades out near
-// the preview radius — a gentle far-horizon fade rather than a whole copy
-// blinking in the medium distance as the viewer crosses the seam.
-const PATH_LOOP_MAP_FADE_START = 90;
-const PATH_LOOP_MAP_FADE_END = 178;
-const PATH_LOOP_STEM_FADE_START = 72;
-const PATH_LOOP_STEM_FADE_END = 180;
-const TILE_MAP_FADE_START = 85;
-const TILE_MAP_FADE_END = 180;
-const TILE_STEM_FADE_START = 95;
-const TILE_STEM_FADE_END = 200;
+// Per-object visibility (base + preview stems, echo lights) uses the shared
+// radial fade — see fade.ts and AGENTS.md "Radial fade". The map-copy fade below
+// is deliberately separate: it fades a whole tiled/looped map copy by its anchor
+// distance to hide the tiling seam, so it stays coupled to TILE_PREVIEW_RADIUS
+// rather than the per-object gradient. Path-loop copies chain to fill the
+// corridor (see tiledMapTransforms), so the floor stays solid through the
+// near/medium distance and only fades out near the preview radius — a gentle
+// far-horizon fade rather than a whole copy blinking in as the viewer crosses
+// the seam.
+const MAP_COPY_FADE_START = 85;
+const MAP_COPY_FADE_END = 178;
 
 export function Scene() {
   const tracks = useStore((s) => s.composition.tracks);
@@ -80,7 +80,7 @@ export function Scene() {
         {showEchoLights && <PreviewEchoLights map={map} tracks={tracks} />}
 
         {tracks.map((t) => {
-          const fade = fadeBaseMarkers ? baseTrackVisibility(map, t, viewer) : 1;
+          const fade = fadeBaseMarkers ? baseTrackVisibility(t, viewer) : 1;
           if (fade <= PREVIEW_FADE_EPSILON) return null;
           return (
             <TrackMarker key={t.id} track={t} fade={fade} debugId={`base:${t.id}`} debugPosition={[t.position[0], t.position[2]]} />
@@ -185,11 +185,11 @@ function TiledMapPreview({ viewer, groupRef }: { viewer: [number, number]; group
   return (
     <group ref={groupRef}>
       {previews.map((preview) => {
-        const mapFade = previewMapVisibility(map, preview, viewer);
+        const mapFade = previewMapVisibility(preview, viewer);
         const markerFades = tracks
           .map((track) => {
             const position = transformLoopPoint(preview, [track.position[0], track.position[2]]);
-            return { track, position, fade: previewTrackVisibility(map, preview, track, viewer) };
+            return { track, position, fade: previewTrackVisibility(preview, track, viewer) };
           })
           .filter(({ fade }) => fade > PREVIEW_FADE_EPSILON);
         const strongestMarkerFade = markerFades.reduce((max, marker) => Math.max(max, marker.fade), 0);
@@ -271,7 +271,7 @@ function PreviewEchoLights({ map, tracks }: { map: CompositionMap; tracks: Track
         }
       }
 
-      const fade = nearestPos ? stemDistanceVisibility(map, Math.sqrt(nearestSq)) : 0;
+      const fade = nearestPos ? radialFade(Math.sqrt(nearestSq)) : 0;
       const level = engine?.level(track.id) ?? 0;
       const pulse = (levels.current[i] = THREE.MathUtils.damp(levels.current[i] ?? 0, level, 14, dt));
       const volume = track.volume ?? 1;
@@ -294,12 +294,6 @@ function PreviewEchoLights({ map, tracks }: { map: CompositionMap; tracks: Track
       ))}
     </group>
   );
-}
-
-function stemDistanceVisibility(map: CompositionMap, distance: number): number {
-  const start = map.tiling.type === "path-loop" ? PATH_LOOP_STEM_FADE_START : TILE_STEM_FADE_START;
-  const end = map.tiling.type === "path-loop" ? PATH_LOOP_STEM_FADE_END : TILE_STEM_FADE_END;
-  return distanceVisibility(distance, start, end);
 }
 
 function tileBoundaryGeometry(map: CompositionMap, viewer: [number, number]): THREE.BufferGeometry | null {
@@ -394,31 +388,25 @@ function tileLightTracks(map: CompositionMap, tracks: TrackDef[], viewer: [numbe
   return tracks.flatMap((track) => [
     track,
     ...previews.flatMap((preview) => {
-        if (previewTrackVisibility(map, preview, track, viewer) <= PREVIEW_FADE_EPSILON) return [];
+        if (previewTrackVisibility(preview, track, viewer) <= PREVIEW_FADE_EPSILON) return [];
         const [x, z] = transformLoopPoint(preview, [track.position[0], track.position[2]]);
         return [{ ...track, position: [x, track.position[1] + loopPreviewElevationOffset(map, preview), z] as [number, number, number] }];
       }),
   ]);
 }
 
-function previewMapVisibility(map: CompositionMap, preview: { anchor: [number, number] }, viewer: [number, number]): number {
+// Structural fade for a whole tiled/looped map copy (see MAP_COPY_FADE_*); not
+// the per-object radial fade.
+function previewMapVisibility(preview: { anchor: [number, number] }, viewer: [number, number]): number {
   const distance = Math.hypot(viewer[0] - preview.anchor[0], viewer[1] - preview.anchor[1]);
-  const start = map.tiling.type === "path-loop" ? PATH_LOOP_MAP_FADE_START : TILE_MAP_FADE_START;
-  const end = map.tiling.type === "path-loop" ? PATH_LOOP_MAP_FADE_END : TILE_MAP_FADE_END;
-  return distanceVisibility(distance, start, end);
+  return radialFade(distance, MAP_COPY_FADE_START, MAP_COPY_FADE_END);
 }
 
-function baseTrackVisibility(map: CompositionMap, track: TrackDef, viewer: [number, number]): number {
-  const distance = Math.hypot(viewer[0] - track.position[0], viewer[1] - track.position[2]);
-  return stemDistanceVisibility(map, distance);
+function baseTrackVisibility(track: TrackDef, viewer: [number, number]): number {
+  return radialFade(Math.hypot(viewer[0] - track.position[0], viewer[1] - track.position[2]));
 }
 
-function previewTrackVisibility(map: CompositionMap, preview: LoopPreviewTransform, track: TrackDef, viewer: [number, number]): number {
+function previewTrackVisibility(preview: LoopPreviewTransform, track: TrackDef, viewer: [number, number]): number {
   const [x, z] = transformLoopPoint(preview, [track.position[0], track.position[2]]);
-  const distance = Math.hypot(viewer[0] - x, viewer[1] - z);
-  return stemDistanceVisibility(map, distance);
-}
-
-function distanceVisibility(distance: number, start: number, end: number): number {
-  return 1 - THREE.MathUtils.smoothstep(distance, start, end);
+  return radialFade(Math.hypot(viewer[0] - x, viewer[1] - z));
 }

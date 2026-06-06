@@ -67,6 +67,8 @@ experience from automation.
   touch, AR, and geo movement while preserving map support and loop wrapping.
   `EditControls`, `TrackGizmo`, and `TrackMarker` provide editing;
   `ListenerSync` drives audio; `DebugSampler` captures diagnostics.
+  `src/scene/fade.ts` owns the single camera-centered radial visibility gradient
+  (see the radial-fade gotcha).
 - **Environment packs:** `src/environment.ts` stores only the selected pack,
   variant, and quality. `src/environmentPacks.ts` is the runtime registry for
   assets, profiles, quality budgets, attribution, and postprocessing. The map
@@ -226,6 +228,22 @@ git commit -F /tmp/polyphonia-commit-msg.txt
 - **StrictMode is OFF** (`main.tsx`): its dev double-mount duplicates
   pointer-lock listeners and rebuilds the AudioContext. Don't re-enable it.
 - **Canvas `dpr` capped to `[1,1.5]`** for frame rate on Retina. Don't remove.
+- **Radial fade (no pop-in):** objects must never blink into existence on the
+  horizon. There is ONE camera-centered gradient — two concentric circles
+  (`RADIAL_FADE_INNER`/`RADIAL_FADE_OUTER` in `src/scene/fade.ts`): fully visible
+  inside the inner circle, fully gone outside the outer, smooth between. Any new
+  per-object renderable whose material the scene `<fog>` can't cleanly fade
+  (additive/transparent glows, GPU-instanced meshes, point lights, tiled map
+  copies) MUST route its opacity/intensity/scale through `radialFade(distance)`
+  rather than inventing its own start/end constants — that drift is exactly what
+  caused the recurring pop-in. Standard opaque materials respect the scene fog,
+  whose far distance is pinned to `RADIAL_FADE_OUTER`, so they fade at the same
+  circle for free. Generation/cull radii (how far copies/instances spawn) are a
+  separate perf knob and must stay `>= RADIAL_FADE_OUTER` so nothing is still
+  visible when it is culled. The one deliberate exception is the structural
+  map-copy fade (`MAP_COPY_FADE_*` in `Scene.tsx`), which fades a whole tiled
+  copy by anchor distance to hide the tiling seam and is coupled to the preview
+  radius, not the per-object gradient.
 - **Uploaded stems are `blob:` object URLs** (from IndexedDB). They aren't
   serializable and must be revoked on delete (`revokeBlobUrls`). Persistence
   swaps them to `{kind:"stored"}` + IndexedDB; cloud swaps them to public CDN

@@ -10,6 +10,7 @@ import {
 import { useStore } from "../store";
 import { CreatorLandmarks } from "./CreatorLandmarks";
 import { SurfaceMapDressing } from "./DetailMapDressing";
+import { RADIAL_FADE_OUTER } from "./fade";
 
 export const environmentBackgroundColor = "#030407";
 
@@ -38,7 +39,9 @@ export function EnvironmentScene({
   return (
     <>
       <color attach="background" args={[environmentBackgroundColor]} />
-      <fog attach="fog" args={[environmentBackgroundColor, 38, 150]} />
+      {/* Fog far aligns with RADIAL_FADE_OUTER (see fade.ts) so fog-respecting
+          opaque geometry and manually faded objects vanish at the same circle. */}
+      <fog attach="fog" args={[environmentBackgroundColor, 38, RADIAL_FADE_OUTER]} />
       <ambientLight intensity={0.16} />
       <hemisphereLight args={["#8992a5", "#08090d", 0.24]} />
       <directionalLight position={[12, 18, 8]} intensity={0.42} color="#dbe5ff" />

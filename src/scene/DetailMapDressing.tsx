@@ -19,6 +19,7 @@ import {
 } from "../map";
 import { arWalk, loopPreviewGroups, viewState } from "../store";
 import { pathJointPatches } from "./MapScene";
+import { radialFade, RADIAL_FADE_OUTER } from "./fade";
 
 interface DetailPlacement {
   position: [number, number, number];
@@ -46,17 +47,15 @@ const packTextureCache = new Map<string, THREE.Texture[]>();
 // reactive-only floor reads fine and we save the extra (per-mesh) draw calls.
 const DETAIL_FLOOR_TILE_RADIUS = 92;
 // Instanced environmental objects (rocks/trees/crystals) are cheap, so they
-// repeat across the wider visible field — like the stem orbs do — out to their
+// repeat across the wider visible field — like the stem orbs do — out to the
 // cull distance instead of stopping at the textured-floor band. Far instances
-// fall back to low-detail geometry (see DetailInstances) and are culled past
-// this radius.
-const DETAIL_OBJECT_CULL = 130;
-// Rather than pop in at the cull radius, instances scale up over this band as you
-// approach — the equivalent of the stem orbs' distance fade for solid geometry,
-// which shares one material and so can't fade opacity per instance. The band sits
-// well past the near/far LOD split (42) so only distant low-detail copies fade.
-const DETAIL_OBJECT_FADE_START = 100;
-const DETAIL_OBJECT_FADE_END = DETAIL_OBJECT_CULL;
+// fall back to low-detail geometry (see DetailInstances) and are culled past the
+// shared radial-fade outer radius, by which point they have already faded to
+// nothing. Rather than pop in at the cull radius, instances scale up over the
+// radial-fade band as you approach — the equivalent of the stem orbs' distance
+// fade for solid geometry, which shares one material and so can't fade opacity
+// per instance.
+const DETAIL_OBJECT_CULL = RADIAL_FADE_OUTER;
 
 export function DetailMapDressing({
   map,
@@ -527,7 +526,7 @@ function DetailInstances({
       // popping at full size (P12). Uniform scale is the per-instance lever we
       // have on a shared material; the band is far enough that the symmetric
       // shrink reads as a gentle fade.
-      const fade = 1 - THREE.MathUtils.smoothstep(distance, DETAIL_OBJECT_FADE_START, DETAIL_OBJECT_FADE_END);
+      const fade = radialFade(distance);
       if (fade <= 0.002) continue;
       const placed = fade < 0.999 ? fadeMatrix.copy(matrix).scale(fadeScale.setScalar(fade)) : matrix;
       if (quality === "high" && distance < 42) nearMesh.setMatrixAt(nearCount++, placed);
