@@ -18,6 +18,7 @@ import {
   transformLoopPoint,
 } from "../map";
 import { arWalk, viewState } from "../store";
+import { pathJointPatches } from "./MapScene";
 
 interface DetailPlacement {
   position: [number, number, number];
@@ -192,6 +193,7 @@ function MapShell({ map, materials }: { map: CompositionMap; materials: PackMate
       {map.segments.map((segment) => (
         <SegmentShell key={segment.id} map={map} segment={segment} materials={materials} />
       ))}
+      <JointPatches map={map} material={materials.floor} />
       {map.rooms.map((room) => (
         <RoomFloor key={room.id} map={map} room={room} material={materials.floor} />
       ))}
@@ -217,6 +219,59 @@ function MapShell({ map, materials }: { map: CompositionMap; materials: PackMate
       })}
     </group>
   );
+}
+
+// Flat textured caps over the wedge gaps where path segments meet at an angle.
+// The per-segment slabs above stop square at each end, so without these the pack
+// texture is missing across angled joints and the plainer reactive floor shows
+// through. Each patch sits at the joint's shared elevation + 0.03 — flush with
+// the segment slab tops (see SegmentShell) so the texture reads continuously.
+function JointPatches({ map, material }: { map: CompositionMap; material: THREE.Material }) {
+  const geometry = useMemo(() => jointPatchGeometry(map), [map]);
+  useEffect(() => () => geometry?.dispose(), [geometry]);
+  if (!geometry) return null;
+  return <mesh geometry={geometry} material={material} receiveShadow />;
+}
+
+function jointPatchGeometry(map: CompositionMap): THREE.BufferGeometry | null {
+  const patches = pathJointPatches(map);
+  if (!patches.length) return null;
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+  for (const { polygon, y } of patches) {
+    const base = positions.length / 3;
+    // Map UVs across each patch's own bounding box (0..1), matching how the box
+    // slab faces map the floor texture, so the tile density stays comparable.
+    let minX = Infinity;
+    let minZ = Infinity;
+    let maxX = -Infinity;
+    let maxZ = -Infinity;
+    for (const [px, pz] of polygon) {
+      if (px < minX) minX = px;
+      if (px > maxX) maxX = px;
+      if (pz < minZ) minZ = pz;
+      if (pz > maxZ) maxZ = pz;
+    }
+    const spanX = maxX - minX || 1;
+    const spanZ = maxZ - minZ || 1;
+    for (const [px, pz] of polygon) {
+      positions.push(px, y + 0.03, pz);
+      uvs.push((px - minX) / spanX, (pz - minZ) / spanZ);
+    }
+    const triangles = THREE.ShapeUtils.triangulateShape(
+      polygon.map(([px, pz]) => new THREE.Vector2(px, pz)),
+      [],
+    );
+    for (const triangle of triangles) indices.push(base + triangle[0], base + triangle[1], base + triangle[2]);
+  }
+  if (!indices.length) return null;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
 }
 
 function FallbackFloor({ map, material }: { map: CompositionMap; material: THREE.MeshStandardMaterial }) {

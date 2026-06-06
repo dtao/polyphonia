@@ -82,6 +82,6 @@ earlier ones.
 - [x] P8 Floor texture goes away after changing detail pack for the first time and doesn't come back until browser refresh.
 - [x] P9 Geo Drive mode should only be available on mobile, on tiled maps.
 - [x] P10 Environmental objects (trees, crystals, etc.) should repeat on tiled maps just as stem orbs do.
-- [ ] P11 Floor textures have a visible gap at joints - where path segments connect at an angle.
+- [x] P11 Floor textures have a visible gap at joints - where path segments connect at an angle.
 - [ ] P12 Environmental objects (trees, crystals, etc.) should fade in from the distance as you approach rather than abruptly appear - same as stem orbs.
 - [ ] P13 Environmental (trees, etc.) show visible flicker as player crosses the loop boundary on path-loop maps.

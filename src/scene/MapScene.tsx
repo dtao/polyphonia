@@ -1203,6 +1203,29 @@ function walkableFloorGeometry(map: CompositionMap): THREE.BufferGeometry | null
   return geometry;
 }
 
+// The flat fill patches that close the wedge gap where two or more path
+// segments meet at an angle, mirroring the miter the reactive floor builds in
+// `walkableFloorGeometry`. The textured floor (DetailMapDressing) lays per-
+// segment slabs that stop square at each end, so without these the pack texture
+// is missing across every angled joint. Each polygon is the convex hull of the
+// incident segments' mitered border points, at the joint's shared elevation.
+export function pathJointPatches(map: CompositionMap): Array<{ polygon: [number, number][]; y: number }> {
+  const segments = map.segments;
+  const patches: Array<{ polygon: [number, number][]; y: number }> = [];
+  for (const { point, segments: jointSegments } of sharedJoints(segments)) {
+    const y = elevationAt(map, point);
+    const points: [number, number][] = [];
+    for (const segment of jointSegments) {
+      const end = pointKey(segment.start) === pointKey(point) ? "start" : "end";
+      points.push(borderPoint(segment, segments, end, -1));
+      points.push(borderPoint(segment, segments, end, 1));
+    }
+    const polygon = convexHull(uniquePoints(points));
+    if (polygon.length >= 3) patches.push({ polygon, y });
+  }
+  return patches;
+}
+
 function addRoomDoorwayConnector(map: CompositionMap, segment: WalkableSegment, end: SegmentEnd, vertices: number[], indices: number[]): void {
   const point = end === "start" ? segment.start : segment.end;
   for (const room of map.rooms) {
