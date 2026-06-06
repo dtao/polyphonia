@@ -22,6 +22,8 @@ interface DetailPlacement {
   scale: [number, number, number];
 }
 
+const packTextureCache = new Map<DetailProfile, THREE.Texture[]>();
+
 // How far out (in world units) adjacent loop copies receive the textured floor
 // shells. Kept near the full-opacity band of the reactive floor copies (which
 // fade ~85–180); beyond it the copies are already fading, so the plainer
@@ -109,9 +111,8 @@ function MapShell({ map, material }: { map: CompositionMap; material: THREE.Mesh
   return (
     <group>
       {map.segments.length === 0 && map.rooms.length === 0 && map.platforms.length === 0 && (
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.13, 0]} receiveShadow>
+        <mesh material={material} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.13, 0]} receiveShadow>
           <circleGeometry args={[56, 96]} />
-          <primitive object={material} attach="material" />
         </mesh>
       )}
       {map.segments.map((segment) => (
@@ -130,13 +131,13 @@ function MapShell({ map, material }: { map: CompositionMap; material: THREE.Mesh
         return (
           <mesh
             key={wall.id}
+            material={material}
             position={[(wall.start[0] + wall.end[0]) / 2, wall.height / 2, (wall.start[1] + wall.end[1]) / 2]}
             rotation={[0, Math.atan2(dx, dz), 0]}
             castShadow
             receiveShadow
           >
             <boxGeometry args={[wall.wallThickness ?? 0.3, wall.height, length]} />
-            <primitive object={material} attach="material" />
           </mesh>
         );
       })}
@@ -180,23 +181,31 @@ function SegmentShell({
 
   return (
     <group position={position} rotation={[0, yaw, 0]}>
-      <mesh rotation={[pitch, 0, 0]} castShadow receiveShadow>
+      <mesh material={material} rotation={[pitch, 0, 0]} castShadow receiveShadow>
         <boxGeometry args={[segment.width, 0.26, length]} />
-        <primitive object={material} attach="material" />
       </mesh>
       {tunnel && (
         <>
-          <mesh position={[-segment.width / 2, wallHeight / 2, 0]} rotation={[pitch, 0, 0]} castShadow receiveShadow>
+          <mesh
+            material={material}
+            position={[-segment.width / 2, wallHeight / 2, 0]}
+            rotation={[pitch, 0, 0]}
+            castShadow
+            receiveShadow
+          >
             <boxGeometry args={[0.45, wallHeight, length]} />
-            <primitive object={material} attach="material" />
           </mesh>
-          <mesh position={[segment.width / 2, wallHeight / 2, 0]} rotation={[pitch, 0, 0]} castShadow receiveShadow>
+          <mesh
+            material={material}
+            position={[segment.width / 2, wallHeight / 2, 0]}
+            rotation={[pitch, 0, 0]}
+            castShadow
+            receiveShadow
+          >
             <boxGeometry args={[0.45, wallHeight, length]} />
-            <primitive object={material} attach="material" />
           </mesh>
-          <mesh position={[0, wallHeight, 0]} rotation={[pitch, 0, 0]} castShadow receiveShadow>
+          <mesh material={material} position={[0, wallHeight, 0]} rotation={[pitch, 0, 0]} castShadow receiveShadow>
             <boxGeometry args={[segment.width + 0.8, 0.45, length]} />
-            <primitive object={material} attach="material" />
           </mesh>
         </>
       )}
@@ -212,12 +221,12 @@ function RoomFloor({ map, room, material }: { map: CompositionMap; room: MapRoom
   // stone). Mirrors the segment slab's 0.03 lift above its own reactive floor.
   return (
     <mesh
+      material={material}
       position={[room.center[0], roomElevation(map, room) - 0.05, room.center[1]]}
       rotation={[0, room.rotation, 0]}
       receiveShadow
     >
       <boxGeometry args={[room.width, 0.26, room.depth]} />
-      <primitive object={material} attach="material" />
     </mesh>
   );
 }
@@ -238,17 +247,25 @@ function PlatformFloor({
   const y = platformElevation(map, platform) - 0.04;
   if (platform.shape === "rect") {
     return (
-      <mesh position={[platform.center[0], y, platform.center[1]]} rotation={[0, platform.rotation, 0]} receiveShadow>
+      <mesh
+        material={material}
+        position={[platform.center[0], y, platform.center[1]]}
+        rotation={[0, platform.rotation, 0]}
+        receiveShadow
+      >
         <boxGeometry args={[platform.width, 0.26, platform.depth]} />
-        <primitive object={material} attach="material" />
       </mesh>
     );
   }
 
   return (
-    <mesh position={[platform.center[0], y, platform.center[1]]} rotation={[0, platform.rotation, 0]} receiveShadow>
+    <mesh
+      material={material}
+      position={[platform.center[0], y, platform.center[1]]}
+      rotation={[0, platform.rotation, 0]}
+      receiveShadow
+    >
       <cylinderGeometry args={[platform.width / 2, platform.width / 2, 0.26, platform.shape === "hex" ? 6 : 48]} />
-      <primitive object={material} attach="material" />
     </mesh>
   );
 }
@@ -322,8 +339,11 @@ function usePackMaterial(profile: DetailProfile, editMode: boolean): THREE.MeshS
   const config = PROFILE_CONFIG[profile];
   const loaded = useTexture(config.textures) as THREE.Texture[];
   const textures = useMemo(
-    () =>
-      loaded.map((source, index) => {
+    () => {
+      const cached = packTextureCache.get(profile);
+      if (cached) return cached;
+
+      const created = loaded.map((source, index) => {
         const texture = source.clone();
         texture.wrapS = THREE.RepeatWrapping;
         texture.wrapT = THREE.RepeatWrapping;
@@ -332,8 +352,11 @@ function usePackMaterial(profile: DetailProfile, editMode: boolean): THREE.MeshS
         if (index === 3) texture.channel = 0;
         texture.needsUpdate = true;
         return texture;
-      }),
-    [loaded],
+      });
+      packTextureCache.set(profile, created);
+      return created;
+    },
+    [config, loaded, profile],
   );
   const material = useMemo(
     () =>
@@ -355,15 +378,12 @@ function usePackMaterial(profile: DetailProfile, editMode: boolean): THREE.MeshS
     [config, editMode, textures],
   );
 
-  // Dispose the material and the textures on independent effects. The material
-  // is rebuilt whenever editMode toggles (transparent/opacity/depthWrite differ),
-  // but the textures are reused across that rebuild. Disposing both together —
-  // keyed on the material — tore down the still-referenced textures the moment
-  // edit mode changed (e.g. exiting edit after picking a pack), so the floor went
-  // untextured until a full reload. Keying texture disposal on the textures alone
-  // keeps them alive until the pack actually changes.
+  // Materials are transient because edit mode changes their transparency.
+  // Textures are stable resources for the three built-in profiles: disposing
+  // them during a pack replacement can invalidate the replacement render while
+  // React is switching suspended asset trees. Keep one cloned set per profile
+  // instead, just as useTexture keeps the loaded sources cached.
   useEffect(() => () => material.dispose(), [material]);
-  useEffect(() => () => textures.forEach((texture) => texture.dispose()), [textures]);
 
   return material;
 }
