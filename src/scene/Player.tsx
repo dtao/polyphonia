@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { useStore, viewState, touchMove, arWalk, geoWalk } from "../store";
+import { useStore, viewState, touchMove, arWalk, geoWalk, loopWrap } from "../store";
 import { MapSupport, mapSupportAt, stepOnMap, surfaceHeightOnSupport, wrapLoopPosition } from "../map";
 
 const EYE_HEIGHT = 3.0;
@@ -211,6 +211,9 @@ export function Player() {
     }
     const wrapped = wrapLoopPosition(map, previous, [camera.position.x, camera.position.z]);
     if (wrapped) {
+      // Signal the teleport so <Scene> can hide tiled previews for this frame:
+      // they're built from React state that still reflects the pre-wrap camera.
+      loopWrap.generation++;
       camera.position.x = wrapped.position[0];
       camera.position.z = wrapped.position[1];
       support.current = mapSupportAt(map, wrapped.position, null);

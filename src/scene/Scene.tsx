@@ -2,7 +2,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import * as THREE from "three";
-import { arWalk, useStore, viewState } from "../store";
+import { arWalk, loopWrap, useStore, viewState } from "../store";
 import { TrackMarker } from "./TrackMarker";
 import { Player } from "./Player";
 import { EditControls } from "./EditControls";
@@ -39,6 +39,7 @@ export function Scene() {
   const mode = useStore((s) => s.mode);
   const camera = useThree((s) => s.camera);
   const [viewer, setViewer] = useState<[number, number]>([0, 0]);
+  const previewGroup = useRef<THREE.Group>(null);
   useFrame(() => {
     const next: [number, number] = arWalk.active ? [viewState.x, viewState.z] : [camera.position.x, camera.position.z];
     setViewer((current) => (Math.hypot(current[0] - next[0], current[1] - next[1]) > VIEWER_SAMPLE_DISTANCE ? next : current));
@@ -55,7 +56,7 @@ export function Scene() {
     <>
       <ARWorldTransform>
         <EnvironmentScene environment={environment} editMode={mode === "edit"} />
-        {mode === "explore" && loopPreviewsEnabled && <TiledMapPreview viewer={viewer} />}
+        {mode === "explore" && loopPreviewsEnabled && <TiledMapPreview viewer={viewer} groupRef={previewGroup} />}
         <TileBoundaryOverlay map={map} viewer={viewer} editMode={mode === "edit"} />
         <MapScene map={map} tracks={tracks} lightTracks={mode === "explore" ? tileLights : tracks} editMode={mode === "edit"} />
 
@@ -80,6 +81,9 @@ export function Scene() {
           <TrackGizmo />
         </>
       )}
+      {/* Mounted after <Player> so its frame callback runs after the wrap is
+          recorded; hides the preview group on the teleport frame. */}
+      {mode === "explore" && loopPreviewsEnabled && <LoopWrapBlipGuard groupRef={previewGroup} />}
       <ListenerSync />
       <ARWalkSession />
       <ARBackdrop />
@@ -152,14 +156,14 @@ function TileBoundaryOverlay({ map, viewer, editMode }: { map: CompositionMap; v
   );
 }
 
-function TiledMapPreview({ viewer }: { viewer: [number, number] }) {
+function TiledMapPreview({ viewer, groupRef }: { viewer: [number, number]; groupRef: React.Ref<THREE.Group> }) {
   const tracks = useStore((s) => s.composition.tracks);
   const map = useStore((s) => s.composition.map);
   const previews = debugFlag("debugNoLoopPreview") ? [] : tiledMapTransforms(map, viewer, TILE_PREVIEW_RADIUS);
   const tileLights = debugFlag("debugNoLoopPreview") ? tracks : tileLightTracks(map, tracks, viewer);
 
   return (
-    <>
+    <group ref={groupRef}>
       {previews.map((preview) => {
         const mapFade = previewMapVisibility(map, preview, viewer);
         const markerFades = tracks
@@ -188,8 +192,28 @@ function TiledMapPreview({ viewer }: { viewer: [number, number] }) {
           </group>
         );
       })}
-    </>
+    </group>
   );
+}
+
+// On a path-loop wrap the camera teleports, but the previews above are built
+// from the `viewer` React state, which still holds the pre-wrap position for one
+// frame — long enough to flash a copy that should already be distant. This runs
+// after <Player> (so the wrap is already recorded) and blanks the preview group
+// for that single frame; the next frame re-renders with the corrected viewer.
+function LoopWrapBlipGuard({ groupRef }: { groupRef: React.RefObject<THREE.Group> }) {
+  const seen = useRef(loopWrap.generation);
+  useFrame(() => {
+    const group = groupRef.current;
+    if (!group) return;
+    if (loopWrap.generation !== seen.current) {
+      seen.current = loopWrap.generation;
+      group.visible = false;
+    } else {
+      group.visible = true;
+    }
+  });
+  return null;
 }
 
 function tileBoundaryGeometry(map: CompositionMap, viewer: [number, number]): THREE.BufferGeometry | null {

@@ -41,6 +41,13 @@ export const markerObjects = new Map<string, THREE.Object3D>();
 // y is the walkable-surface height at (x, z); the player rides at y + eye height.
 export const viewState = { x: 0, y: 0, z: 0, fx: 0, fz: -1 };
 
+// Bumped each time <Player> wraps the listener across a path-loop seam (a
+// teleport). Tiled map previews are derived from React state that lags the
+// camera by a frame, so on the wrap frame a copy can be drawn for the old
+// position; <Scene> watches this counter to hide the preview group for that one
+// frame. Kept non-reactive so the bump never triggers a re-render.
+export const loopWrap = { generation: 0 };
+
 // Touch-device movement input for explore mode: a virtual-joystick vector where
 // `forward`/`strafe` are each in roughly [-1, 1]. Written by the on-screen
 // joystick (<TouchControls>), read each frame by <Player> alongside WASD. Kept
