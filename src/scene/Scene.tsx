@@ -19,8 +19,12 @@ import { debugFlag } from "../debug";
 const VIEWER_SAMPLE_DISTANCE = 0.75;
 const TILE_PREVIEW_RADIUS = 180;
 const PREVIEW_FADE_EPSILON = 0.003;
-const PATH_LOOP_MAP_FADE_START = 18;
-const PATH_LOOP_MAP_FADE_END = 58;
+// Path-loop copies now chain to fill the corridor (see tiledMapTransforms), so
+// the floor stays solid through the near/medium distance and only fades out near
+// the preview radius — a gentle far-horizon fade rather than a whole copy
+// blinking in the medium distance as the viewer crosses the seam.
+const PATH_LOOP_MAP_FADE_START = 90;
+const PATH_LOOP_MAP_FADE_END = 178;
 const PATH_LOOP_STEM_FADE_START = 72;
 const PATH_LOOP_STEM_FADE_END = 180;
 const TILE_MAP_FADE_START = 85;

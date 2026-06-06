@@ -943,9 +943,17 @@ export interface LoopPreviewTransform {
   anchor: [number, number];
   source: [number, number];
   rotation: number;
+  // Vertical lift of the copy, accumulated across chained path-loop copies. When
+  // absent, `loopPreviewElevationOffset` derives a single step from the seam
+  // endpoints (the depth-1 / legacy case).
+  elevationOffset?: number;
 }
 
 const MAX_TILE_PREVIEW_RANGE = 3;
+// How many copies deep a path-loop corridor chains in each direction. Each copy
+// repeats the whole map one loop further along, so a handful is enough to fill
+// the view on all but the tiniest loops; the radius gate usually stops sooner.
+const MAX_PATH_LOOP_DEPTH = 8;
 
 export function loopPreviewTransforms(
   map: Pick<CompositionMap, "segments" | "tiling">,
@@ -964,14 +972,59 @@ export function loopAdjacentTransforms(map: Pick<CompositionMap, "segments" | "t
 }
 
 export function tiledMapTransforms(
-  map: Pick<CompositionMap, "segments" | "tiling">,
+  map: Pick<CompositionMap, "segments" | "tiling" | "elevations">,
   viewer: [number, number],
   radius = 120,
 ): LoopPreviewTransform[] {
-  if (map.tiling.type === "path-loop") return loopAdjacentTransforms(map);
+  if (map.tiling.type === "path-loop") return pathLoopChainTransforms(map, viewer, radius);
   if (map.tiling.type === "square") return squareTileTransforms(map.tiling, viewer, radius);
   if (map.tiling.type === "hex") return hexTileTransforms(map.tiling, viewer, radius);
   return [];
+}
+
+// Chain repeated copies of the map out along each direction of a path loop until
+// they leave the preview radius (or hit the depth cap). A copy one step further
+// is the same rigid seam transform applied again, so the k-th copy is the step
+// transform composed with itself k times: rotation accumulates, the anchor walks
+// forward by re-applying the step to the previous anchor, and the vertical lift
+// stacks one seam delta per step. Filling the corridor this way (instead of a
+// single depth-1 copy) keeps medium-distance geometry from popping in and out as
+// the viewer crosses the seam.
+function pathLoopChainTransforms(
+  map: Pick<CompositionMap, "segments" | "tiling" | "elevations">,
+  viewer: [number, number],
+  radius: number,
+): LoopPreviewTransform[] {
+  const loop = pathLoopForMap(map);
+  if (!loop?.start || !loop.end) return [];
+  const endStep = loopPreviewTransform(map, loop.end, loop.start, viewer, Infinity, "end");
+  const startStep = loopPreviewTransform(map, loop.start, loop.end, viewer, Infinity, "start");
+  const transforms: LoopPreviewTransform[] = [];
+  for (const step of [endStep, startStep]) {
+    if (step) transforms.push(...chainLoopDirection(map, step, viewer, radius));
+  }
+  return transforms;
+}
+
+function chainLoopDirection(
+  map: Pick<CompositionMap, "elevations">,
+  step: LoopPreviewTransform,
+  viewer: [number, number],
+  radius: number,
+): LoopPreviewTransform[] {
+  const stepElevation = pointElevation(map, mapPointKey(step.anchor)) - pointElevation(map, mapPointKey(step.source));
+  const transforms: LoopPreviewTransform[] = [];
+  let anchor = step.anchor;
+  let rotation = step.rotation;
+  for (let depth = 1; depth <= MAX_PATH_LOOP_DEPTH; depth++) {
+    // Gate on the copy's near seam: once that anchor is past the radius the rest
+    // of the copy fades out, so stop chaining further in this direction.
+    if (Math.hypot(viewer[0] - anchor[0], viewer[1] - anchor[1]) > radius) break;
+    transforms.push({ id: `${step.id}:${depth}`, anchor, source: step.source, rotation, elevationOffset: stepElevation * depth });
+    anchor = transformLoopPoint(step, anchor);
+    rotation += step.rotation;
+  }
+  return transforms;
 }
 
 export function transformLoopPoint(preview: LoopPreviewTransform, point: [number, number]): [number, number] {
@@ -985,6 +1038,7 @@ export function transformLoopPoint(preview: LoopPreviewTransform, point: [number
 // How far to raise/lower a loop preview copy so its source endpoint aligns with
 // the anchor endpoint it sits against. Non-loop tilings (square/hex) stay flat.
 export function loopPreviewElevationOffset(map: Pick<CompositionMap, "elevations" | "tiling">, preview: LoopPreviewTransform): number {
+  if (preview.elevationOffset !== undefined) return preview.elevationOffset;
   if (map.tiling.type !== "path-loop") return 0;
   return pointElevation(map, mapPointKey(preview.anchor)) - pointElevation(map, mapPointKey(preview.source));
 }
