@@ -9,6 +9,8 @@ export interface EnvironmentPackSelection {
 export interface EnvironmentLandmarkPlacement {
   id: string;
   assetId: string;
+  /** Pack that supplies this geometry; absent for reusable creator assets. */
+  packId?: string;
   position: [number, number, number];
   rotation: [number, number, number];
   scale: [number, number, number];
@@ -83,6 +85,9 @@ function normalizeLandmark(value: unknown): EnvironmentLandmarkPlacement | undef
   return {
     id: landmark.id.trim(),
     assetId: landmark.assetId.trim(),
+    ...(typeof landmark.packId === "string" && landmark.packId.trim()
+      ? { packId: landmark.packId.trim() }
+      : {}),
     position: landmark.position,
     rotation: landmark.rotation,
     scale: landmark.scale.map((component) => Math.max(0.05, Math.min(component, 20))) as [number, number, number],

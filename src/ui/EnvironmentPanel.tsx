@@ -48,7 +48,6 @@ export function EnvironmentPanel({ open, onOpen, onClose }: { open: boolean; onO
             const pack = environmentPackById(event.target.value);
             setEnvironment({
               pack: pack ? { id: pack.id, variant: pack.variants[0], quality: "auto" } : undefined,
-              landmarks: [],
             });
           }}
           style={select}

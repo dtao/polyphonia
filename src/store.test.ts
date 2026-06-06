@@ -180,4 +180,19 @@ describe("store edit contracts", () => {
     const clonedKey = `${clonedEndpoint[0].toFixed(3)},${clonedEndpoint[1].toFixed(3)}`;
     expect(state.composition.map.elevations?.[clonedKey]).toBe(5);
   });
+
+  it("keeps placed landmarks when changing detail packs", () => {
+    useStore.getState().setEnvironment({
+      pack: { id: "verdant-grove", variant: "temperate", quality: "auto" },
+    });
+    useStore.getState().addLandmark("evergreen");
+    const landmark = useStore.getState().composition.environment.landmarks?.[0];
+    expect(landmark?.packId).toBe("verdant-grove");
+
+    useStore.getState().setEnvironment({
+      pack: { id: "atlas-cavern", variant: "ember", quality: "auto" },
+    });
+
+    expect(useStore.getState().composition.environment.landmarks).toEqual([landmark]);
+  });
 });

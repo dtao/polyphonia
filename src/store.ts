@@ -40,6 +40,7 @@ import {
 } from "./detailPackStorage";
 import {
   EnvironmentPackDefinition,
+  environmentPackById,
   registerCustomEnvironmentPacks,
 } from "./environmentPacks";
 import {
@@ -645,15 +646,15 @@ export const useStore = create<StoreState>((set, get) => ({
       ...withHistory(state, `environment:pack:${pack.id}`),
       composition: {
         ...touchComposition(state.composition),
-        environment: {
+        environment: normalizeEnvironment({
+          ...state.composition.environment,
           pack: {
             id: pack.id,
             variant: pack.variants[0],
             quality: "auto",
           },
-        },
+        }),
       },
-      selectedLandmarkId: null,
     }));
   },
   removeDetailPack: async (id) => {
@@ -666,9 +667,11 @@ export const useStore = create<StoreState>((set, get) => ({
         ? {
             composition: {
               ...touchComposition(state.composition),
-              environment: {},
+              environment: normalizeEnvironment({
+                ...state.composition.environment,
+                pack: undefined,
+              }),
             },
-            selectedLandmarkId: null,
           }
         : {}),
     }));
@@ -834,10 +837,15 @@ export const useStore = create<StoreState>((set, get) => ({
     const creatorAsset = state.creatorAssets.find(
       (asset) => asset.kind === "landmark" && asset.id === assetId,
     );
+    const pack = environmentPackById(state.composition.environment.pack?.id);
+    const packId = pack?.landmarks.some((landmark) => landmark.id === assetId)
+      ? pack.id
+      : undefined;
     const scale = creatorAsset?.kind === "landmark" ? creatorAsset.defaultScale : 1;
     const landmark: EnvironmentLandmarkPlacement = {
       id: newId(),
       assetId,
+      ...(packId ? { packId } : {}),
       position: [x, surfaceHeightAt(state.composition.map, [x, z]), z],
       rotation: [0, 0, 0],
       scale: [scale, scale, scale],

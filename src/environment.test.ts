@@ -53,6 +53,7 @@ describe("environment normalization", () => {
           {
             id: " tree-1 ",
             assetId: " evergreen ",
+            packId: " verdant-grove ",
             position: [2, 0, -3],
             rotation: [0, Math.PI / 2, 0],
             scale: [1.5, 1.5, 1.5],
@@ -72,6 +73,7 @@ describe("environment normalization", () => {
         {
           id: "tree-1",
           assetId: "evergreen",
+          packId: "verdant-grove",
           position: [2, 0, -3],
           rotation: [0, Math.PI / 2, 0],
           scale: [1.5, 1.5, 1.5],

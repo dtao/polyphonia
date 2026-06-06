@@ -29,7 +29,8 @@ these spatial compositions.
   expensive effects. Creators can also import reusable PBR materials and
   self-contained GLB landmarks separately, assign different materials to
   floors/walls/ceilings, place models directly, and carry those assets through
-  export or cloud publishing. A full detail pack is optional.
+  export or cloud publishing. Placed landmarks remain in the composition when
+  switching detail packs. A full detail pack is optional.
   Editable path maps can define terminal loop points for corridor-like
   spaces that wrap back on themselves. Path segments can be marked as enclosed
   **tunnels** whose walls and ceiling muffle sound passing in or out the sides,

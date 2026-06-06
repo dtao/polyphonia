@@ -58,7 +58,7 @@ export function EnvironmentScene({
         />
       )}
 
-      {environment.pack && (
+      {(environment.pack || environment.landmarks?.some((placement) => placement.packId)) && (
         <AuthoredEnvironmentScene
           environment={environment}
           map={map}

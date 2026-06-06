@@ -43,31 +43,126 @@ export function AuthoredEnvironmentScene({
   const pack = environmentPackById(environment.pack?.id);
   const quality = resolvedEnvironmentQuality(environment.pack?.quality ?? "auto");
   const asset = pack ? environmentPackAsset(pack, quality) : undefined;
+  const archivedPackIds = [...new Set(
+    (environment.landmarks ?? [])
+      .map((placement) => placement.packId)
+      .filter((id): id is string => !!id && id !== pack?.id),
+  )];
   useEffect(
     () => () => {
       ktx2Loader.dispose();
     },
     [ktx2Loader],
   );
-  if (!pack || !asset) return null;
-
-  useGLTF.preload(asset.url, "/draco-gltf/", true, extendLoader);
+  if (asset) useGLTF.preload(asset.url, "/draco-gltf/", true, extendLoader);
 
   return (
-    <AssetErrorBoundary key={`${pack.id}:${asset.url}`}>
-      <Suspense fallback={null}>
-        <EnvironmentAsset
-          url={asset.url}
-          map={map}
+    <>
+      {pack && asset && (
+        <AssetErrorBoundary key={`${pack.id}:${asset.url}`}>
+          <Suspense fallback={null}>
+            <EnvironmentAsset
+              url={asset.url}
+              map={map}
+              editMode={editMode}
+              quality={quality}
+              pack={pack}
+              placements={(environment.landmarks ?? []).filter(
+                (placement) => !placement.packId || placement.packId === pack.id,
+              )}
+              extendLoader={extendLoader}
+              surfaceMaterials={surfaceMaterials}
+            />
+          </Suspense>
+        </AssetErrorBoundary>
+      )}
+      {archivedPackIds.map((packId) => (
+        <ArchivedPackLandmarks
+          key={packId}
+          packId={packId}
+          placements={(environment.landmarks ?? []).filter(
+            (placement) => placement.packId === packId,
+          )}
           editMode={editMode}
           quality={quality}
-          pack={pack}
-          placements={environment.landmarks ?? []}
           extendLoader={extendLoader}
-          surfaceMaterials={surfaceMaterials}
+        />
+      ))}
+    </>
+  );
+}
+
+function ArchivedPackLandmarks({
+  packId,
+  placements,
+  editMode,
+  quality,
+  extendLoader,
+}: {
+  packId: string;
+  placements: EnvironmentLandmarkPlacement[];
+  editMode: boolean;
+  quality: "low" | "high";
+  extendLoader: (loader: any) => void;
+}) {
+  const pack = environmentPackById(packId);
+  const asset = pack ? environmentPackAsset(pack, quality) : undefined;
+  if (!pack || !asset) return null;
+  return (
+    <AssetErrorBoundary key={`${pack.id}:${asset.url}:placements`}>
+      <Suspense fallback={null}>
+        <PackLandmarkAsset
+          url={asset.url}
+          pack={pack}
+          placements={placements}
+          editMode={editMode}
+          extendLoader={extendLoader}
         />
       </Suspense>
     </AssetErrorBoundary>
+  );
+}
+
+function PackLandmarkAsset({
+  url,
+  pack,
+  placements,
+  editMode,
+  extendLoader,
+}: {
+  url: string;
+  pack: EnvironmentPackDefinition;
+  placements: EnvironmentLandmarkPlacement[];
+  editMode: boolean;
+  extendLoader: (loader: any) => void;
+}) {
+  useGLTF.preload(url, "/draco-gltf/", true, extendLoader);
+  const gltf = useGLTF(url, "/draco-gltf/", true, extendLoader);
+  const landmarkGeometries = useMemo(
+    () =>
+      pack.landmarks.flatMap((landmark) => {
+        let geometry: THREE.BufferGeometry | undefined;
+        gltf.scene.traverse((object) => {
+          if (!geometry && object instanceof THREE.Mesh && object.name.startsWith(landmark.nodePrefix)) {
+            geometry = object.geometry;
+          }
+        });
+        return geometry
+          ? [{
+              landmark,
+              geometry,
+              material: findLandmarkMaterial(gltf.scene, landmark.nodePrefix),
+            }]
+          : [];
+      }),
+    [gltf.scene, pack.landmarks],
+  );
+  return (
+    <PlacedLandmarks
+      landmarks={landmarkGeometries}
+      placements={placements}
+      editMode={editMode}
+    />
   );
 }
 
