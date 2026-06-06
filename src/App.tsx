@@ -1,23 +1,90 @@
 import { useCallback, useEffect, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Scene } from "./scene/Scene";
+import { EnvironmentCredits } from "./ui/EnvironmentCredits";
 import { PropertiesPanel } from "./ui/PropertiesPanel";
+import { MapPointPanel } from "./ui/MapPointPanel";
+import { MapSegmentPanel } from "./ui/MapSegmentPanel";
+import { RoomPanel } from "./ui/RoomPanel";
+import { EntrancePanel } from "./ui/EntrancePanel";
+import { PlatformPanel } from "./ui/PlatformPanel";
+import { WallPanel } from "./ui/WallPanel";
 import { AddStem } from "./ui/AddStem";
 import { EntryScreen } from "./ui/EntryScreen";
 import { PublishControl } from "./ui/PublishControl";
 import { LoopPanel } from "./ui/LoopPanel";
 import { EnvironmentPanel } from "./ui/EnvironmentPanel";
 import { MapPanel } from "./ui/MapPanel";
+import { DebugPanel } from "./ui/DebugPanel";
+import { AudioLoadingOverlay } from "./ui/AudioLoadingOverlay";
+import { ARWalkControls } from "./ui/ARWalkControls";
+import { GeoWalkControls } from "./ui/GeoWalkControls";
 import { useStore } from "./store";
 import { exportComposition } from "./persistence";
+
+type EditPanel = "environment" | "map" | "loop" | null;
+
+function deleteSelectedMapPoint(): void {
+  const s = useStore.getState();
+  const key = s.selectedMapPointKey;
+  if (!key) return;
+  s.deleteMapPoint(key);
+}
+
+function modKey(): string {
+  return navigator.platform.toLowerCase().includes("mac") ? "Cmd" : "Ctrl";
+}
+
+function hudShortcutHint({
+  mode,
+  selectedId,
+  selectedMapPointKey,
+  selectedMapSegmentId,
+  branchStartPointKey,
+  selectedStart,
+}: {
+  mode: string;
+  selectedId: string | null;
+  selectedMapPointKey: string | null;
+  selectedMapSegmentId: string | null;
+  branchStartPointKey: string | null;
+  selectedStart: boolean;
+}): string {
+  const mod = modKey();
+  if (mode === "explore") return "WASD + mouse to move · click scene for mouse look · Esc releases cursor · Tab to edit · F fullscreen";
+  if (selectedId) return `drag to move stem · Delete removes · ${mod}+D duplicates · Esc clears`;
+  if (branchStartPointKey) return "click floor to place branch · B cancels · Delete removes point · Esc clears";
+  if (selectedMapPointKey) return "drag point to reshape · terminal points can branch or become rooms · Delete removes point · Esc clears";
+  if (selectedMapSegmentId) return "adjust segment width · click point to edit branches · Esc clears";
+  if (selectedStart) return "drag start marker · choose Move/Rotate in Map · Esc clears";
+  return `WASD to move · Q/E down/up · drag to orbit · click a track or map point · ${mod}+O adds stem · ${mod}+Z undo · F fullscreen`;
+}
 
 export default function App() {
   const engine = useStore((s) => s.engine);
   const setEngine = useStore((s) => s.setEngine);
+  const audioLoading = useStore((s) => s.audioLoading);
   const entered = useStore((s) => s.entered);
   const comp = useStore((s) => s.composition);
   const mode = useStore((s) => s.mode);
   const select = useStore((s) => s.select);
+  const selectedId = useStore((s) => s.selectedId);
+  const selectedMapPointKey = useStore((s) => s.selectedMapPointKey);
+  const selectedMapSegmentId = useStore((s) => s.selectedMapSegmentId);
+  const branchStartPointKey = useStore((s) => s.branchStartPointKey);
+  const selectedStart = useStore((s) => s.selectedStart);
+  const canUndo = useStore((s) => s.undoStack.length > 0);
+  const canRedo = useStore((s) => s.redoStack.length > 0);
+  const [openEditPanel, setOpenEditPanel] = useState<EditPanel>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  const hudHint = hudShortcutHint({
+    mode,
+    selectedId,
+    selectedMapPointKey,
+    selectedMapSegmentId,
+    branchStartPointKey,
+    selectedStart,
+  });
 
   // Load the saved composition library + auth session on launch.
   useEffect(() => {
@@ -41,6 +108,18 @@ export default function App() {
     useStore.getState().toggleMode();
   }, []);
 
+  const toggleFullscreen = useCallback(() => {
+    const next = document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+    next.catch((err) => console.error("Failed to toggle fullscreen", err));
+  }, []);
+
+  useEffect(() => {
+    const onChange = () => setFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onChange);
+    onChange();
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+
   // The entry click does two gesture-gated things at once: drei's
   // PointerLockControls (armed on this button) locks the pointer, and here we
   // boot the audio engine. We leave the entry screen immediately and load audio
@@ -49,7 +128,7 @@ export default function App() {
     if (useStore.getState().engine || useStore.getState().entered) return;
     useStore.getState().resetViewToMapStart();
     useStore.getState().setEntered(true);
-    useStore.getState().startAudio();
+    void useStore.getState().startAudio().catch((e) => console.error("Failed to start audio", e));
   }
 
   // Create a fresh empty composition and drop straight into edit mode so the
@@ -59,7 +138,7 @@ export default function App() {
     useStore.getState().resetViewToMapStart();
     useStore.getState().setMode("edit");
     useStore.getState().setEntered(true);
-    useStore.getState().startAudio();
+    void useStore.getState().startAudio().catch((e) => console.error("Failed to start audio", e));
   }
 
   // Stop the experience and return to the entry screen. Edits to the
@@ -72,13 +151,95 @@ export default function App() {
     useStore.getState().select(null);
     useStore.getState().setEntered(false);
     setEngine(null);
+    useStore.getState().setAudioLoading({ status: "idle" });
   }
 
-  // Tab toggles Explore/Edit.
+  // Tab toggles Explore/Edit. Cmd/Ctrl+Z and Shift+Cmd/Ctrl+Z handle edit
+  // history when focus is not inside a native text field.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.code === "KeyF") {
+        const el = document.activeElement;
+        if (!el || (el.tagName !== "INPUT" && el.tagName !== "TEXTAREA")) {
+          e.preventDefault();
+          toggleFullscreen();
+          return;
+        }
+      }
+      if (e.key === "Escape" && document.fullscreenElement) return;
+      if (e.key === "Escape" && useStore.getState().mode === "edit") {
+        if (openEditPanel) {
+          e.preventDefault();
+          setOpenEditPanel(null);
+          return;
+        }
+        if (useStore.getState().selectedId) {
+          e.preventDefault();
+          useStore.getState().select(null);
+          return;
+        }
+      }
       const el = document.activeElement;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return;
+      const modifier = e.metaKey || e.ctrlKey;
+      const s = useStore.getState();
+      if (s.mode === "edit" && (e.code === "Delete" || e.code === "Backspace")) {
+        if (s.selectedId) {
+          e.preventDefault();
+          s.deleteTrack(s.selectedId);
+          return;
+        }
+        if (s.selectedRoomId && s.selectedEntranceIndex !== null) {
+          e.preventDefault();
+          s.removeEntrance(s.selectedRoomId, s.selectedEntranceIndex);
+          return;
+        }
+        if (s.selectedRoomId) {
+          e.preventDefault();
+          s.deleteRoom(s.selectedRoomId);
+          return;
+        }
+        if (s.selectedPlatformId) {
+          e.preventDefault();
+          s.deletePlatform(s.selectedPlatformId);
+          return;
+        }
+        if (s.selectedWallId) {
+          e.preventDefault();
+          s.deleteWall(s.selectedWallId);
+          return;
+        }
+        if (s.selectedMapPointKey) {
+          e.preventDefault();
+          deleteSelectedMapPoint();
+          return;
+        }
+      }
+      if (s.mode === "edit" && e.code === "KeyB" && !modifier && !e.altKey) {
+        if (s.selectedMapPointKey) {
+          e.preventDefault();
+          s.addBranchAtPoint(s.selectedMapPointKey);
+          return;
+        }
+      }
+      if (s.mode === "edit" && modifier && e.code === "KeyD") {
+        if (s.selectedId) {
+          e.preventDefault();
+          void s.duplicateTrack(s.selectedId);
+          return;
+        }
+      }
+      if (modifier && e.key.toLowerCase() === "z" && useStore.getState().entered) {
+        e.preventDefault();
+        if (e.shiftKey) void useStore.getState().redo();
+        else void useStore.getState().undo();
+        return;
+      }
+      if (modifier && e.key.toLowerCase() === "y" && useStore.getState().entered) {
+        e.preventDefault();
+        void useStore.getState().redo();
+        return;
+      }
       if (e.code === "Tab" && useStore.getState().engine) {
         e.preventDefault();
         handleToggleMode();
@@ -86,7 +247,24 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [handleToggleMode]);
+  }, [handleToggleMode, openEditPanel, toggleFullscreen]);
+
+  useEffect(() => {
+    const onPointerDown = (e: PointerEvent) => {
+      if (useStore.getState().mode !== "edit") return;
+      const target = e.target;
+      if (!(target instanceof Element)) return;
+
+      if (openEditPanel && !target.closest("[data-edit-drawer]")) setOpenEditPanel(null);
+
+      // Canvas clicks are handled by R3F: empty space clears via onPointerMissed,
+      // while clicking the selected marker keeps the inspector open.
+      if (target instanceof HTMLCanvasElement) return;
+      if (!target.closest("[data-stem-panel],[data-inspector]")) useStore.getState().select(null);
+    };
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => window.removeEventListener("pointerdown", onPointerDown, true);
+  }, [openEditPanel]);
 
   // Release the pointer lock when entering edit mode; reset cursor.
   useEffect(() => {
@@ -94,6 +272,7 @@ export default function App() {
       document.exitPointerLock?.();
     } else {
       document.body.style.cursor = "auto";
+      setOpenEditPanel(null);
     }
   }, [mode]);
 
@@ -114,11 +293,12 @@ export default function App() {
   return (
     <>
       <Canvas
+        shadows
         camera={{ position: [0, 1.7, 0], fov: 70, near: 0.1, far: 200 }}
         // Cap pixel ratio: full-window 3D at Retina 2x+ tanks the frame rate
         // and makes mouselook feel choppy. 1.5 is a sweet spot of crisp + fast.
         dpr={[1, 1.5]}
-        gl={{ antialias: true, powerPreference: "high-performance" }}
+        gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
         // Clicking empty space in edit mode clears the selection.
         onPointerMissed={() => {
           if (useStore.getState().mode === "edit") select(null);
@@ -138,11 +318,11 @@ export default function App() {
 
       {entered && (
         <>
+          <EnvironmentCredits />
           <div style={hud}>
             <strong>{comp.title}</strong> — {comp.artist}
             <span style={{ opacity: 0.6 }}>
-              {" "}
-              · {mode === "explore" ? "WASD + mouse to move · click to look · Esc for cursor" : "WASD to move · drag to orbit · click a track"}
+              {" "}· {hudHint}
             </span>
           </div>
 
@@ -153,19 +333,70 @@ export default function App() {
                 <button style={exitBtn} onClick={exit} title="Stop and return to the start screen">
                   ⏏ Exit
                 </button>
+                <button style={iconBtn} onClick={toggleFullscreen} title={fullscreen ? "Exit fullscreen (F)" : "Enter fullscreen (F)"}>
+                  {fullscreen ? "⤢" : "⛶"}
+                </button>
+                {mode === "edit" && (
+                  <div style={historyGroup}>
+                    <button
+                      style={{ ...historyBtn, ...(canUndo ? null : disabledBtn) }}
+                      onClick={() => void useStore.getState().undo()}
+                      disabled={!canUndo}
+                      title="Undo"
+                    >
+                      ↶
+                    </button>
+                    <button
+                      style={{ ...historyBtn, ...(canRedo ? null : disabledBtn) }}
+                      onClick={() => void useStore.getState().redo()}
+                      disabled={!canRedo}
+                      title="Redo"
+                    >
+                      ↷
+                    </button>
+                  </div>
+                )}
                 <button style={modeBtn} onClick={handleToggleMode} title="Toggle with Tab">
                   {mode === "explore" ? "✎ Edit" : "✦ Explore"}
                 </button>
               </div>
               {mode === "edit" && <AddStem />}
-              {mode === "edit" && <EnvironmentPanel />}
-              {mode === "edit" && <MapPanel />}
-              {mode === "edit" && <LoopPanel />}
+              {mode === "edit" && (
+                <>
+                  <EnvironmentPanel
+                    open={openEditPanel === "environment"}
+                    onOpen={() => setOpenEditPanel("environment")}
+                    onClose={() => setOpenEditPanel(null)}
+                  />
+                  <MapPanel
+                    open={openEditPanel === "map"}
+                    onOpen={() => setOpenEditPanel("map")}
+                    onClose={() => setOpenEditPanel(null)}
+                  />
+                  <LoopPanel
+                    open={openEditPanel === "loop"}
+                    onOpen={() => setOpenEditPanel("loop")}
+                    onClose={() => setOpenEditPanel(null)}
+                  />
+                </>
+              )}
               <PublishControl />
             </>
           )}
 
           <PropertiesPanel />
+          <MapPointPanel />
+          <MapSegmentPanel />
+          <RoomPanel />
+          <EntrancePanel />
+          <PlatformPanel />
+          <WallPanel />
+          {mode === "explore" && (
+            <>
+              <ARWalkControls map={comp.map} />
+              <GeoWalkControls map={comp.map} />
+            </>
+          )}
 
           {/* Empty composition: prompt the user to add their first stem. */}
           {comp.tracks.length === 0 && !locked && (
@@ -179,6 +410,8 @@ export default function App() {
           )}
         </>
       )}
+      <AudioLoadingOverlay loading={audioLoading} />
+      <DebugPanel />
     </>
   );
 }
@@ -210,6 +443,44 @@ const modeBtn: React.CSSProperties = {
   background: "rgba(91,140,255,0.22)",
   color: "white",
   cursor: "pointer",
+};
+
+const historyGroup: React.CSSProperties = {
+  display: "flex",
+  gap: 4,
+  padding: 4,
+  borderRadius: 999,
+  border: "1px solid rgba(255,255,255,0.14)",
+  background: "rgba(255,255,255,0.06)",
+};
+
+const iconBtn: React.CSSProperties = {
+  width: 36,
+  height: 36,
+  borderRadius: 999,
+  border: "1px solid rgba(255,255,255,0.18)",
+  background: "rgba(255,255,255,0.08)",
+  color: "rgba(255,255,255,0.88)",
+  cursor: "pointer",
+  fontSize: 17,
+  lineHeight: 1,
+};
+
+const historyBtn: React.CSSProperties = {
+  width: 30,
+  height: 30,
+  borderRadius: 999,
+  border: "1px solid rgba(255,255,255,0.14)",
+  background: "rgba(255,255,255,0.08)",
+  color: "rgba(255,255,255,0.88)",
+  cursor: "pointer",
+  fontSize: 18,
+  lineHeight: 1,
+};
+
+const disabledBtn: React.CSSProperties = {
+  opacity: 0.35,
+  cursor: "default",
 };
 
 const exitBtn: React.CSSProperties = {

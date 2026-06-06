@@ -47,8 +47,9 @@ export interface Composition {
   bpm: number;
   /**
    * Loop length in bars (4 beats each). When set, stems are trimmed to this
-   * musical length for seamless looping. Omitted for user-built compositions,
-   * where each stem simply loops its whole buffer.
+   * musical length for seamless looping. When omitted, the engine infers a
+   * shared BPM-aligned loop length from uploaded stems and pads/trims prepared
+   * loop buffers to keep every stem restarting together.
    */
   bars?: number;
   /** Whether playback loops. Defaults to true for existing compositions. */
@@ -66,6 +67,12 @@ export interface Composition {
   tracks: TrackDef[];
   /** Share id if this composition is currently published (cleared on unpublish). */
   publishedId?: string;
+  /** Local library metadata. */
+  createdAt?: string;
+  updatedAt?: string;
+  /** Fingerprint of the last successfully published local state. */
+  publishedRevision?: string;
+  publishedAt?: string;
 }
 
 // "Journey" — six stems (32s / 16-bar loop at 120 BPM), arranged in a hexagon
@@ -130,5 +137,86 @@ export const defaultComposition: Composition = {
 };
 
 export function normalizeComposition(comp: Composition): Composition {
-  return { ...comp, environment: normalizeEnvironment(comp.environment), map: normalizeMap(comp.map) };
+  const now = new Date().toISOString();
+  return {
+    ...comp,
+    createdAt: comp.createdAt ?? comp.updatedAt ?? now,
+    updatedAt: comp.updatedAt ?? comp.createdAt ?? now,
+    environment: normalizeEnvironment(comp.environment),
+    map: normalizeMap(comp.map),
+  };
+}
+
+export function touchComposition<T extends { createdAt?: string; updatedAt?: string }>(comp: T, at = new Date().toISOString()): T {
+  return { ...comp, createdAt: comp.createdAt ?? at, updatedAt: at };
+}
+
+type RevisionTrack = Omit<TrackDef, "source"> & { source: unknown };
+type RevisionComposition = Omit<Partial<Composition>, "tracks"> & { tracks?: RevisionTrack[] };
+
+export function compositionRevision(comp: RevisionComposition): string {
+  return hashString(
+    stableStringify({
+      title: comp.title ?? "Untitled",
+      artist: comp.artist ?? "Unknown",
+      artistId: comp.artistId,
+      artistSlug: comp.artistSlug,
+      bpm: comp.bpm,
+      bars: comp.bars,
+      loopEnabled: comp.loopEnabled,
+      loopStart: comp.loopStart,
+      loopEndTrim: comp.loopEndTrim,
+      loopCrossfade: comp.loopCrossfade,
+      environment: comp.environment,
+      map: comp.map,
+      tracks: (comp.tracks ?? []).map((track) => ({
+        id: track.id,
+        name: track.name,
+        color: track.color,
+        position: track.position,
+        volume: track.volume,
+        minVolume: track.minVolume,
+        source: sourceRevision(track.source),
+        refDistance: track.refDistance,
+        maxDistance: track.maxDistance,
+        rolloff: track.rolloff,
+      })),
+    }),
+  );
+}
+
+function sourceRevision(source: unknown): unknown {
+  const s = source as StemSource | { kind?: string };
+  if (s?.kind === "synth") return { kind: "synth", preset: (s as Extract<StemSource, { kind: "synth" }>).preset };
+  if (s?.kind === "file") return { kind: "file" };
+  if (s?.kind === "stored") return { kind: "file" };
+  return s;
+}
+
+function stableStringify(value: unknown): string {
+  return JSON.stringify(stableValue(value));
+}
+
+function stableValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => [k, stableValue(v)]),
+  );
+}
+
+function hashString(value: string): string {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < value.length; i++) {
+    const ch = value.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return ((h2 >>> 0).toString(16).padStart(8, "0") + (h1 >>> 0).toString(16).padStart(8, "0")).slice(0, 16);
 }

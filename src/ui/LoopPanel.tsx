@@ -1,14 +1,13 @@
 import { useEffect, useState } from "react";
 import { useStore } from "../store";
 
-export function LoopPanel() {
+export function LoopPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () => void; onClose: () => void }) {
   const mode = useStore((s) => s.mode);
   const comp = useStore((s) => s.composition);
   const setLoopSettings = useStore((s) => s.setLoopSettings);
   const auditionLoopSeam = useStore((s) => s.auditionLoopSeam);
   const loopProgress = useStore((s) => s.loopProgress);
   const [progress, setProgress] = useState<ReturnType<typeof loopProgress>>(null);
-  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     let frame = 0;
@@ -27,16 +26,16 @@ export function LoopPanel() {
   const endTrim = comp.loopEndTrim ?? 0;
   const crossfade = comp.loopCrossfade ?? 0.035;
 
-  if (!expanded) {
+  if (!open) {
     return (
-      <button style={collapsed} onClick={() => setExpanded(true)} title="Adjust loop seam">
+      <button style={collapsed} onClick={onOpen} title="Adjust loop seam" data-edit-drawer>
         Loop {enabled ? "on" : "off"}
       </button>
     );
   }
 
   return (
-    <div style={panel}>
+    <div style={panel} data-edit-drawer>
       <div style={head}>
         <label style={toggle}>
           <input
@@ -49,7 +48,7 @@ export function LoopPanel() {
         <button style={miniBtn} disabled={!enabled} onClick={auditionLoopSeam}>
           Audition seam
         </button>
-        <button style={closeBtn} onClick={() => setExpanded(false)} title="Collapse loop controls">
+        <button style={closeBtn} onClick={onClose} title="Collapse loop controls">
           ×
         </button>
       </div>
@@ -144,6 +143,7 @@ const panel: React.CSSProperties = {
   position: "absolute",
   left: "50%",
   bottom: 16,
+  zIndex: 30,
   transform: "translateX(-50%)",
   width: 280,
   boxSizing: "border-box",
@@ -160,6 +160,7 @@ const collapsed: React.CSSProperties = {
   position: "absolute",
   left: "50%",
   bottom: 16,
+  zIndex: 10,
   transform: "translateX(-50%)",
   padding: "8px 14px",
   borderRadius: 999,

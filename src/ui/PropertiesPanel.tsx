@@ -5,7 +5,7 @@ import { useStore } from "../store";
 export function PropertiesPanel() {
   const mode = useStore((s) => s.mode);
   const track = useStore((s) => s.composition.tracks.find((t) => t.id === s.selectedId));
-  const { renameTrack, setTrackColor, setTrackVolume, setTrackMinVolume, setTrackFalloff, deleteTrack } = useStore.getState();
+  const { renameTrack, setTrackColor, setTrackVolume, setTrackMinVolume, setTrackFalloff, deleteTrack, duplicateTrack } = useStore.getState();
 
   if (mode !== "edit" || !track) return null;
 
@@ -15,7 +15,7 @@ export function PropertiesPanel() {
   const minVolume = Math.min(track.minVolume ?? 0, maxVolume);
 
   return (
-    <div style={panel}>
+    <div style={panel} data-stem-panel>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
         <input
           type="color"
@@ -79,9 +79,18 @@ export function PropertiesPanel() {
         onChange={(v) => setTrackFalloff(track.id, { rolloff: v })}
       />
 
-      <button style={deleteBtn} onClick={() => deleteTrack(track.id)}>
-        Delete track
-      </button>
+      <div style={actionRow}>
+        <button
+          style={duplicateBtn}
+          onClick={() => duplicateTrack(track.id).catch((err) => console.error("Failed to duplicate track", err))}
+          title="Duplicate track (Cmd/Ctrl+D)"
+        >
+          Duplicate
+        </button>
+        <button style={deleteBtn} onClick={() => deleteTrack(track.id)} title="Delete track (Delete)">
+          Delete
+        </button>
+      </div>
     </div>
   );
 }
@@ -150,9 +159,24 @@ const nameInput: React.CSSProperties = {
   fontSize: 15,
 };
 
-const deleteBtn: React.CSSProperties = {
-  width: "100%",
+const actionRow: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 8,
   marginTop: 6,
+};
+
+const duplicateBtn: React.CSSProperties = {
+  padding: "8px",
+  borderRadius: 6,
+  border: "1px solid rgba(91,140,255,0.38)",
+  background: "rgba(91,140,255,0.14)",
+  color: "#bcd0ff",
+  cursor: "pointer",
+  fontSize: 13,
+};
+
+const deleteBtn: React.CSSProperties = {
   padding: "8px",
   borderRadius: 6,
   border: "1px solid rgba(255,122,107,0.4)",

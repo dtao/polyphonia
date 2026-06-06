@@ -32,6 +32,20 @@ export function AddStem() {
   // Global drag-and-drop.
   useEffect(() => {
     if (!engine) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      const el = document.activeElement;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return;
+      if ((e.metaKey || e.ctrlKey) && e.code === "KeyO") {
+        e.preventDefault();
+        inputRef.current?.click();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [engine]);
+
+  useEffect(() => {
+    if (!engine) return;
     const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files");
     const onOver = (e: DragEvent) => {
       if (!hasFiles(e)) return;
@@ -60,7 +74,7 @@ export function AddStem() {
 
   return (
     <>
-      <button style={addBtn} onClick={() => inputRef.current?.click()}>
+      <button style={addBtn} onClick={() => inputRef.current?.click()} title="Add stem (Cmd/Ctrl+O)">
         ＋ Add stem
       </button>
       <input
@@ -94,8 +108,12 @@ const addBtn: React.CSSProperties = {
   position: "absolute",
   top: 44,
   left: 14,
-  padding: "8px 14px",
+  zIndex: 10,
+  height: 36,
+  boxSizing: "border-box",
+  padding: "0 14px",
   fontSize: 13,
+  lineHeight: "34px",
   borderRadius: 999,
   border: "1px solid rgba(255,255,255,0.22)",
   background: "rgba(86,224,192,0.18)",

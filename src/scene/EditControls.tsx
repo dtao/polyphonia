@@ -3,13 +3,15 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { useStore, viewState } from "../store";
+import { surfaceHeightAt } from "../map";
 
-// Edit-mode camera: drag to orbit, scroll to zoom, and WASD to glide across
-// the plane (panning the orbit pivot with you). Moving the camera moves the
+// Edit-mode camera: drag to orbit, scroll to zoom, WASD to glide across
+// the plane, and Q/E to lower/raise your elevation. Moving the camera moves the
 // audio listener, so you can reposition a track and go hear it from elsewhere.
 export function EditControls() {
   const { camera } = useThree();
   const start = useStore((s) => s.composition.map.start);
+  const map = useStore((s) => s.composition.map);
   const controls = useRef<any>(null);
   const keys = useRef<Record<string, boolean>>({});
   const fwd = useRef(new THREE.Vector3());
@@ -26,8 +28,9 @@ export function EditControls() {
     if (!c) return;
     const back = 18; // how far behind the anchor, along -facing
     const height = 14;
-    c.target.set(viewState.x, 1.5, viewState.z);
-    camera.position.set(viewState.x - viewState.fx * back, height, viewState.z - viewState.fz * back);
+    const groundY = viewState.y; // anchor's surface height (0 on flat maps)
+    c.target.set(viewState.x, groundY + 1.5, viewState.z);
+    camera.position.set(viewState.x - viewState.fx * back, groundY + height, viewState.z - viewState.fz * back);
     c.update();
   }, [camera, start.position, start.direction]);
 
@@ -55,7 +58,11 @@ export function EditControls() {
     // Ground-plane forward/right from the camera heading.
     camera.getWorldDirection(fwd.current);
     fwd.current.y = 0;
-    fwd.current.normalize();
+    if (fwd.current.lengthSq() > 0.0001) {
+      fwd.current.normalize();
+    } else {
+      fwd.current.set(viewState.fx, 0, viewState.fz).normalize();
+    }
     right.current.crossVectors(fwd.current, up).normalize();
 
     move.current.set(0, 0, 0);
@@ -63,8 +70,10 @@ export function EditControls() {
     if (keys.current["KeyS"]) move.current.addScaledVector(fwd.current, -speed);
     if (keys.current["KeyD"]) move.current.addScaledVector(right.current, speed);
     if (keys.current["KeyA"]) move.current.addScaledVector(right.current, -speed);
+    if (keys.current["KeyE"]) move.current.y += speed;
+    if (keys.current["KeyQ"]) move.current.y -= speed;
 
-    // Shift the camera and its orbit pivot together = panning across the plane.
+    // Shift the camera and its orbit pivot together = panning through 3D space.
     if (move.current.lengthSq() > 0) {
       camera.position.add(move.current);
       c.target.add(move.current);
@@ -75,6 +84,7 @@ export function EditControls() {
     // where you're looking — including after orbiting to a new direction.
     viewState.x = c.target.x;
     viewState.z = c.target.z;
+    viewState.y = surfaceHeightAt(map, [c.target.x, c.target.z]);
     const len = Math.hypot(fwd.current.x, fwd.current.z);
     if (len > 0) {
       viewState.fx = fwd.current.x / len;

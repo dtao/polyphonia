@@ -2,9 +2,14 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Canvas } from "@react-three/fiber";
 import { Scene } from "../scene/Scene";
-import { useStore } from "../store";
+import { moveViewToMapStart, useStore } from "../store";
 import { fetchPublishedComposition, isSharingConfigured } from "../cloud";
 import { ArtistAvatar, artistPath } from "./galleryStyles";
+import { TouchControls, isTouchDevice } from "./TouchControls";
+import { AudioLoadingOverlay } from "./AudioLoadingOverlay";
+import { ARWalkControls } from "./ARWalkControls";
+import { GeoWalkControls } from "./GeoWalkControls";
+import { EnvironmentCredits } from "./EnvironmentCredits";
 
 type Status = "loading" | "ready" | "notfound" | "error";
 
@@ -15,13 +20,15 @@ export function Viewer() {
   const comp = useStore((s) => s.composition);
   const entered = useStore((s) => s.entered);
   const engine = useStore((s) => s.engine);
+  const audioLoading = useStore((s) => s.audioLoading);
   const [status, setStatus] = useState<Status>("loading");
+  const touch = isTouchDevice();
 
   useEffect(() => {
     let cancelled = false;
     // Reset any prior in-tab session and mark this as a read-only view.
     useStore.getState().engine?.dispose();
-    useStore.setState({ engine: null, entered: false, selectedId: null, mode: "explore", viewer: true });
+    useStore.setState({ engine: null, audioLoading: { status: "idle" }, entered: false, selectedId: null, mode: "explore", viewer: true });
 
     if (!isSharingConfigured) {
       setStatus("error");
@@ -31,6 +38,7 @@ export function Viewer() {
       .then((c) => {
         if (cancelled) return;
         if (!c) return setStatus("notfound");
+        moveViewToMapStart(c.map);
         useStore.setState({ composition: c });
         setStatus("ready");
       })
@@ -42,25 +50,32 @@ export function Viewer() {
     return () => {
       cancelled = true;
       useStore.getState().engine?.dispose();
-      useStore.setState({ engine: null, entered: false, viewer: false });
+      useStore.setState({ engine: null, audioLoading: { status: "idle" }, entered: false, viewer: false });
     };
   }, [id]);
 
   function enter() {
     if (useStore.getState().engine) return;
+    useStore.getState().resetViewToMapStart();
     useStore.getState().setEntered(true);
-    useStore.getState().startAudio();
+    void useStore.getState().startAudio().catch((e) => console.error("Failed to start audio", e));
   }
 
   return (
     <>
       <Canvas
+        shadows
         camera={{ position: [0, 1.7, 0], fov: 70, near: 0.1, far: 200 }}
         dpr={[1, 1.5]}
-        gl={{ antialias: true, powerPreference: "high-performance" }}
+        gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
       >
         <Scene />
       </Canvas>
+
+      {status === "ready" && entered && touch && <TouchControls />}
+      {status === "ready" && entered && <EnvironmentCredits />}
+      {status === "ready" && entered && <ARWalkControls map={comp.map} />}
+      {status === "ready" && entered && <GeoWalkControls map={comp.map} />}
 
       {status === "ready" && !entered && (
         <div style={overlay}>
@@ -72,7 +87,9 @@ export function Viewer() {
           <button id="enter-btn" style={button} onClick={enter}>
             ▶ Enter
           </button>
-          <p style={{ opacity: 0.45, fontSize: 13 }}>WASD to move · mouse to look · Esc to release cursor</p>
+          <p style={{ opacity: 0.45, fontSize: 13 }}>
+            {touch ? "Joystick to move · drag to look around" : "WASD to move · mouse to look · Esc to release cursor"}
+          </p>
         </div>
       )}
 
@@ -102,6 +119,7 @@ export function Viewer() {
           </Link>
         </div>
       )}
+      <AudioLoadingOverlay loading={audioLoading} />
     </>
   );
 }
