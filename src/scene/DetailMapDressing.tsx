@@ -1,6 +1,6 @@
 import { useTexture } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type {
   EnvironmentPackDefinition,
@@ -391,27 +391,27 @@ function DetailInstances({
   quality: "low" | "high";
   landmark: EnvironmentPackLandmark;
 }) {
+  const camera = useThree((state) => state.camera);
   const lowGeometry = useMemo(() => lowDetailGeometry(landmark.fallback), [landmark.fallback]);
-  const nearMesh = useMemo(() => emptyInstancedMesh(geometry, material, transforms.length), [geometry, material, transforms.length]);
-  const farMesh = useMemo(() => emptyInstancedMesh(lowGeometry, material, transforms.length), [lowGeometry, material, transforms.length]);
+  // Instance buffers can't grow after allocation, so a recreated InstancedMesh
+  // starts empty and would flicker until the next refill. On a tiled map
+  // `transforms.length` wobbles every step as preview copies cross the cull
+  // radius; keying allocation directly on it churned buffers (GC hitches) and
+  // produced visible gaps. Instead grow capacity monotonically in blocks so
+  // routine churn reuses the same buffers and reallocation is rare.
+  const capacityRef = useRef(0);
+  const capacity = useMemo(() => {
+    if (transforms.length > capacityRef.current) {
+      capacityRef.current = Math.ceil((transforms.length * 1.25) / 64) * 64;
+    }
+    return capacityRef.current;
+  }, [transforms.length]);
+  const nearMesh = useMemo(() => emptyInstancedMesh(geometry, material, capacity), [geometry, material, capacity]);
+  const farMesh = useMemo(() => emptyInstancedMesh(lowGeometry, material, capacity), [lowGeometry, material, capacity]);
   const lastUpdate = useRef(-Infinity);
   const position = useMemo(() => new THREE.Vector3(), []);
 
-  useEffect(() => {
-    nearMesh.castShadow = true;
-    nearMesh.receiveShadow = true;
-    farMesh.castShadow = false;
-    farMesh.receiveShadow = true;
-    return () => {
-      nearMesh.dispose();
-      farMesh.dispose();
-    };
-  }, [farMesh, nearMesh]);
-  useEffect(() => () => lowGeometry.dispose(), [lowGeometry]);
-
-  useFrame(({ camera, clock }) => {
-    if (clock.elapsedTime - lastUpdate.current < 0.35) return;
-    lastUpdate.current = clock.elapsedTime;
+  const refill = useCallback(() => {
     let nearCount = 0;
     let farCount = 0;
     for (const matrix of transforms) {
@@ -427,6 +427,31 @@ function DetailInstances({
     farMesh.instanceMatrix.needsUpdate = true;
     nearMesh.computeBoundingSphere();
     farMesh.computeBoundingSphere();
+  }, [camera, farMesh, nearMesh, position, quality, transforms]);
+
+  useEffect(() => {
+    nearMesh.castShadow = true;
+    nearMesh.receiveShadow = true;
+    farMesh.castShadow = false;
+    farMesh.receiveShadow = true;
+    return () => {
+      nearMesh.dispose();
+      farMesh.dispose();
+    };
+  }, [farMesh, nearMesh]);
+  useEffect(() => () => lowGeometry.dispose(), [lowGeometry]);
+
+  // Fill synchronously whenever the meshes or placements change so a freshly
+  // allocated mesh is never displayed empty. The throttled per-frame pass below
+  // only refreshes the near/far LOD split as the camera moves.
+  useLayoutEffect(() => {
+    refill();
+  }, [refill]);
+
+  useFrame(({ clock }) => {
+    if (clock.elapsedTime - lastUpdate.current < 0.25) return;
+    lastUpdate.current = clock.elapsedTime;
+    refill();
   });
 
   return (
