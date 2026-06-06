@@ -344,13 +344,15 @@ function usePackMaterial(profile: DetailProfile, editMode: boolean): THREE.MeshS
     [config, editMode, textures],
   );
 
-  useEffect(
-    () => () => {
-      material.dispose();
-      textures.forEach((texture) => texture.dispose());
-    },
-    [material, textures],
-  );
+  // Dispose the material and the textures on independent effects. The material
+  // is rebuilt whenever editMode toggles (transparent/opacity/depthWrite differ),
+  // but the textures are reused across that rebuild. Disposing both together —
+  // keyed on the material — tore down the still-referenced textures the moment
+  // edit mode changed (e.g. exiting edit after picking a pack), so the floor went
+  // untextured until a full reload. Keying texture disposal on the textures alone
+  // keeps them alive until the pack actually changes.
+  useEffect(() => () => material.dispose(), [material]);
+  useEffect(() => () => textures.forEach((texture) => texture.dispose()), [textures]);
 
   return material;
 }
