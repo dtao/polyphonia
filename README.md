@@ -20,12 +20,13 @@ these spatial compositions.
   for car-scale exploration.
 - **Immersive spaces** — every composition starts from the same neutral visual
   space and can optionally select an authored detail pack at an automatic, low,
-  or high quality tier. The Atlas Cavern pack dresses existing paths, ramps, tunnels, rooms,
-  platforms, and standalone walls with a GLTF rock kit and aligned PBR stone
-  textures without replacing the map used for movement or acoustics. Its
-  high-quality mode adds restrained bloom, ambient occlusion, tone mapping,
-  vignette, and shadowed authored lighting; automatic low quality keeps the
-  dressing while reducing repeated assets and expensive effects.
+  or high quality tier. Atlas Cavern, Verdant Grove, and Prismatic Reach dress
+  existing paths, ramps, tunnels, rooms, platforms, and standalone walls with
+  modular GLTF landmarks and aligned PBR textures without replacing the map
+  used for movement or acoustics. High-quality mode adds restrained bloom,
+  ambient occlusion, tone mapping, vignette, and shadowed authored lighting;
+  automatic low quality keeps the dressing while reducing repeated assets and
+  expensive effects.
   Editable path maps can define terminal loop points for corridor-like
   spaces that wrap back on themselves. Path segments can be marked as enclosed
   **tunnels** whose walls and ceiling muffle sound passing in or out the sides,

@@ -8,7 +8,7 @@ import type { EnvironmentSettings } from "../environment";
 import { environmentPackAsset, environmentPackById, resolvedEnvironmentQuality } from "../environmentPacks";
 import type { EnvironmentPackDefinition } from "../environmentPacks";
 import type { CompositionMap } from "../map";
-import { DetailMapDressing } from "./CavernMapDressing";
+import { DetailMapDressing } from "./DetailMapDressing";
 
 export function AuthoredEnvironmentScene({
   environment,
@@ -148,10 +148,11 @@ function PackLighting({
   if (profile === "forest") {
     return (
       <>
+        <hemisphereLight args={["#d8efc0", "#172015", quality === "high" ? 1.35 : 0.9]} />
         <directionalLight
           position={[-8, 18, 6]}
           color="#d8f0bc"
-          intensity={quality === "high" ? 2.1 : 1.45}
+          intensity={quality === "high" ? 3.2 : 2.1}
           castShadow={quality === "high"}
           shadow-mapSize-width={1024}
           shadow-mapSize-height={1024}
@@ -163,10 +164,11 @@ function PackLighting({
   if (profile === "crystal") {
     return (
       <>
+        <ambientLight color="#7694bd" intensity={quality === "high" ? 1.05 : 0.72} />
         <spotLight
           position={[0, 15, 4]}
           color="#a7d9ff"
-          intensity={quality === "high" ? 3.8 : 2.4}
+          intensity={quality === "high" ? 5.2 : 3.1}
           angle={0.78}
           penumbra={0.82}
           distance={80}

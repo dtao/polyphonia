@@ -52,7 +52,7 @@ Add the pack to `src/environmentPacks.ts`. Every entry must provide:
 Compositions store only the optional pack id, variant, and requested quality. Do not put
 asset URLs, licenses, or renderer-specific data into composition manifests.
 
-## Atlas Cavern Reference Pipeline
+## Reference Pipelines
 
 Rebuild the modular GLB:
 
@@ -70,6 +70,15 @@ The texture script crops and resizes the source, feathers opposing edges, then
 derives aligned normal, roughness, and AO maps. Production packs should replace
 these WebP outputs with reviewed KTX2 exports while keeping the same material
 channel semantics.
+
+Rebuild the procedural Verdant Grove and Prismatic Reach source textures and
+their modular GLB kits:
+
+```bash
+python3 scripts/generate-detail-textures.py forest
+python3 scripts/generate-detail-textures.py crystal
+node scripts/generate-detail-kits.mjs
+```
 
 ## Map Dressing Rules
 

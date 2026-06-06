@@ -23,15 +23,27 @@ await writePack("prismatic-reach", crystalScene());
 function forestScene() {
   const scene = new THREE.Scene();
   scene.name = "VerdantGrove";
-  const bark = new THREE.MeshStandardMaterial({ name: "GroveBark", color: "#3e3226", roughness: 1 });
-  const foliage = new THREE.MeshStandardMaterial({ name: "GroveFoliage", color: "#41623b", roughness: 0.92 });
-  const treeGeometry = mergeGeometries([
+  const treeMaterial = new THREE.MeshStandardMaterial({
+    name: "GroveTree",
+    vertexColors: true,
+    roughness: 0.96,
+  });
+  const trunk = colored(
     transformed(new THREE.CylinderGeometry(0.34, 0.52, 5.2, 8), [0, 2.6, 0], [1, 1, 1]),
+    "#493929",
+  );
+  const lower = colored(
     transformed(new THREE.ConeGeometry(2.1, 4.4, 9), [0, 5.1, 0], [1, 1, 1]),
+    "#38583a",
+  );
+  const upper = colored(
     transformed(new THREE.ConeGeometry(1.65, 3.8, 9), [0, 7.0, 0], [1, 1, 1]),
-  ], true);
-  const tree = new THREE.Mesh(treeGeometry, [bark, foliage, foliage]);
+    "#466a43",
+  );
+  const treeGeometry = mergeGeometries([trunk, lower, upper]);
+  const tree = new THREE.Mesh(treeGeometry, treeMaterial);
   tree.name = "Tree_00";
+  tree.position.y = -1000;
   scene.add(tree);
 
   for (let index = 0; index < 22; index += 1) {
@@ -66,6 +78,7 @@ function crystalScene() {
   ]);
   const cluster = new THREE.Mesh(clusterGeometry, crystal);
   cluster.name = "CrystalCluster_00";
+  cluster.position.y = -1000;
   scene.add(cluster);
 
   for (let index = 0; index < 26; index += 1) {
@@ -91,6 +104,18 @@ function transformed(geometry, position, scale, rotation = [0, 0, 0]) {
     ),
   );
   return result;
+}
+
+function colored(geometry, color) {
+  const rgb = new THREE.Color(color);
+  const colors = new Float32Array(geometry.attributes.position.count * 3);
+  for (let index = 0; index < geometry.attributes.position.count; index += 1) {
+    colors[index * 3] = rgb.r;
+    colors[index * 3 + 1] = rgb.g;
+    colors[index * 3 + 2] = rgb.b;
+  }
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  return geometry;
 }
 
 async function writePack(id, scene) {

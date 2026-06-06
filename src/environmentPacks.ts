@@ -119,6 +119,43 @@ export const ENVIRONMENT_PACKS: readonly EnvironmentPackDefinition[] = [
       tint: [0.98, 1.04, 0.94],
     },
   },
+  {
+    id: "prismatic-reach",
+    name: "Prismatic Reach",
+    profile: "crystal",
+    geometryPrefix: "CrystalCluster_",
+    description: "Luminous mineral floors and prismatic crystal landmarks",
+    variants: ["azure"],
+    assets: [
+      {
+        url: "/environments/prismatic-reach/prismatic-reach-kit.glb",
+        quality: "high",
+      },
+    ],
+    attribution: [
+      {
+        title: "Prismatic Reach",
+        author: "Polyphonia",
+        license: "Project asset",
+      },
+    ],
+    budgets: {
+      maxTextureSize: 2048,
+      maxTriangles: 150_000,
+      maxDrawCalls: 100,
+    },
+    effects: {
+      exposure: 1.16,
+      bloomStrength: 0.34,
+      bloomThreshold: 0.62,
+      bloomRadius: 0.48,
+      ambientOcclusion: true,
+      vignette: 0.22,
+      contrast: 1.08,
+      saturation: 1.12,
+      tint: [0.96, 1.02, 1.08],
+    },
+  },
 ];
 
 export function environmentPackById(id: string | undefined): EnvironmentPackDefinition | undefined {

@@ -25,6 +25,12 @@ export function DetailMapDressing({
 
   return (
     <group>
+      {map.segments.length === 0 && map.rooms.length === 0 && map.platforms.length === 0 && (
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.13, 0]} receiveShadow>
+          <circleGeometry args={[56, 96]} />
+          <primitive object={material} attach="material" />
+        </mesh>
+      )}
       {map.segments.map((segment) => (
         <SegmentShell key={segment.id} map={map} segment={segment} material={material} />
       ))}
