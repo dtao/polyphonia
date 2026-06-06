@@ -1,11 +1,32 @@
 import { useTexture } from "@react-three/drei";
-import { useFrame } from "@react-three/fiber";
-import { useEffect, useMemo, useRef } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { CompositionMap, MapPlatform, MapRoom, WalkableSegment } from "../map";
-import { isPointInsideMap, mapPointKey, platformElevation, roomElevation } from "../map";
+import {
+  isPointInsideMap,
+  loopPreviewElevationOffset,
+  mapPointKey,
+  platformElevation,
+  roomElevation,
+  tiledMapTransforms,
+  transformLoopPoint,
+} from "../map";
+import { arWalk, viewState } from "../store";
 
 type DetailProfile = "cavern" | "forest" | "crystal";
+
+interface DetailPlacement {
+  position: [number, number, number];
+  rotationY: number;
+  scale: [number, number, number];
+}
+
+// How far out (in world units) adjacent loop copies receive the textured floor
+// shells and dressing. Kept near the full-opacity band of the reactive floor
+// copies (which fade ~85–180); beyond it the copies are already fading, so the
+// plainer reactive-only floor reads fine and we save the extra draw calls.
+const DETAIL_TILE_RADIUS = 92;
 
 export function DetailMapDressing({
   map,
@@ -21,8 +42,59 @@ export function DetailMapDressing({
   quality: "low" | "high";
 }) {
   const material = usePackMaterial(profile, editMode);
-  const details = useMemo(() => detailTransforms(map, quality, profile), [map, quality, profile]);
+  const placements = useMemo(() => detailPlacements(map, quality, profile), [map, quality, profile]);
+  const camera = useThree((s) => s.camera);
 
+  // Adjacent tile copies of the textured floor/dressing keep the loop boundary
+  // from looking dull then snapping detailed as you cross it. Only in explore
+  // mode (edit shows the single authoring tile) and only on tiled maps.
+  const tiled = !editMode && map.tiling.type !== "none";
+  const [viewer, setViewer] = useState<[number, number]>([0, 0]);
+  useFrame(() => {
+    if (!tiled) return;
+    const next: [number, number] = arWalk.active ? [viewState.x, viewState.z] : [camera.position.x, camera.position.z];
+    // Coarser threshold than the reactive floor (detail copies are heavier):
+    // only resample once the listener has moved a couple of units.
+    setViewer((current) => (Math.hypot(current[0] - next[0], current[1] - next[1]) > 1.5 ? next : current));
+  });
+  const previews = useMemo(
+    () => (tiled ? tiledMapTransforms(map, viewer, DETAIL_TILE_RADIUS) : []),
+    [tiled, map, viewer],
+  );
+
+  const detailMatrices = useMemo(() => {
+    const matrices = placements.map((p) => transform(p.position, p.scale, p.rotationY));
+    for (const preview of previews) {
+      const lift = loopPreviewElevationOffset(map, preview);
+      for (const p of placements) {
+        const [tx, tz] = transformLoopPoint(preview, [p.position[0], p.position[2]]);
+        matrices.push(transform([tx, p.position[1] + lift, tz], p.scale, p.rotationY + preview.rotation));
+      }
+    }
+    return matrices;
+  }, [placements, previews, map]);
+
+  return (
+    <group>
+      <MapShell map={map} material={material} />
+      {previews.map((preview) => (
+        <group
+          key={preview.id}
+          position={[preview.anchor[0], loopPreviewElevationOffset(map, preview), preview.anchor[1]]}
+          rotation={[0, preview.rotation, 0]}
+        >
+          <group position={[-preview.source[0], 0, -preview.source[1]]}>
+            <MapShell map={map} material={material} />
+          </group>
+        </group>
+      ))}
+      <DetailInstances geometry={detailGeometry} material={material} transforms={detailMatrices} quality={quality} profile={profile} />
+    </group>
+  );
+}
+
+// The static textured shells (floor slabs, walls) for one copy of the map.
+function MapShell({ map, material }: { map: CompositionMap; material: THREE.MeshStandardMaterial }) {
   return (
     <group>
       {map.segments.length === 0 && map.rooms.length === 0 && map.platforms.length === 0 && (
@@ -57,7 +129,6 @@ export function DetailMapDressing({
           </mesh>
         );
       })}
-      <DetailInstances geometry={detailGeometry} material={material} transforms={details} quality={quality} profile={profile} />
     </group>
   );
 }
@@ -275,9 +346,9 @@ function usePackMaterial(profile: DetailProfile, editMode: boolean): THREE.MeshS
   return material;
 }
 
-function detailTransforms(map: CompositionMap, quality: "low" | "high", profile: DetailProfile): THREE.Matrix4[] {
+function detailPlacements(map: CompositionMap, quality: "low" | "high", profile: DetailProfile): DetailPlacement[] {
   const config = PROFILE_CONFIG[profile];
-  const transforms: THREE.Matrix4[] = [];
+  const placements: DetailPlacement[] = [];
   for (const segment of map.segments) {
     if (segment.kind === "tunnel") continue;
     const dx = segment.end[0] - segment.start[0];
@@ -303,8 +374,7 @@ function detailTransforms(map: CompositionMap, quality: "low" | "high", profile:
         // offset can land on a connecting path/room/platform, so an object that
         // belongs beside one segment would otherwise sit in the middle of another.
         if (isPointInsideMap(map, [px, pz])) continue;
-        const scale = detailScale(profile, seed);
-        transforms.push(transform([px, y + config.baseY, pz], scale, seeded(seed, 5) * Math.PI));
+        placements.push({ position: [px, y + config.baseY, pz], scale: detailScale(profile, seed), rotationY: seeded(seed, 5) * Math.PI });
       }
     }
   }
@@ -320,11 +390,11 @@ function detailTransforms(map: CompositionMap, quality: "low" | "high", profile:
       const pz = room.center[1] + Math.sin(angle) * radiusZ;
       // Skip ring rocks that fall on a path/platform connected to the room.
       if (isPointInsideMap(map, [px, pz])) continue;
-      transforms.push(transform([px, y, pz], detailScale(profile, hash(`${room.id}:${index}`)), angle));
+      placements.push({ position: [px, y, pz], scale: detailScale(profile, hash(`${room.id}:${index}`)), rotationY: angle });
     }
   }
 
-  return transforms;
+  return placements;
 }
 
 function lowDetailGeometry(profile: DetailProfile): THREE.BufferGeometry {

@@ -79,3 +79,4 @@ earlier ones.
 - [ ] P5 Map copies directly adjacent to the one the player is standing on should include detailed textures (so that as you approach the loop boundary they don't look dull and suddenly detailed once you cross the boundary.)
 - [ ] P6 Stem orbs in maps with detail packs enabled have strange square-shaped light halos with clearly visible straight boundaries.
 - [ ] P7 Floor textures of path segments, rooms, and platforms should all match for maps with detail packs.
+- [ ] P8 Floor texture goes away after changing detail pack for the first time and doesn't come back until browser refresh.
