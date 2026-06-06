@@ -9,18 +9,20 @@ SIZE = 1024
 
 
 def main() -> None:
-    if len(sys.argv) != 2 or sys.argv[1] not in {"forest", "crystal"}:
-        raise SystemExit("usage: generate-detail-textures.py <forest|crystal>")
+    if len(sys.argv) not in {2, 3} or sys.argv[1] not in {"forest", "crystal"}:
+        raise SystemExit(
+            "usage: generate-detail-textures.py <forest|crystal> [source-image]"
+        )
 
     profile = sys.argv[1]
     if profile == "forest":
-        image = forest_albedo()
+        image = load_source(Path(sys.argv[2])) if len(sys.argv) == 3 else forest_albedo()
         directory = Path(__file__).resolve().parents[1] / "public/environments/verdant-grove/textures"
         prefix = "forest"
         normal_strength = 4.6
         roughness_base = 0.78
     else:
-        image = crystal_albedo()
+        image = load_source(Path(sys.argv[2])) if len(sys.argv) == 3 else crystal_albedo()
         directory = Path(__file__).resolve().parents[1] / "public/environments/prismatic-reach/textures"
         prefix = "crystal"
         normal_strength = 7.2
@@ -29,6 +31,38 @@ def main() -> None:
     directory.mkdir(parents=True, exist_ok=True)
     image.save(directory / f"{prefix}-albedo.webp", "WEBP", quality=90, method=6)
     write_channels(image, directory, prefix, normal_strength, roughness_base)
+
+
+def load_source(source: Path) -> Image.Image:
+    image = Image.open(source).convert("RGB")
+    size = min(image.size)
+    left = (image.width - size) // 2
+    top = (image.height - size) // 2
+    image = image.crop((left, top, left + size, top + size))
+    image = image.resize((SIZE, SIZE), Image.Resampling.LANCZOS)
+    return make_tileable(image, 96)
+
+
+def make_tileable(image: Image.Image, border: int) -> Image.Image:
+    array = np.asarray(image, dtype=np.float32)
+    result = array.copy()
+    height, width, _ = array.shape
+
+    for x in range(border):
+        blend = 0.5 - 0.5 * np.cos(np.pi * x / border)
+        opposite = width - border + x
+        average = (array[:, x] + array[:, opposite]) * 0.5
+        result[:, x] = average * (1.0 - blend) + array[:, x] * blend
+        result[:, opposite] = average * (1.0 - blend) + array[:, opposite] * blend
+
+    for y in range(border):
+        blend = 0.5 - 0.5 * np.cos(np.pi * y / border)
+        opposite = height - border + y
+        average = (result[y] + result[opposite]) * 0.5
+        result[y] = average * (1.0 - blend) + result[y] * blend
+        result[opposite] = average * (1.0 - blend) + result[opposite] * blend
+
+    return Image.fromarray(result.clip(0, 255).astype(np.uint8), "RGB")
 
 
 def periodic_noise(seed: int, octaves: int) -> np.ndarray:

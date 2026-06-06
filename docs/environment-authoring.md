@@ -71,13 +71,22 @@ derives aligned normal, roughness, and AO maps. Production packs should replace
 these WebP outputs with reviewed KTX2 exports while keeping the same material
 channel semantics.
 
-Rebuild the procedural Verdant Grove and Prismatic Reach source textures and
-their modular GLB kits:
+Rebuild the deterministic procedural fallback textures for Verdant Grove and
+Prismatic Reach, plus their modular GLB kits:
 
 ```bash
 python3 scripts/generate-detail-textures.py forest
 python3 scripts/generate-detail-textures.py crystal
 node scripts/generate-detail-kits.mjs
+```
+
+For production-quality textures, pass a square, flat-lit generated or scanned
+albedo source. The script crops and resizes it, feathers the edges for tiling,
+and derives aligned normal, roughness, and ambient-occlusion maps:
+
+```bash
+python3 scripts/generate-detail-textures.py forest path/to/forest-source.png
+python3 scripts/generate-detail-textures.py crystal path/to/crystal-source.png
 ```
 
 ## Map Dressing Rules
