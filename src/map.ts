@@ -1043,6 +1043,10 @@ function transitionSupport(map: CompositionMap, support: MapSupport, previous: [
   if (support.kind === "room") {
     const room = map.rooms.find((r) => r.id === support.roomId);
     if (!room) return null;
+    for (const other of map.rooms) {
+      if (other.id === room.id || !roomContains(other, attempted)) continue;
+      if (roomsConnectThroughDoorways(room, other)) return { position: attempted, support: { kind: "room", roomId: other.id } };
+    }
     // Step out through any doorway onto a segment that reaches into it.
     for (const segment of map.segments) {
       if (pointInSegment(attempted, segment) && segmentTouchesRoomDoorway(room, segment)) {
@@ -1146,6 +1150,10 @@ function segmentTouchesRoomDoorway(room: MapRoom, segment: WalkableSegment): boo
     const rect = doorwayRect(room, entrance);
     return pointInRect(startLocal, rect) || pointInRect(endLocal, rect);
   });
+}
+
+function roomsConnectThroughDoorways(a: MapRoom, b: MapRoom): boolean {
+  return a.entrances.some((entrance) => roomContains(b, entranceOuterPoint(a, entrance))) || b.entrances.some((entrance) => roomContains(a, entranceOuterPoint(b, entrance)));
 }
 
 function segmentHeightAt(map: Pick<CompositionMap, "elevations">, segment: WalkableSegment, point: [number, number]): number {

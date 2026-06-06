@@ -487,36 +487,56 @@ export const useStore = create<StoreState>((set, get) => ({
     const entrance = room?.entrances[index];
     if (!room || !entrance) return;
 
-    // Seed a path stub at the doorway, aimed straight out of the wall.
     const start = entranceDoorwayCenter(room, entrance);
     const outer = entranceOuterPoint(room, entrance);
     const dir = unitDir([outer[0] - start[0], outer[1] - start[1]]);
-    const end: [number, number] = [start[0] + dir[0] * 14, start[1] + dir[1] * 14];
-    const width = Math.min(14, Math.max(4, entrance.width));
-    const segmentId = newId();
-    const segment: WalkableSegment = { id: segmentId, start, end, width };
-    const attachment = { segmentId, end: "end" as const };
-
-    // Match the new path to the room's height so they stay flush.
-    const elev = roomElevation(map, room);
-    const elevations = elev ? { ...(map.elevations ?? {}), [mapPointKey(start)]: elev, [mapPointKey(end)]: elev } : map.elevations;
 
     let selection: Partial<StoreState> = {};
     const rooms = [...map.rooms];
     const platforms = [...map.platforms];
+    const segments = [...map.segments];
+    let elevations = map.elevations;
+
     if (kind === "room") {
       const id = newId();
-      rooms.push({ id, center: [0, 0], rotation: 0, width: 14, depth: 12, height: room.height, entrances: [{ side: "north", width: 5, offset: 0 }], attachment });
+      const width = 14;
+      const depth = 12;
+      rooms.push({
+        id,
+        center: [start[0] + dir[0] * (depth / 2), start[1] + dir[1] * (depth / 2)],
+        rotation: Math.atan2(dir[0], dir[1]),
+        width,
+        depth,
+        height: room.height,
+        entrances: [{ side: "north", width: Math.min(width, Math.max(5, entrance.width)), offset: 0 }],
+      });
       selection = { selectedRoomId: id, selectedEntranceIndex: null };
     } else if (kind === "platform") {
       const id = newId();
-      platforms.push({ id, center: [0, 0], rotation: 0, shape: "rect", width: 18, depth: 18, elevation: 0, attachment });
+      const depth = 18;
+      platforms.push({
+        id,
+        center: [start[0] + dir[0] * (depth / 2), start[1] + dir[1] * (depth / 2)],
+        rotation: Math.atan2(dir[0], dir[1]),
+        shape: "rect",
+        width: 18,
+        depth,
+        elevation: roomElevation(map, room),
+      });
       selection = { selectedPlatformId: id };
     } else {
+      // Seed a path stub at the doorway, aimed straight out of the wall.
+      const end: [number, number] = [start[0] + dir[0] * 14, start[1] + dir[1] * 14];
+      const width = Math.min(14, Math.max(4, entrance.width));
+      const segment: WalkableSegment = { id: newId(), start, end, width };
+      segments.push(segment);
+      // Match the new path to the room's height so they stay flush.
+      const elev = roomElevation(map, room);
+      elevations = elev ? { ...(map.elevations ?? {}), [mapPointKey(start)]: elev, [mapPointKey(end)]: elev } : map.elevations;
       selection = { selectedMapPointKey: mapPointKey(end) };
     }
 
-    get().setMap({ preset: "custom", segments: [...map.segments, segment], rooms, platforms, elevations });
+    get().setMap({ preset: "custom", segments, rooms, platforms, elevations });
     set({
       selectedRoomId: null,
       selectedEntranceIndex: null,
