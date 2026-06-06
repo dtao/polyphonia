@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Scene } from "./scene/Scene";
+import { EnvironmentCredits } from "./ui/EnvironmentCredits";
 import { PropertiesPanel } from "./ui/PropertiesPanel";
 import { MapPointPanel } from "./ui/MapPointPanel";
 import { MapSegmentPanel } from "./ui/MapSegmentPanel";
@@ -317,6 +318,7 @@ export default function App() {
 
       {entered && (
         <>
+          <EnvironmentCredits />
           <div style={hud}>
             <strong>{comp.title}</strong> — {comp.artist}
             <span style={{ opacity: 0.6 }}>

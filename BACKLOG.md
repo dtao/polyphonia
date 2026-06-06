@@ -63,12 +63,12 @@ earlier ones.
 
 ## Milestone 6 — Authored high-fidelity environments
 
-- [ ] **M6.1 Environment asset pipeline** — support GLB/GLTF scene kits with compressed geometry/textures, preloading, attribution metadata, and safe fallbacks when assets fail.
-- [ ] **M6.2 PBR material pipeline** — load authored albedo/normal/roughness/metalness/AO/emissive maps so rock, foliage, crystal, water, and architectural surfaces read as real materials.
-- [ ] **M6.3 Hero environment prototype** — build one hand-composed AAA-style cavern scene with modular assets, authored lighting, landmarks, and an edit-friendly visibility mode.
-- [ ] **M6.4 Postprocessing pass** — add a restrained configurable stack for bloom, ambient occlusion, tone mapping, color grading, vignette, and depth fog.
-- [ ] **M6.5 Runtime optimization pass** — introduce instancing/LOD/culling/texture budgets so high-detail environments stay responsive in the browser.
-- [ ] **M6.6 Environment authoring workflow** — document how new environment packs are produced, reviewed, optimized, licensed, and wired into composition metadata.
+- [x] **M6.1 Environment asset pipeline** — support GLB/GLTF scene kits with compressed geometry/textures, preloading, attribution metadata, and safe fallbacks when assets fail.
+- [x] **M6.2 PBR material pipeline** — load authored albedo/normal/roughness/metalness/AO/emissive maps so rock, foliage, crystal, water, and architectural surfaces read as real materials.
+- [x] **M6.3 Hero environment prototype** — build one hand-composed AAA-style cavern scene with modular assets, authored lighting, landmarks, and an edit-friendly visibility mode.
+- [x] **M6.4 Postprocessing pass** — add a restrained configurable stack for bloom, ambient occlusion, tone mapping, color grading, vignette, and depth fog.
+- [x] **M6.5 Runtime optimization pass** — introduce instancing/LOD/culling/texture budgets so high-detail environments stay responsive in the browser.
+- [x] **M6.6 Environment authoring workflow** — document how new environment packs are produced, reviewed, optimized, licensed, and wired into composition metadata.
 
 ## Polish & fixes
 

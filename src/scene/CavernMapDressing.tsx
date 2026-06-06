@@ -1,5 +1,6 @@
 import { useTexture } from "@react-three/drei";
-import { useEffect, useMemo } from "react";
+import { useFrame } from "@react-three/fiber";
+import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { CompositionMap, MapPlatform, MapRoom, WalkableSegment } from "../map";
 import { mapPointKey, platformElevation, roomElevation } from "../map";
@@ -53,7 +54,7 @@ export function CavernMapDressing({
           </mesh>
         );
       })}
-      <RockInstances geometry={rockGeometry} material={material} transforms={rocks} />
+      <RockInstances geometry={rockGeometry} material={material} transforms={rocks} quality={quality} />
     </group>
   );
 }
@@ -156,23 +157,63 @@ function RockInstances({
   geometry,
   material,
   transforms,
+  quality,
 }: {
   geometry: THREE.BufferGeometry;
   material: THREE.Material;
   transforms: THREE.Matrix4[];
+  quality: "low" | "high";
 }) {
-  const mesh = useMemo(() => new THREE.InstancedMesh(geometry, material, transforms.length), [geometry, material, transforms.length]);
+  const lowGeometry = useMemo(() => new THREE.DodecahedronGeometry(1, 0), []);
+  const nearMesh = useMemo(() => emptyInstancedMesh(geometry, material, transforms.length), [geometry, material, transforms.length]);
+  const farMesh = useMemo(() => emptyInstancedMesh(lowGeometry, material, transforms.length), [lowGeometry, material, transforms.length]);
+  const lastUpdate = useRef(-Infinity);
+  const position = useMemo(() => new THREE.Vector3(), []);
 
   useEffect(() => {
-    transforms.forEach((matrix, index) => mesh.setMatrixAt(index, matrix));
-    mesh.instanceMatrix.needsUpdate = true;
-    mesh.computeBoundingSphere();
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    return () => mesh.dispose();
-  }, [mesh, transforms]);
+    nearMesh.castShadow = true;
+    nearMesh.receiveShadow = true;
+    farMesh.castShadow = false;
+    farMesh.receiveShadow = true;
+    return () => {
+      nearMesh.dispose();
+      farMesh.dispose();
+    };
+  }, [farMesh, nearMesh]);
+  useEffect(() => () => lowGeometry.dispose(), [lowGeometry]);
 
-  return <primitive object={mesh} />;
+  useFrame(({ camera, clock }) => {
+    if (clock.elapsedTime - lastUpdate.current < 0.35) return;
+    lastUpdate.current = clock.elapsedTime;
+    let nearCount = 0;
+    let farCount = 0;
+    for (const matrix of transforms) {
+      position.setFromMatrixPosition(matrix);
+      const distance = position.distanceTo(camera.position);
+      if (distance > 115) continue;
+      if (quality === "high" && distance < 42) nearMesh.setMatrixAt(nearCount++, matrix);
+      else farMesh.setMatrixAt(farCount++, matrix);
+    }
+    nearMesh.count = nearCount;
+    farMesh.count = farCount;
+    nearMesh.instanceMatrix.needsUpdate = true;
+    farMesh.instanceMatrix.needsUpdate = true;
+    nearMesh.computeBoundingSphere();
+    farMesh.computeBoundingSphere();
+  });
+
+  return (
+    <group>
+      <primitive object={nearMesh} />
+      <primitive object={farMesh} />
+    </group>
+  );
+}
+
+function emptyInstancedMesh(geometry: THREE.BufferGeometry, material: THREE.Material, count: number): THREE.InstancedMesh {
+  const mesh = new THREE.InstancedMesh(geometry, material, count);
+  mesh.count = 0;
+  return mesh;
 }
 
 function useStoneMaterial(editMode: boolean): THREE.MeshStandardMaterial {

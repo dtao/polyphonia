@@ -119,6 +119,11 @@ export function EnvironmentPanel({ open, onOpen, onClose }: { open: boolean; onO
         Material: {environment.material}
         {selectedPack ? ` · ${selectedPack.description}` : ""}
       </div>
+      {selectedPack?.attribution.map((item) => (
+        <div key={`${item.title}:${item.author}`} style={attribution}>
+          {item.title} by {item.author} · {item.license}
+        </div>
+      ))}
     </div>
   );
 }
@@ -222,4 +227,10 @@ const select: React.CSSProperties = {
   background: "#151a2b",
   color: "white",
   fontSize: 12,
+};
+
+const attribution: React.CSSProperties = {
+  marginTop: 5,
+  color: "rgba(255,255,255,0.42)",
+  fontSize: 10,
 };

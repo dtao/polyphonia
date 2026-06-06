@@ -38,6 +38,9 @@ export function EnvironmentEffects({ environment, editMode }: { environment: Env
     next.addPass(bloom);
     const vignette = new ShaderPass(VIGNETTE_SHADER);
     vignette.uniforms.amount.value = effects.vignette;
+    vignette.uniforms.contrast.value = effects.contrast;
+    vignette.uniforms.saturation.value = effects.saturation;
+    vignette.uniforms.tint.value.set(...effects.tint);
     next.addPass(vignette);
     next.addPass(new OutputPass());
     return next;
@@ -75,6 +78,9 @@ const VIGNETTE_SHADER = {
   uniforms: {
     tDiffuse: { value: null },
     amount: { value: 0.25 },
+    contrast: { value: 1 },
+    saturation: { value: 1 },
+    tint: { value: new THREE.Vector3(1, 1, 1) },
   },
   vertexShader: `
     varying vec2 vUv;
@@ -86,9 +92,15 @@ const VIGNETTE_SHADER = {
   fragmentShader: `
     uniform sampler2D tDiffuse;
     uniform float amount;
+    uniform float contrast;
+    uniform float saturation;
+    uniform vec3 tint;
     varying vec2 vUv;
     void main() {
       vec4 color = texture2D(tDiffuse, vUv);
+      color.rgb = (color.rgb - 0.5) * contrast + 0.5;
+      float luminance = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
+      color.rgb = mix(vec3(luminance), color.rgb, saturation) * tint;
       float edge = smoothstep(0.82, 0.25, distance(vUv, vec2(0.5)));
       color.rgb *= mix(1.0 - amount, 1.0, edge);
       gl_FragColor = color;

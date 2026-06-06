@@ -35,6 +35,9 @@ export interface EnvironmentPackDefinition {
     bloomRadius: number;
     ambientOcclusion: boolean;
     vignette: number;
+    contrast: number;
+    saturation: number;
+    tint: [number, number, number];
   };
 }
 
@@ -74,6 +77,9 @@ export const ENVIRONMENT_PACKS: readonly EnvironmentPackDefinition[] = [
       bloomRadius: 0.38,
       ambientOcclusion: true,
       vignette: 0.28,
+      contrast: 1.06,
+      saturation: 0.9,
+      tint: [1.02, 0.99, 0.96],
     },
   },
 ];

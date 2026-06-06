@@ -1,9 +1,12 @@
 import { useGLTF } from "@react-three/drei";
-import { Component, Suspense, useMemo } from "react";
+import { useThree } from "@react-three/fiber";
+import { Component, Suspense, useCallback, useEffect, useMemo } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import * as THREE from "three";
+import { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
 import type { EnvironmentSettings } from "../environment";
 import { environmentPackAsset, environmentPackById, resolvedEnvironmentQuality } from "../environmentPacks";
+import type { EnvironmentPackDefinition } from "../environmentPacks";
 import type { CompositionMap } from "../map";
 import { CavernMapDressing } from "./CavernMapDressing";
 
@@ -21,12 +24,10 @@ export function AuthoredEnvironmentScene({
   const asset = pack ? environmentPackAsset(pack, quality) : undefined;
   if (!pack || !asset) return null;
 
-  useGLTF.preload(asset.url);
-
   return (
     <AssetErrorBoundary key={`${pack.id}:${asset.url}`}>
       <Suspense fallback={null}>
-        <EnvironmentAsset url={asset.url} map={map} editMode={editMode} quality={quality} />
+        <EnvironmentAsset url={asset.url} map={map} editMode={editMode} quality={quality} pack={pack} />
       </Suspense>
     </AssetErrorBoundary>
   );
@@ -37,13 +38,29 @@ function EnvironmentAsset({
   map,
   editMode,
   quality,
+  pack,
 }: {
   url: string;
   map: CompositionMap;
   editMode: boolean;
   quality: "low" | "high";
+  pack: EnvironmentPackDefinition;
 }) {
-  const gltf = useGLTF(url);
+  const gl = useThree((state) => state.gl);
+  const ktx2Loader = useMemo(
+    () => new KTX2Loader().setTranscoderPath("/basis/").detectSupport(gl),
+    [gl],
+  );
+  const extendLoader = useCallback((loader: any) => loader.setKTX2Loader(ktx2Loader), [ktx2Loader]);
+  const gltf = useGLTF(url, "/draco-gltf/", true, extendLoader);
+
+  useEffect(() => {
+    useGLTF.preload(url, "/draco-gltf/", true, extendLoader);
+    return () => {
+      ktx2Loader.dispose();
+    };
+  }, [extendLoader, ktx2Loader, url]);
+  useEffect(() => validateAssetBudget(gltf.scene, pack), [gltf.scene, pack]);
   const scene = useMemo(() => {
     const clone = gltf.scene.clone(true);
     clone.traverse((object) => {
@@ -70,6 +87,34 @@ function EnvironmentAsset({
       <AtlasLighting enabled={!editMode} quality={quality} />
     </>
   );
+}
+
+function validateAssetBudget(scene: THREE.Object3D, pack: EnvironmentPackDefinition): void {
+  let triangles = 0;
+  let drawCalls = 0;
+  let largestTexture = 0;
+  scene.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    drawCalls += Array.isArray(object.material) ? object.material.length : 1;
+    const geometry = object.geometry;
+    triangles += geometry.index ? geometry.index.count / 3 : (geometry.attributes.position?.count ?? 0) / 3;
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    for (const material of materials) {
+      for (const value of Object.values(material)) {
+        if (!(value instanceof THREE.Texture)) continue;
+        const image = value.image as { width?: number; height?: number } | undefined;
+        largestTexture = Math.max(largestTexture, image?.width ?? 0, image?.height ?? 0);
+      }
+    }
+  });
+  const exceeded = [
+    triangles > pack.budgets.maxTriangles ? `${Math.round(triangles).toLocaleString()} triangles` : null,
+    drawCalls > pack.budgets.maxDrawCalls ? `${drawCalls} draw calls` : null,
+    largestTexture > pack.budgets.maxTextureSize ? `${largestTexture}px texture` : null,
+  ].filter(Boolean);
+  if (exceeded.length) {
+    console.warn(`Environment pack "${pack.id}" exceeds its registry budget: ${exceeded.join(", ")}.`);
+  }
 }
 
 function AtlasLighting({ enabled, quality }: { enabled: boolean; quality: "low" | "high" }) {

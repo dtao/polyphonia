@@ -72,6 +72,9 @@ The start screen shows the short Git commit hash that was present when the app
 bundle was built, so deployed builds can be identified without manually updating
 a version string.
 
+High-fidelity environment production is documented in
+[`docs/environment-authoring.md`](docs/environment-authoring.md).
+
 For performance diagnostics, append `?debug=1` to the local URL. This enables a
 small overlay and exportable JSON log. Optional A/B flags include
 `debugNoPointLights=1`, `debugNoLoopPreview=1`, and `debugNoLoopLights=1`.
