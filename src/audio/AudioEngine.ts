@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { Composition, TrackDef } from "../composition";
-import { CompositionMap, MapRoom, containingRoom, loopPreviewElevationOffset, roomWallObstructionCount, tiledMapTransforms, transformLoopPoint, tunnelObstructionCount } from "../map";
+import { CompositionMap, MapRoom, containingRoom, loopPreviewElevationOffset, roomWallObstructionCount, tiledMapTransforms, transformLoopPoint, tunnelObstructionCount, wallObstructionCount } from "../map";
 import { createPlaceholderStems } from "./synth";
 
 interface LiveTrack {
@@ -680,7 +680,9 @@ export class AudioEngine {
   private updateOcclusion(instance: LiveTrackInstance, position: [number, number, number], at: number): void {
     const from: [number, number] = [this.listenerPosition.x, this.listenerPosition.z];
     const target: [number, number] = [position[0], position[2]];
-    const obstructions = this.map ? roomWallObstructionCount(this.map, from, target) + tunnelObstructionCount(this.map, from, target) : 0;
+    const obstructions = this.map
+      ? roomWallObstructionCount(this.map, from, target) + tunnelObstructionCount(this.map, from, target) + wallObstructionCount(this.map, from, target)
+      : 0;
     const strength = Math.min(1, obstructions);
     const gain = THREE.MathUtils.lerp(1, 0.18, strength);
     const frequency = THREE.MathUtils.lerp(22000, 420, strength);

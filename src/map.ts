@@ -59,6 +59,15 @@ type RawMapRoom = Omit<MapRoom, "entrances" | "rotation" | "height"> &
   Partial<Pick<MapRoom, "entrances" | "rotation" | "height">> &
   LegacyRoomEntrance;
 
+// A free-standing wall placed anywhere on the map purely to occlude sound — it
+// is not a walkable boundary, just an obstacle between listener and stems.
+export interface MapWall {
+  id: string;
+  start: [number, number];
+  end: [number, number];
+  height: number;
+}
+
 export type PlatformShape = "rect" | "hex" | "circle";
 
 // A large open walkable area — like a room with no walls or ceiling. Stems and
@@ -89,6 +98,7 @@ export interface CompositionMap {
   segments: WalkableSegment[];
   rooms: MapRoom[];
   platforms: MapPlatform[];
+  walls: MapWall[];
   tiling: MapTiling;
   /** @deprecated Use tiling.pathLoop. Kept as a compatibility mirror for older code/manifests. */
   loop?: {
@@ -124,12 +134,13 @@ type Rect = { minX: number; maxX: number; minZ: number; maxZ: number };
 export const defaultTiling: MapTiling = { type: "none", origin: [0, 0], tileSize: 80 };
 
 export const MAP_PRESETS: Record<Exclude<MapPreset, "custom">, CompositionMap> = {
-  open: { preset: "open", segments: [], rooms: [], platforms: [], tiling: defaultTiling, wallHeight: 0, start: { position: [0, 0], direction: [0, -1] } },
+  open: { preset: "open", segments: [], rooms: [], platforms: [], walls: [], tiling: defaultTiling, wallHeight: 0, start: { position: [0, 0], direction: [0, -1] } },
   line: {
     preset: "line",
     wallHeight: 2.1,
     rooms: [],
     platforms: [],
+    walls: [],
     tiling: defaultTiling,
     start: { position: [0, 36], direction: [0, -1] },
     segments: [{ id: "line", start: [0, 40.5], end: [0, -40.5], width: 7.5 }],
@@ -139,6 +150,7 @@ export const MAP_PRESETS: Record<Exclude<MapPreset, "custom">, CompositionMap> =
     wallHeight: 2.1,
     rooms: [],
     platforms: [],
+    walls: [],
     tiling: defaultTiling,
     start: { position: [0, 36], direction: [0, -1] },
     segments: [
@@ -157,6 +169,7 @@ export function normalizeMap(value: Partial<CompositionMap> | undefined): Compos
   const segments = Array.isArray(value?.segments) ? value.segments.filter(isWalkableSegment) : fallback.segments;
   const rooms = Array.isArray(value?.rooms) ? value.rooms.filter(isMapRoom).map(normalizeRoom) : fallback.rooms;
   const platforms = Array.isArray(value?.platforms) ? value.platforms.filter(isMapPlatform).map(normalizePlatform) : fallback.platforms;
+  const walls = Array.isArray(value?.walls) ? value.walls.filter(isMapWall).map(normalizeWall) : fallback.walls;
   const startPosition = isPoint(value?.start?.position) ? value.start.position : fallback.start.position;
   const startDirection = normalizeDirection(isPoint(value?.start?.direction) ? value.start.direction : fallback.start.direction);
   const legacyLoop = isMapLoop(value?.loop) ? value.loop : undefined;
@@ -166,6 +179,7 @@ export function normalizeMap(value: Partial<CompositionMap> | undefined): Compos
     segments,
     rooms,
     platforms,
+    walls,
     tiling,
     loop: tiling.type === "path-loop" ? tiling.pathLoop : legacyLoop,
     wallHeight: clamp(value?.wallHeight ?? fallback.wallHeight, 0, 8),
@@ -451,6 +465,15 @@ export function tunnelObstructionCount(map: Pick<CompositionMap, "segments">, fr
     for (const [a, b] of tunnelSideWalls(segment)) {
       if (lineSegmentsIntersect(from, to, a, b)) count++;
     }
+  }
+  return count;
+}
+
+// Free-standing walls between listener and stem each muffle the sound.
+export function wallObstructionCount(map: Pick<CompositionMap, "walls">, from: [number, number], to: [number, number]): number {
+  let count = 0;
+  for (const wall of map.walls) {
+    if (lineSegmentsIntersect(from, to, wall.start, wall.end)) count++;
   }
   return count;
 }
@@ -1193,6 +1216,20 @@ function isMapPlatform(value: unknown): value is MapPlatform {
 
 function isPlatformShape(value: unknown): value is PlatformShape {
   return value === "rect" || value === "hex" || value === "circle";
+}
+
+function isMapWall(value: unknown): value is MapWall {
+  const w = value as MapWall;
+  return typeof w?.id === "string" && isPoint(w.start) && isPoint(w.end);
+}
+
+function normalizeWall(wall: MapWall): MapWall {
+  return {
+    id: wall.id,
+    start: wall.start,
+    end: wall.end,
+    height: clamp(Number.isFinite(wall.height) ? wall.height : 3, 0.5, 12),
+  };
 }
 
 function normalizePlatform(platform: MapPlatform): MapPlatform {

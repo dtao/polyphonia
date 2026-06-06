@@ -15,7 +15,7 @@ import {
 } from "./persistence";
 import { newId } from "./id";
 import { EnvironmentSettings, defaultEnvironment, normalizeEnvironment } from "./environment";
-import { attachmentForPoint, canAddBranchAtPoint, canAddRoomAtPoint, CompositionMap, MAP_PRESETS, MapPlatform, MapRoom, defaultMap, mapPointKey, normalizeMap, pointInOriginalTile, surfaceHeightAt } from "./map";
+import { attachmentForPoint, canAddBranchAtPoint, canAddRoomAtPoint, CompositionMap, MAP_PRESETS, MapPlatform, MapRoom, MapWall, defaultMap, mapPointKey, normalizeMap, pointInOriginalTile, surfaceHeightAt } from "./map";
 import { ArtistIdentity } from "./artist";
 import {
   AuthUser,
@@ -86,6 +86,7 @@ interface StoreState {
   startGizmoMode: "translate" | "rotate";
   selectedRoomId: string | null;
   selectedPlatformId: string | null;
+  selectedWallId: string | null;
   entered: boolean; // has the user started the experience (left the entry screen)
   viewer: boolean; // read-only shared-link view (no autosave, no editing)
   user: AuthUser | null; // signed-in account (for publishing); null = anonymous
@@ -130,6 +131,12 @@ interface StoreState {
   addPlatform: () => void;
   updatePlatform: (id: string, patch: Partial<MapPlatform>) => void;
   deletePlatform: (id: string) => void;
+
+  // Standalone walls (sound occluders, not walkable boundaries).
+  selectWall: (id: string | null) => void;
+  addWall: () => void;
+  updateWall: (id: string, patch: Partial<MapWall>) => void;
+  deleteWall: (id: string) => void;
 
   // Track edits. Those that affect audio also push the change to the engine,
   // so a playing composition responds live without ever restarting.
@@ -214,7 +221,7 @@ function unitDir(v: [number, number]): [number, number] {
 function pruneSelection(
   s: StoreState,
   composition: Composition,
-): Pick<StoreState, "selectedId" | "selectedMapPointKey" | "selectedMapSegmentId" | "branchStartPointKey" | "selectedStart" | "selectedRoomId" | "selectedPlatformId"> {
+): Pick<StoreState, "selectedId" | "selectedMapPointKey" | "selectedMapSegmentId" | "branchStartPointKey" | "selectedStart" | "selectedRoomId" | "selectedPlatformId" | "selectedWallId"> {
   return {
     selectedId: s.selectedId && composition.tracks.some((t) => t.id === s.selectedId) ? s.selectedId : null,
     selectedMapPointKey:
@@ -232,6 +239,7 @@ function pruneSelection(
     selectedStart: s.selectedStart,
     selectedRoomId: s.selectedRoomId && composition.map.rooms.some((room) => room.id === s.selectedRoomId) ? s.selectedRoomId : null,
     selectedPlatformId: s.selectedPlatformId && composition.map.platforms.some((platform) => platform.id === s.selectedPlatformId) ? s.selectedPlatformId : null,
+    selectedWallId: s.selectedWallId && composition.map.walls.some((wall) => wall.id === s.selectedWallId) ? s.selectedWallId : null,
   };
 }
 
@@ -283,6 +291,7 @@ export const useStore = create<StoreState>((set, get) => ({
   startGizmoMode: "translate",
   selectedRoomId: null,
   selectedPlatformId: null,
+  selectedWallId: null,
   entered: false,
   viewer: false,
   user: null,
@@ -379,18 +388,19 @@ export const useStore = create<StoreState>((set, get) => ({
         selectedStart: mode === "edit" ? s.selectedStart : false,
         selectedRoomId: mode === "edit" ? s.selectedRoomId : null,
         selectedPlatformId: mode === "edit" ? s.selectedPlatformId : null,
+        selectedWallId: mode === "edit" ? s.selectedWallId : null,
       };
     }),
   toggleMode: () => get().setMode(get().mode === "edit" ? "explore" : "edit"),
-  select: (selectedId) => set({ selectedId, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false, selectedRoomId: null, selectedPlatformId: null }),
-  selectMapPoint: (selectedMapPointKey) => set({ selectedMapPointKey, selectedMapSegmentId: null, selectedId: null, selectedStart: false, selectedRoomId: null, selectedPlatformId: null }),
-  selectMapSegment: (selectedMapSegmentId) => set({ selectedMapSegmentId, selectedMapPointKey: null, selectedId: null, branchStartPointKey: null, selectedStart: false, selectedRoomId: null, selectedPlatformId: null }),
-  setBranchStartPoint: (branchStartPointKey) => set({ branchStartPointKey, selectedMapPointKey: branchStartPointKey, selectedMapSegmentId: null, selectedId: null, selectedStart: false, selectedRoomId: null, selectedPlatformId: null }),
-  selectStart: () => set({ selectedStart: true, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedRoomId: null, selectedPlatformId: null }),
+  select: (selectedId) => set({ selectedId, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false, selectedRoomId: null, selectedPlatformId: null, selectedWallId: null }),
+  selectMapPoint: (selectedMapPointKey) => set({ selectedMapPointKey, selectedMapSegmentId: null, selectedId: null, selectedStart: false, selectedRoomId: null, selectedPlatformId: null, selectedWallId: null }),
+  selectMapSegment: (selectedMapSegmentId) => set({ selectedMapSegmentId, selectedMapPointKey: null, selectedId: null, branchStartPointKey: null, selectedStart: false, selectedRoomId: null, selectedPlatformId: null, selectedWallId: null }),
+  setBranchStartPoint: (branchStartPointKey) => set({ branchStartPointKey, selectedMapPointKey: branchStartPointKey, selectedMapSegmentId: null, selectedId: null, selectedStart: false, selectedRoomId: null, selectedPlatformId: null, selectedWallId: null }),
+  selectStart: () => set({ selectedStart: true, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedRoomId: null, selectedPlatformId: null, selectedWallId: null }),
   setStartGizmoMode: (startGizmoMode) => set({ startGizmoMode }),
 
   selectRoom: (selectedRoomId) =>
-    set({ selectedRoomId, selectedPlatformId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
+    set({ selectedRoomId, selectedPlatformId: null, selectedWallId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
 
   addRoom: () => {
     const map = get().composition.map;
@@ -424,7 +434,7 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   selectPlatform: (selectedPlatformId) =>
-    set({ selectedPlatformId, selectedRoomId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
+    set({ selectedPlatformId, selectedWallId: null, selectedRoomId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
 
   addPlatform: () => {
     const map = get().composition.map;
@@ -442,7 +452,7 @@ export const useStore = create<StoreState>((set, get) => ({
       elevation: surfaceHeightAt(map, map.start.position),
     };
     get().setMap({ preset: "custom", platforms: [...map.platforms, platform] });
-    set({ selectedPlatformId: platform.id, selectedRoomId: null, selectedId: null, selectedMapSegmentId: null, selectedMapPointKey: null, selectedStart: false });
+    set({ selectedPlatformId: platform.id, selectedWallId: null, selectedRoomId: null, selectedId: null, selectedMapSegmentId: null, selectedMapPointKey: null, selectedStart: false });
   },
 
   updatePlatform: (id, patch) => {
@@ -454,6 +464,37 @@ export const useStore = create<StoreState>((set, get) => ({
     const map = get().composition.map;
     get().setMap({ preset: "custom", platforms: map.platforms.filter((platform) => platform.id !== id) });
     if (get().selectedPlatformId === id) set({ selectedPlatformId: null });
+  },
+
+  selectWall: (selectedWallId) =>
+    set({ selectedWallId, selectedPlatformId: null, selectedRoomId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
+
+  addWall: () => {
+    const map = get().composition.map;
+    // Place a short wall a little ahead of the start, perpendicular to facing.
+    const [sx, sz] = map.start.position;
+    const [fx, fz] = map.start.direction;
+    const ahead: [number, number] = [sx + fx * 8, sz + fz * 8];
+    const perp: [number, number] = [-fz, fx];
+    const wall: MapWall = {
+      id: newId(),
+      start: [ahead[0] - perp[0] * 4, ahead[1] - perp[1] * 4],
+      end: [ahead[0] + perp[0] * 4, ahead[1] + perp[1] * 4],
+      height: 3,
+    };
+    get().setMap({ preset: "custom", walls: [...map.walls, wall] });
+    set({ selectedWallId: wall.id, selectedPlatformId: null, selectedRoomId: null, selectedId: null, selectedMapSegmentId: null, selectedMapPointKey: null, selectedStart: false });
+  },
+
+  updateWall: (id, patch) => {
+    const map = get().composition.map;
+    get().setMap({ preset: "custom", walls: map.walls.map((wall) => (wall.id === id ? { ...wall, ...patch } : wall)) });
+  },
+
+  deleteWall: (id) => {
+    const map = get().composition.map;
+    get().setMap({ preset: "custom", walls: map.walls.filter((wall) => wall.id !== id) });
+    if (get().selectedWallId === id) set({ selectedWallId: null });
   },
 
   // Create a room whose doorway is centered on the given path point and aligned
@@ -668,6 +709,7 @@ export const useStore = create<StoreState>((set, get) => ({
             : null,
         selectedRoomId: s.selectedRoomId && nextMap.rooms.some((room) => room.id === s.selectedRoomId) ? s.selectedRoomId : null,
         selectedPlatformId: s.selectedPlatformId && nextMap.platforms.some((platform) => platform.id === s.selectedPlatformId) ? s.selectedPlatformId : null,
+        selectedWallId: s.selectedWallId && nextMap.walls.some((wall) => wall.id === s.selectedWallId) ? s.selectedWallId : null,
       };
     }),
 

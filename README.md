@@ -24,7 +24,8 @@ these spatial compositions.
   and open **platforms** (rectangle, hex, or circle) add wide walkable areas
   that connect to any path, room, or platform they overlap. Room doorways can
   carry sliding **doors** that open as you approach (from either side or just
-  one) and muffle sound while shut.
+  one) and muffle sound while shut, and free-standing **walls** can be placed
+  anywhere to shape occlusion deliberately.
 - **Edit** — an overhead edit mode to place tracks in space (drag gizmo), and a
   properties panel to rename, recolor, set volume, and tune distance falloff.
 - **Build from scratch** — create a new composition (title / BPM, plus an

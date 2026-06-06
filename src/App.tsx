@@ -6,6 +6,7 @@ import { MapPointPanel } from "./ui/MapPointPanel";
 import { MapSegmentPanel } from "./ui/MapSegmentPanel";
 import { RoomPanel } from "./ui/RoomPanel";
 import { PlatformPanel } from "./ui/PlatformPanel";
+import { WallPanel } from "./ui/WallPanel";
 import { AddStem } from "./ui/AddStem";
 import { EntryScreen } from "./ui/EntryScreen";
 import { PublishControl } from "./ui/PublishControl";
@@ -195,6 +196,11 @@ export default function App() {
           s.deletePlatform(s.selectedPlatformId);
           return;
         }
+        if (s.selectedWallId) {
+          e.preventDefault();
+          s.deleteWall(s.selectedWallId);
+          return;
+        }
         if (s.selectedMapPointKey) {
           e.preventDefault();
           deleteSelectedMapPoint();
@@ -373,6 +379,7 @@ export default function App() {
           <MapSegmentPanel />
           <RoomPanel />
           <PlatformPanel />
+          <WallPanel />
           {mode === "explore" && <ARWalkControls map={comp.map} />}
 
           {/* Empty composition: prompt the user to add their first stem. */}

@@ -59,7 +59,7 @@ earlier ones.
 - [x] **M5.17 Tunnels** - introduce a new type of path segment: an enclosed tunnel (with sound occlusion).
 - [x] **M5.18 Platforms** - large areas of various shapes (rectangle, hex, circle) - like rooms, they can be connected to path segments; but they have no walls or ceilings.
 - [x] **M5.19 Doors** - entrances can have doors that slide open - can be openable from one side, or from both sides.
-- [ ] **M5.20 Standalone walls** - allow composers to create walls in arbitary locations (not necessarily connected to a path segment) to introduce intentional occlusion as part of a composition.
+- [x] **M5.20 Standalone walls** - allow composers to create walls in arbitary locations (not necessarily connected to a path segment) to introduce intentional occlusion as part of a composition.
 
 ## Milestone 6 — Authored high-fidelity environments
 

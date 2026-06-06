@@ -3,7 +3,7 @@ import { Line, TransformControls } from "@react-three/drei";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
-import { canAddBranchAtPoint, clampToMap, CompositionMap, doorOpenAmount, isTunnelSegment, loopRoleForPoint, MapPlatform, MapRoom, platformElevation, platformLocalPolygon, RoomEntrance, roomAttachedToPoint, roomElevation, ROOM_WALL_THICKNESS, solidWallSpans, surfaceHeightAt, tunnelSideWalls, wallOpenings, WalkableSegment } from "../map";
+import { canAddBranchAtPoint, clampToMap, CompositionMap, doorOpenAmount, isTunnelSegment, loopRoleForPoint, MapPlatform, MapRoom, MapWall, platformElevation, platformLocalPolygon, RoomEntrance, roomAttachedToPoint, roomElevation, ROOM_WALL_THICKNESS, solidWallSpans, surfaceHeightAt, tunnelSideWalls, wallOpenings, WalkableSegment } from "../map";
 import { useStore, viewState } from "../store";
 import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 
@@ -48,6 +48,7 @@ export function MapScene({
       ))}
       <Rooms map={map} editMode={editMode} />
       <Platforms map={map} editMode={editMode} />
+      <StandaloneWalls map={map} editMode={editMode} />
       <Tunnels map={map} editMode={editMode} />
       {editMode && <BranchPlacementLayer map={map} />}
       {editMode && <EndpointEditor map={map} endpointCounts={endpointCounts} />}
@@ -332,6 +333,119 @@ function platformOutlinePoints(platform: MapPlatform): Array<[number, number, nu
   }
   const polygon = platformLocalPolygon(platform);
   return [...polygon, polygon[0]].map(([x, z]) => [x, y, z] as [number, number, number]);
+}
+
+// Free-standing walls — sound occluders placed anywhere. Click to select; the
+// selected wall shows draggable endpoint handles.
+const STANDALONE_WALL_THICKNESS = 0.3;
+
+function StandaloneWalls({ map, editMode }: { map: CompositionMap; editMode: boolean }) {
+  const selectedWallId = useStore((s) => s.selectedWallId);
+  if (!map.walls.length) return null;
+  const selectedWall = editMode && selectedWallId ? map.walls.find((w) => w.id === selectedWallId) : null;
+  return (
+    <group>
+      {map.walls.map((wall) => (
+        <WallMesh key={wall.id} wall={wall} editMode={editMode} selected={editMode && selectedWallId === wall.id} />
+      ))}
+      {selectedWall && <WallHandles wall={selectedWall} />}
+    </group>
+  );
+}
+
+function WallMesh({ wall, editMode, selected }: { wall: MapWall; editMode: boolean; selected: boolean }) {
+  const selectWall = useStore((s) => s.selectWall);
+  const dx = wall.end[0] - wall.start[0];
+  const dz = wall.end[1] - wall.start[1];
+  const length = Math.max(0.02, Math.hypot(dx, dz));
+  const angle = Math.atan2(-dz, dx);
+  const mid: [number, number] = [(wall.start[0] + wall.end[0]) / 2, (wall.start[1] + wall.end[1]) / 2];
+  return (
+    <mesh
+      position={[mid[0], wall.height / 2, mid[1]]}
+      rotation={[0, angle, 0]}
+      onClick={(e) => {
+        if (!editMode) return;
+        e.stopPropagation();
+        selectWall(wall.id);
+      }}
+      onPointerOver={(e) => {
+        if (!editMode) return;
+        e.stopPropagation();
+        document.body.style.cursor = "pointer";
+      }}
+      onPointerOut={() => {
+        document.body.style.cursor = "auto";
+      }}
+    >
+      <boxGeometry args={[length, wall.height, STANDALONE_WALL_THICKNESS]} />
+      <meshStandardMaterial color={selected ? "#8fffe8" : "#9aa6bd"} roughness={0.8} metalness={0.1} transparent={editMode} opacity={editMode ? 0.55 : 1} depthWrite={!editMode} side={THREE.DoubleSide} />
+    </mesh>
+  );
+}
+
+function WallHandles({ wall }: { wall: MapWall }) {
+  const updateWall = useStore((s) => s.updateWall);
+  const controls = useThree((s) => s.controls as { enabled?: boolean } | undefined);
+  const ground = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), []);
+  const hit = useMemo(() => new THREE.Vector3(), []);
+  const drag = useRef<"start" | "end" | null>(null);
+
+  function move(e: ThreeEvent<PointerEvent>) {
+    if (!drag.current) return;
+    e.stopPropagation();
+    if (!e.ray.intersectPlane(ground, hit)) return;
+    const point: [number, number] = [hit.x, hit.z];
+    updateWall(wall.id, drag.current === "start" ? { start: point } : { end: point });
+  }
+
+  function startDrag(e: ThreeEvent<PointerEvent>, which: "start" | "end") {
+    e.stopPropagation();
+    drag.current = which;
+    if (controls) controls.enabled = false;
+    (e.nativeEvent.target as Element | null)?.setPointerCapture?.(e.pointerId);
+    document.body.style.cursor = "grabbing";
+  }
+
+  function endDrag(e?: ThreeEvent<PointerEvent>) {
+    drag.current = null;
+    if (controls) controls.enabled = true;
+    (e?.nativeEvent.target as Element | null | undefined)?.releasePointerCapture?.(e?.pointerId ?? -1);
+    document.body.style.cursor = "auto";
+  }
+
+  return (
+    <group onPointerUp={endDrag} onPointerCancel={endDrag}>
+      {drag.current && (
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.5, 0]} onPointerMove={move} onPointerUp={endDrag}>
+          <planeGeometry args={[400, 400]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
+        </mesh>
+      )}
+      {(["start", "end"] as const).map((which) => {
+        const point = wall[which];
+        return (
+          <mesh
+            key={which}
+            position={[point[0], wall.height + 0.4, point[1]]}
+            onPointerDown={(e) => startDrag(e, which)}
+            onPointerMove={move}
+            onPointerUp={endDrag}
+            onPointerOver={(e) => {
+              e.stopPropagation();
+              document.body.style.cursor = "grab";
+            }}
+            onPointerOut={() => {
+              if (!drag.current) document.body.style.cursor = "auto";
+            }}
+          >
+            <sphereGeometry args={[0.6, 20, 14]} />
+            <meshBasicMaterial color="#8fffe8" toneMapped={false} />
+          </mesh>
+        );
+      })}
+    </group>
+  );
 }
 
 function ReflectiveUnderfloor({
