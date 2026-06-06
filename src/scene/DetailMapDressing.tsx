@@ -3,7 +3,7 @@ import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { CompositionMap, MapPlatform, MapRoom, WalkableSegment } from "../map";
-import { mapPointKey, platformElevation, roomElevation } from "../map";
+import { isPointInsideMap, mapPointKey, platformElevation, roomElevation } from "../map";
 
 type DetailProfile = "cavern" | "forest" | "crystal";
 
@@ -297,14 +297,14 @@ function detailTransforms(map: CompositionMap, quality: "low" | "high", profile:
       for (const side of [-1, 1]) {
         const seed = hash(`${segment.id}:${index}:${side}`);
         const offset = segment.width / 2 + config.edgeOffset + seeded(seed, 1) * config.edgeJitter;
+        const px = x + nx * offset * side;
+        const pz = z + nz * offset * side;
+        // Keep objects off any walkable surface: near junctions a segment's edge
+        // offset can land on a connecting path/room/platform, so an object that
+        // belongs beside one segment would otherwise sit in the middle of another.
+        if (isPointInsideMap(map, [px, pz])) continue;
         const scale = detailScale(profile, seed);
-        transforms.push(
-          transform(
-            [x + nx * offset * side, y + config.baseY, z + nz * offset * side],
-            scale,
-            seeded(seed, 5) * Math.PI,
-          ),
-        );
+        transforms.push(transform([px, y + config.baseY, pz], scale, seeded(seed, 5) * Math.PI));
       }
     }
   }
@@ -316,13 +316,11 @@ function detailTransforms(map: CompositionMap, quality: "low" | "high", profile:
       const angle = (index / rockCount) * Math.PI * 2 + room.rotation;
       const radiusX = room.width / 2 + 0.8;
       const radiusZ = room.depth / 2 + 0.8;
-      transforms.push(
-        transform(
-          [room.center[0] + Math.cos(angle) * radiusX, y, room.center[1] + Math.sin(angle) * radiusZ],
-          detailScale(profile, hash(`${room.id}:${index}`)),
-          angle,
-        ),
-      );
+      const px = room.center[0] + Math.cos(angle) * radiusX;
+      const pz = room.center[1] + Math.sin(angle) * radiusZ;
+      // Skip ring rocks that fall on a path/platform connected to the room.
+      if (isPointInsideMap(map, [px, pz])) continue;
+      transforms.push(transform([px, y, pz], detailScale(profile, hash(`${room.id}:${index}`)), angle));
     }
   }
 
