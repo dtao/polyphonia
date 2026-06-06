@@ -392,13 +392,15 @@ export function stepOnMap(map: CompositionMap, previous: [number, number], attem
   if (!hasWalkableBounds(map)) return { position: attempted, support: { kind: "open" } };
   const support = previousSupport && supportExists(map, previousSupport) ? previousSupport : mapSupportAt(map, previous, previousSupport);
 
+  if (stepHitsDoorPanel(map, previous, attempted)) return { position: previous, support };
+
   if (supportContains(map, support, attempted)) return { position: attempted, support };
 
   const transition = transitionSupport(map, support, previous, attempted);
   if (transition) return transition;
 
   return {
-    position: clampToSupport(map, support, attempted) ?? clampToMap(map, attempted),
+    position: clampToSupport(map, support, attempted, previous) ?? clampToMap(map, attempted),
     support,
   };
 }
@@ -1209,14 +1211,14 @@ function transitionSupport(map: CompositionMap, support: MapSupport, previous: [
   return null;
 }
 
-function clampToSupport(map: CompositionMap, support: MapSupport, point: [number, number]): [number, number] | null {
+function clampToSupport(map: CompositionMap, support: MapSupport, point: [number, number], listener: [number, number] = point): [number, number] | null {
   if (support.kind === "open") return point;
   if (support.kind === "room") {
     const room = map.rooms.find((r) => r.id === support.roomId);
     if (!room) return null;
     let best: [number, number] = point;
     let bestDistanceSq = Infinity;
-    for (const rect of roomRegionRects(room)) {
+    for (const rect of [interiorRect(room), ...room.entrances.filter((entrance) => doorIsOpen(room, entrance, listener)).map((entrance) => doorwayRect(room, entrance))]) {
       const candidate = fromRoomLocal(room, closestInRect(toRoomLocal(room, point), rect));
       const dx = point[0] - candidate[0];
       const dz = point[1] - candidate[1];
@@ -1234,6 +1236,40 @@ function clampToSupport(map: CompositionMap, support: MapSupport, point: [number
   }
   const segment = map.segments.find((s) => s.id === support.segmentId);
   return segment ? closestPointInSegment(point, segment) : null;
+}
+
+function stepHitsDoorPanel(map: CompositionMap, previous: [number, number], attempted: [number, number]): boolean {
+  for (const room of map.rooms) {
+    const from = toRoomLocal(room, previous);
+    const to = toRoomLocal(room, attempted);
+    for (const entrance of room.entrances) {
+      if (!entrance.door) continue;
+      if (doorOpenAmount(room, entrance, previous) < 0.95 && lineCrossesDoorway(from, to, room, entrance)) return true;
+    }
+  }
+  return false;
+}
+
+function lineCrossesDoorway(from: [number, number], to: [number, number], room: MapRoom, entrance: RoomEntrance): boolean {
+  const r = interiorRect(room);
+  const halfWidth = Math.max(0.5, entrance.width) / 2;
+  const epsilon = 0.000001;
+  if (entrance.side === "north" || entrance.side === "south") {
+    const z = entrance.side === "north" ? r.minZ : r.maxZ;
+    const dz = to[1] - from[1];
+    if (Math.abs(dz) < epsilon) return false;
+    const t = (z - from[1]) / dz;
+    if (t < -epsilon || t > 1 + epsilon) return false;
+    const x = from[0] + (to[0] - from[0]) * clamp(t, 0, 1);
+    return x >= entrance.offset - halfWidth - epsilon && x <= entrance.offset + halfWidth + epsilon;
+  }
+  const x = entrance.side === "west" ? r.minX : r.maxX;
+  const dx = to[0] - from[0];
+  if (Math.abs(dx) < epsilon) return false;
+  const t = (x - from[0]) / dx;
+  if (t < -epsilon || t > 1 + epsilon) return false;
+  const z = from[1] + (to[1] - from[1]) * clamp(t, 0, 1);
+  return z >= entrance.offset - halfWidth - epsilon && z <= entrance.offset + halfWidth + epsilon;
 }
 
 function nearestSegmentContaining(map: CompositionMap, point: [number, number]): WalkableSegment | null {
@@ -1441,21 +1477,33 @@ function closestInRect(p: [number, number], r: Rect): [number, number] {
 }
 
 function pointInSegment(point: [number, number], segment: WalkableSegment): boolean {
-  const projected = closestPointOnCenterline(point, segment);
+  const projected = centerlineProjection(point, segment);
   const radius = segment.width / 2;
-  const dx = point[0] - projected[0];
-  const dz = point[1] - projected[1];
+  if (projected.t <= 0 || projected.t >= 1) {
+    const ax = segment.start[0];
+    const az = segment.start[1];
+    const bx = segment.end[0];
+    const bz = segment.end[1];
+    const along = projected.t <= 0 ? (point[0] - ax) * (bx - ax) + (point[1] - az) * (bz - az) : (point[0] - bx) * (bx - ax) + (point[1] - bz) * (bz - az);
+    if ((projected.t <= 0 && along < 0) || (projected.t >= 1 && along > 0)) return false;
+  }
+  const dx = point[0] - projected.px;
+  const dz = point[1] - projected.pz;
   return dx * dx + dz * dz <= radius * radius;
 }
 
 function closestPointInSegment(point: [number, number], segment: WalkableSegment): [number, number] {
   const center = closestPointOnCenterline(point, segment);
   const radius = segment.width / 2;
-  const dx = point[0] - center[0];
-  const dz = point[1] - center[1];
-  const distance = Math.hypot(dx, dz);
-  if (distance <= radius || distance === 0) return center;
-  return [center[0] + (dx / distance) * radius, center[1] + (dz / distance) * radius];
+  const ax = segment.start[0];
+  const az = segment.start[1];
+  const bx = segment.end[0];
+  const bz = segment.end[1];
+  const len = Math.hypot(bx - ax, bz - az) || 1;
+  const nx = -(bz - az) / len;
+  const nz = (bx - ax) / len;
+  const side = clamp((point[0] - center[0]) * nx + (point[1] - center[1]) * nz, -radius, radius);
+  return [center[0] + nx * side, center[1] + nz * side];
 }
 
 function closestPointOnCenterline(point: [number, number], segment: WalkableSegment): [number, number] {

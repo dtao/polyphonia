@@ -26,7 +26,8 @@ these spatial compositions.
   and open **platforms** (rectangle, hex, or circle) attach to a terminal path
   point — like rooms — to add wide walkable areas. Room doorways can
   carry sliding **doors** that open as you approach (from either side or just
-  one) and muffle sound while shut, and free-standing **walls** can be placed
+  one), blocking movement and muffling sound while shut, and free-standing
+  **walls** can be placed
   anywhere to shape occlusion deliberately. Rooms, tunnels, and walls expose
   wall thickness controls, so thin barriers lightly darken sound while thick
   barriers heavily damp it.
