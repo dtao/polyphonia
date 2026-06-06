@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
 import { newId } from "../id";
-import { canAddBranchAtPoint, clampToMap, CompositionMap, doorOpenAmount, DOOR_DEPTH, entranceLocalCenter, isTunnelSegment, loopRoleForPoint, MapPlatform, MapRoom, MapWall, platformElevation, platformLocalPolygon, pointHasAttachment, RoomEntrance, roomElevation, roomLocalPoint, roomWorldPoint, RoomSide, solidWallSpans, surfaceHeightAt, tunnelHeight, tunnelSideWalls, wallOpenings, wallThickness, WalkableSegment } from "../map";
+import { canAddBranchAtPoint, clampToMap, CompositionMap, doorVisualOpenAmount, DOOR_DEPTH, entranceLocalCenter, isTunnelSegment, loopRoleForPoint, MapPlatform, MapRoom, MapWall, platformElevation, platformLocalPolygon, pointHasAttachment, RoomEntrance, roomElevation, roomLocalPoint, roomWorldPoint, RoomSide, solidWallSpans, surfaceHeightAt, tunnelHeight, tunnelSideWalls, wallOpenings, wallThickness, WalkableSegment } from "../map";
 import { useStore, viewState } from "../store";
 import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 
@@ -230,14 +230,14 @@ function EntranceHandle({ room, entrance, index, elevationY, selected }: { room:
 }
 
 // A sliding door that fills its doorway and retracts into the adjacent wall as
-// the listener approaches from an allowed side (see `doorOpenAmount`).
+// the listener approaches from an allowed side (see `doorVisualOpenAmount`).
 function DoorPanel({ room, entrance, editMode }: { room: MapRoom; entrance: RoomEntrance; editMode: boolean }) {
   const ref = useRef<THREE.Mesh>(null);
   const open = useRef(0);
   const data = useMemo(() => doorPanelData(room, entrance), [room, entrance]);
   useFrame((_, dt) => {
     if (!ref.current) return;
-    const target = doorOpenAmount(room, entrance, [viewState.x, viewState.z]);
+    const target = doorVisualOpenAmount(room, entrance, [viewState.x, viewState.z], open.current > 0.05);
     open.current = THREE.MathUtils.damp(open.current, target, 8, dt);
     const slide = open.current * (data.width + 0.4);
     ref.current.position.set(data.center[0] + (data.axis === "x" ? slide : 0), room.height / 2, data.center[1] + (data.axis === "z" ? slide : 0));

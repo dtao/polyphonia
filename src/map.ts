@@ -614,6 +614,9 @@ export function roomWallObstructionCount(map: Pick<CompositionMap, "rooms">, fro
 // How close (beyond the doorway threshold) the listener must be for a door to
 // stand fully open.
 const DOOR_OPEN_RADIUS = 4.5;
+// Once a directional door has opened, keep it responsive just past the doorway
+// so slow movement across the wall line does not make it close in front of you.
+const DOOR_SIDE_GRACE = 1.2;
 
 // World-space center of an entrance's doorway opening, on its wall line.
 export function entranceDoorwayCenter(room: MapRoom, entrance: RoomEntrance): [number, number] {
@@ -641,9 +644,7 @@ export function entranceDoorwayCenter(room: MapRoom, entrance: RoomEntrance): [n
 // side; otherwise it opens smoothly as the listener nears the doorway.
 export function doorOpenAmount(room: MapRoom, entrance: RoomEntrance, listener: [number, number]): number {
   if (!entrance.door) return 1;
-  const inside = roomInteriorContains(room, listener);
-  const allowed = entrance.door.openFrom === "both" || (entrance.door.openFrom === "inside" ? inside : !inside);
-  if (!allowed) return 0;
+  if (!doorRespondsFromStrictSide(room, entrance, listener)) return 0;
   const center = entranceDoorwayCenter(room, entrance);
   const distance = Math.hypot(listener[0] - center[0], listener[1] - center[1]);
   return clamp(1 - (distance - 0.5) / DOOR_OPEN_RADIUS, 0, 1);
@@ -651,6 +652,37 @@ export function doorOpenAmount(room: MapRoom, entrance: RoomEntrance, listener: 
 
 export function doorIsOpen(room: MapRoom, entrance: RoomEntrance, listener: [number, number]): boolean {
   return doorOpenAmount(room, entrance, listener) > 0.5;
+}
+
+export function doorVisualOpenAmount(room: MapRoom, entrance: RoomEntrance, listener: [number, number], wasOpen = false): number {
+  if (!entrance.door) return 1;
+  const grace = wasOpen ? DOOR_SIDE_GRACE : 0;
+  if (!doorRespondsFromSide(room, entrance, listener, grace)) return 0;
+  const center = entranceDoorwayCenter(room, entrance);
+  const distance = Math.hypot(listener[0] - center[0], listener[1] - center[1]);
+  return clamp(1 - (distance - 0.5) / DOOR_OPEN_RADIUS, 0, 1);
+}
+
+function doorRespondsFromSide(room: MapRoom, entrance: RoomEntrance, listener: [number, number], grace: number): boolean {
+  if (!entrance.door || entrance.door.openFrom === "both") return true;
+  const r = interiorRect(room);
+  const local = toRoomLocal(room, listener);
+  switch (entrance.side) {
+    case "north":
+      return entrance.door.openFrom === "inside" ? local[1] >= r.minZ - grace : local[1] <= r.minZ + grace;
+    case "south":
+      return entrance.door.openFrom === "inside" ? local[1] <= r.maxZ + grace : local[1] >= r.maxZ - grace;
+    case "west":
+      return entrance.door.openFrom === "inside" ? local[0] >= r.minX - grace : local[0] <= r.minX + grace;
+    case "east":
+      return entrance.door.openFrom === "inside" ? local[0] <= r.maxX + grace : local[0] >= r.maxX - grace;
+  }
+}
+
+function doorRespondsFromStrictSide(room: MapRoom, entrance: RoomEntrance, listener: [number, number]): boolean {
+  if (!entrance.door || entrance.door.openFrom === "both") return true;
+  const inside = roomInteriorContains(room, listener);
+  return entrance.door.openFrom === "inside" ? inside : !inside;
 }
 
 export function isTunnelSegment(segment: WalkableSegment): boolean {
