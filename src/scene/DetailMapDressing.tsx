@@ -17,10 +17,18 @@ import {
   tiledMapTransforms,
   transformLoopPoint,
 } from "../map";
-import { arWalk, loopPreviewGroups, viewState } from "../store";
+import { arWalk, loopPreviewGroups, loopWrap, viewState } from "../store";
+import {
+  createFadedInstancedMesh,
+  disposeFadedInstancedMesh,
+  ENVIRONMENT_INSTANCE_UPDATE_INTERVAL,
+  finishInstanceFadeUpdate,
+  setInstanceFade,
+} from "./fadedInstances";
+import type { FadedInstancedMesh } from "./fadedInstances";
 import { pathJointPatches } from "./MapScene";
 import { radialFade, RADIAL_FADE_OUTER } from "./fade";
-import { environmentGenerationRadius, ENVIRONMENT_PREVIEW_LIMITS } from "./environmentVisibility";
+import { environmentGenerationRadius, environmentPreviewTransforms } from "./environmentVisibility";
 
 interface DetailPlacement {
   position: [number, number, number];
@@ -107,10 +115,7 @@ export function DetailMapDressing({
     [generationPositions, map],
   );
   const objectPreviews = useMemo(
-    () =>
-      tiled
-        ? tiledMapTransforms(map, viewer, objectGenerationRadius, ENVIRONMENT_PREVIEW_LIMITS)
-        : [],
+    () => (tiled ? environmentPreviewTransforms(map, viewer, objectGenerationRadius) : []),
     [tiled, map, objectGenerationRadius, viewer],
   );
 
@@ -525,9 +530,8 @@ function DetailInstances({
   const nearMesh = useMemo(() => emptyInstancedMesh(geometry, material, capacity), [geometry, material, capacity]);
   const farMesh = useMemo(() => emptyInstancedMesh(lowGeometry, material, capacity), [lowGeometry, material, capacity]);
   const lastUpdate = useRef(-Infinity);
+  const seenWrap = useRef(loopWrap.generation);
   const position = useMemo(() => new THREE.Vector3(), []);
-  const fadeMatrix = useMemo(() => new THREE.Matrix4(), []);
-  const fadeScale = useMemo(() => new THREE.Vector3(), []);
 
   const refill = useCallback(() => {
     let nearCount = 0;
@@ -536,23 +540,25 @@ function DetailInstances({
       position.setFromMatrixPosition(matrix);
       const distance = position.distanceTo(camera.position);
       if (distance > DETAIL_OBJECT_CULL) continue;
-      // Grow the instance in from a point as it nears the cull radius instead of
-      // popping at full size (P12). Uniform scale is the per-instance lever we
-      // have on a shared material; the band is far enough that the symmetric
-      // shrink reads as a gentle fade.
       const fade = radialFade(distance);
       if (fade <= 0.002) continue;
-      const placed = fade < 0.999 ? fadeMatrix.copy(matrix).scale(fadeScale.setScalar(fade)) : matrix;
-      if (quality === "high" && distance < 42) nearMesh.setMatrixAt(nearCount++, placed);
-      else farMesh.setMatrixAt(farCount++, placed);
+      if (quality === "high" && distance < 42) {
+        nearMesh.setMatrixAt(nearCount, matrix);
+        setInstanceFade(nearMesh, nearCount++, fade);
+      } else {
+        farMesh.setMatrixAt(farCount, matrix);
+        setInstanceFade(farMesh, farCount++, fade);
+      }
     }
     nearMesh.count = nearCount;
     farMesh.count = farCount;
     nearMesh.instanceMatrix.needsUpdate = true;
     farMesh.instanceMatrix.needsUpdate = true;
+    finishInstanceFadeUpdate(nearMesh);
+    finishInstanceFadeUpdate(farMesh);
     nearMesh.computeBoundingSphere();
     farMesh.computeBoundingSphere();
-  }, [camera, fadeMatrix, fadeScale, farMesh, nearMesh, position, quality, transforms]);
+  }, [camera, farMesh, nearMesh, position, quality, transforms]);
 
   useEffect(() => {
     nearMesh.castShadow = true;
@@ -560,8 +566,8 @@ function DetailInstances({
     farMesh.castShadow = false;
     farMesh.receiveShadow = true;
     return () => {
-      nearMesh.dispose();
-      farMesh.dispose();
+      disposeFadedInstancedMesh(nearMesh);
+      disposeFadedInstancedMesh(farMesh);
     };
   }, [farMesh, nearMesh]);
   useEffect(() => () => lowGeometry.dispose(), [lowGeometry]);
@@ -574,7 +580,9 @@ function DetailInstances({
   }, [refill]);
 
   useFrame(({ clock }) => {
-    if (clock.elapsedTime - lastUpdate.current < 0.25) return;
+    const wrapped = seenWrap.current !== loopWrap.generation;
+    seenWrap.current = loopWrap.generation;
+    if (!wrapped && clock.elapsedTime - lastUpdate.current < ENVIRONMENT_INSTANCE_UPDATE_INTERVAL) return;
     lastUpdate.current = clock.elapsedTime;
     refill();
   });
@@ -587,10 +595,12 @@ function DetailInstances({
   );
 }
 
-function emptyInstancedMesh(geometry: THREE.BufferGeometry, material: THREE.Material, count: number): THREE.InstancedMesh {
-  const mesh = new THREE.InstancedMesh(geometry, material, count);
-  mesh.count = 0;
-  return mesh;
+function emptyInstancedMesh(
+  geometry: THREE.BufferGeometry,
+  material: THREE.Material,
+  count: number,
+): FadedInstancedMesh {
+  return createFadedInstancedMesh(geometry, material, count);
 }
 
 function useSurfaceMaterials(

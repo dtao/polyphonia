@@ -10,12 +10,18 @@ import { environmentPackAsset, environmentPackById, resolvedEnvironmentQuality }
 import type { EnvironmentPackDefinition } from "../environmentPacks";
 import type { SurfaceMaterialDefinitions } from "./DetailMapDressing";
 import type { CompositionMap } from "../map";
-import { tiledMapTransforms } from "../map";
-import { arWalk, useStore, viewState } from "../store";
+import { arWalk, loopWrap, useStore, viewState } from "../store";
 import { DetailMapDressing } from "./DetailMapDressing";
 import { environmentInstanceBatches } from "./environmentInstances";
+import {
+  createFadedInstancedMesh,
+  disposeFadedInstancedMesh,
+  ENVIRONMENT_INSTANCE_UPDATE_INTERVAL,
+  finishInstanceFadeUpdate,
+  setInstanceFade,
+} from "./fadedInstances";
 import { radialFade, RADIAL_FADE_OUTER } from "./fade";
-import { environmentGenerationRadius, ENVIRONMENT_PREVIEW_LIMITS } from "./environmentVisibility";
+import { environmentGenerationRadius, environmentPreviewTransforms } from "./environmentVisibility";
 
 export function AuthoredEnvironmentScene({
   environment,
@@ -275,10 +281,7 @@ function AuthoredSceneInstances({
     [map, scenePositions],
   );
   const previews = useMemo(
-    () =>
-      tiled
-        ? tiledMapTransforms(map, viewer, generationRadius, ENVIRONMENT_PREVIEW_LIMITS)
-        : [],
+    () => (tiled ? environmentPreviewTransforms(map, viewer, generationRadius) : []),
     [generationRadius, map, tiled, viewer],
   );
   const batches = useMemo(() => environmentInstanceBatches(scene, map, previews), [map, previews, scene]);
@@ -308,13 +311,12 @@ function AuthoredInstanceBatch({
 }) {
   const camera = useThree((state) => state.camera);
   const mesh = useMemo(
-    () => new THREE.InstancedMesh(geometry, material, matrices.length),
+    () => createFadedInstancedMesh(geometry, material, matrices.length),
     [geometry, material, matrices.length],
   );
   const position = useMemo(() => new THREE.Vector3(), []);
-  const fadeMatrix = useMemo(() => new THREE.Matrix4(), []);
-  const fadeScale = useMemo(() => new THREE.Vector3(), []);
   const lastUpdate = useRef(-Infinity);
+  const seenWrap = useRef(loopWrap.generation);
 
   const refill = useCallback(() => {
     let count = 0;
@@ -324,24 +326,27 @@ function AuthoredInstanceBatch({
       if (distance > RADIAL_FADE_OUTER) continue;
       const fade = radialFade(distance);
       if (fade <= 0.002) continue;
-      const placed = fade < 0.999 ? fadeMatrix.copy(matrix).scale(fadeScale.setScalar(fade)) : matrix;
-      mesh.setMatrixAt(count++, placed);
+      mesh.setMatrixAt(count, matrix);
+      setInstanceFade(mesh, count++, fade);
     }
     mesh.count = count;
     mesh.instanceMatrix.needsUpdate = true;
+    finishInstanceFadeUpdate(mesh);
     mesh.computeBoundingSphere();
-  }, [camera, fadeMatrix, fadeScale, matrices, mesh, position]);
+  }, [camera, matrices, mesh, position]);
 
   useEffect(() => {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    return () => mesh.dispose();
+    return () => disposeFadedInstancedMesh(mesh);
   }, [mesh]);
   useLayoutEffect(() => {
     refill();
   }, [refill]);
   useFrame(({ clock }) => {
-    if (clock.elapsedTime - lastUpdate.current < 0.25) return;
+    const wrapped = seenWrap.current !== loopWrap.generation;
+    seenWrap.current = loopWrap.generation;
+    if (!wrapped && clock.elapsedTime - lastUpdate.current < ENVIRONMENT_INSTANCE_UPDATE_INTERVAL) return;
     lastUpdate.current = clock.elapsedTime;
     refill();
   });

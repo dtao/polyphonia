@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { defaultMap } from "../map";
 import { RADIAL_FADE_OUTER } from "./fade";
-import { environmentGenerationRadius } from "./environmentVisibility";
+import {
+  environmentGenerationRadius,
+  environmentPathLoopDepth,
+  environmentPreviewTransforms,
+} from "./environmentVisibility";
 
 describe("environmentGenerationRadius", () => {
   it("generates origin-based tiles beyond the fade radius by the farthest object offset", () => {
@@ -23,5 +27,27 @@ describe("environmentGenerationRadius", () => {
     };
 
     expect(environmentGenerationRadius(map, [[10, 0]])).toBe(RADIAL_FADE_OUTER + 94);
+    expect(environmentPathLoopDepth(map, 224)).toBe(5);
+  });
+
+  it("keeps the path-loop environment copy pool stable as the viewer moves", () => {
+    const map = {
+      ...defaultMap,
+      segments: [{ id: "path", start: [0, 0] as [number, number], end: [100, 0] as [number, number], width: 4 }],
+      tiling: {
+        ...defaultMap.tiling,
+        type: "path-loop" as const,
+        pathLoop: {
+          start: { segmentId: "path", end: "start" as const },
+          end: { segmentId: "path", end: "end" as const },
+        },
+      },
+    };
+
+    const before = environmentPreviewTransforms(map, [10, 0], 224).map((preview) => preview.id);
+    const after = environmentPreviewTransforms(map, [90, 0], 224).map((preview) => preview.id);
+
+    expect(before).toEqual(after);
+    expect(before).toHaveLength(10);
   });
 });
