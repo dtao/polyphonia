@@ -51,6 +51,7 @@ export function TrackMarker({
   const volume = track.volume ?? 1;
   const orbRadius = 0.42 + volume * 0.32;
   const showPointLight = !preview && !debugFlag("debugNoPointLights");
+  const showFlare = !debugFlag("debugNoFlare");
   const showStarRays = !debugFlag("debugNoStarRays");
   const markerDebugId = debugId ?? `base:${track.id}`;
   const markerDebugPosition = debugPosition ?? [x, z];
@@ -167,22 +168,24 @@ export function TrackMarker({
         <meshBasicMaterial color={track.color} transparent opacity={0.1} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
       </mesh>
       <Billboard position={[0, 0, 0]}>
-        <mesh scale={[orbRadius * 5.6, orbRadius * 5.6, 1]}>
-          <planeGeometry args={[1, 1]} />
-          <shaderMaterial
-            ref={flare}
-            transparent
-            depthWrite={false}
-            blending={THREE.AdditiveBlending}
-            uniforms={{
-              color: { value: new THREE.Color(track.color) },
-              opacity: { value: 0.5 },
-              radius: { value: 0.42 },
-            }}
-            vertexShader={flareVertexShader}
-            fragmentShader={flareFragmentShader}
-          />
-        </mesh>
+        {showFlare && (
+          <mesh scale={[orbRadius * 5.6, orbRadius * 5.6, 1]}>
+            <planeGeometry args={[1, 1]} />
+            <shaderMaterial
+              ref={flare}
+              transparent
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+              uniforms={{
+                color: { value: new THREE.Color(track.color) },
+                opacity: { value: 0.5 },
+                radius: { value: 0.42 },
+              }}
+              vertexShader={flareVertexShader}
+              fragmentShader={flareFragmentShader}
+            />
+          </mesh>
+        )}
         {showStarRays && (
           <mesh ref={starburst} scale={[orbRadius * 10.8, orbRadius * 10.8, 1]} rotation={[0, 0, seed]}>
             <planeGeometry args={[1, 1]} />
