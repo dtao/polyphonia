@@ -194,9 +194,14 @@ function SegmentShell({
 }
 
 function RoomFloor({ map, room, material }: { map: CompositionMap; room: MapRoom; material: THREE.MeshStandardMaterial }) {
+  // The slab is 0.26 thick; centering it at elevation - 0.05 puts its textured
+  // top at elevation + 0.08 — just proud of the reactive room floor (ROOM_FLOOR_Y
+  // = 0.05) so the pack texture wins the depth test instead of being buried under
+  // it (which left rooms showing the plain reactive floor while paths showed
+  // stone). Mirrors the segment slab's 0.03 lift above its own reactive floor.
   return (
     <mesh
-      position={[room.center[0], roomElevation(map, room) - 0.13, room.center[1]]}
+      position={[room.center[0], roomElevation(map, room) - 0.05, room.center[1]]}
       rotation={[0, room.rotation, 0]}
       receiveShadow
     >
@@ -215,7 +220,11 @@ function PlatformFloor({
   platform: MapPlatform;
   material: THREE.MeshStandardMaterial;
 }) {
-  const y = platformElevation(map, platform) - 0.13;
+  // Centering the 0.26-thick slab at elevation - 0.04 lifts its textured top to
+  // elevation + 0.09 — just above the reactive platform floor (PLATFORM_FLOOR_Y =
+  // 0.06) so the pack texture shows instead of the plain reactive floor, matching
+  // how segment and room slabs sit proud of their reactive floors.
+  const y = platformElevation(map, platform) - 0.04;
   if (platform.shape === "rect") {
     return (
       <mesh position={[platform.center[0], y, platform.center[1]]} rotation={[0, platform.rotation, 0]} receiveShadow>
