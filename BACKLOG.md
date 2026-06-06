@@ -72,6 +72,10 @@ earlier ones.
 
 ## Polish & fixes
 
-- [ ] **Stem timing offset** — let each stem shift earlier or later by musical intervals such as 1/16, 1/8, 1/4, and 1/2 notes, while keeping all stems synchronized to the shared audio clock and saved in the composition manifest.
-- [ ] **Stem direction** — similar to real-world speakers, it should be possible for stems to be unidirectional (current behavior) or to be "pointed" in a direction, with the ability for the user to configure the width and dispersion of the sound.
-- [ ] Extending one segment into another should "connect" them (unified bridge point).
+- [ ] **P1 Stem timing offset** — let each stem shift earlier or later by musical intervals such as 1/16, 1/8, 1/4, and 1/2 notes, while keeping all stems synchronized to the shared audio clock and saved in the composition manifest.
+- [ ] **P2 Stem direction** — similar to real-world speakers, it should be possible for stems to be unidirectional (current behavior) or to be "pointed" in a direction, with the ability for the user to configure the width and dispersion of the sound.
+- [ ] P3 Extending one segment into another should "connect" them (unified bridge point).
+- [ ] P4 Environmental objects (e.g. trees, stones) should never appear directly in the middle portion of a path segment.
+- [ ] P5 Map copies directly adjacent to the one the player is standing on should include detailed textures (so that as you approach the loop boundary they don't look dull and suddenly detailed once you cross the boundary.)
+- [ ] P6 Stem orbs in maps with detail packs enabled have strange square-shaped light halos with clearly visible straight boundaries.
+- [ ] P7 Floor textures of path segments, rooms, and platforms should all match for maps with detail packs.
