@@ -5,8 +5,8 @@ import * as THREE from "three";
 import { useStore, viewState } from "../store";
 import { surfaceHeightAt } from "../map";
 
-// Edit-mode camera: drag to orbit, scroll to zoom, and WASD to glide across
-// the plane (panning the orbit pivot with you). Moving the camera moves the
+// Edit-mode camera: drag to orbit, scroll to zoom, WASD to glide across
+// the plane, and Q/E to lower/raise your elevation. Moving the camera moves the
 // audio listener, so you can reposition a track and go hear it from elsewhere.
 export function EditControls() {
   const { camera } = useThree();
@@ -58,7 +58,11 @@ export function EditControls() {
     // Ground-plane forward/right from the camera heading.
     camera.getWorldDirection(fwd.current);
     fwd.current.y = 0;
-    fwd.current.normalize();
+    if (fwd.current.lengthSq() > 0.0001) {
+      fwd.current.normalize();
+    } else {
+      fwd.current.set(viewState.fx, 0, viewState.fz).normalize();
+    }
     right.current.crossVectors(fwd.current, up).normalize();
 
     move.current.set(0, 0, 0);
@@ -66,8 +70,10 @@ export function EditControls() {
     if (keys.current["KeyS"]) move.current.addScaledVector(fwd.current, -speed);
     if (keys.current["KeyD"]) move.current.addScaledVector(right.current, speed);
     if (keys.current["KeyA"]) move.current.addScaledVector(right.current, -speed);
+    if (keys.current["KeyE"]) move.current.y += speed;
+    if (keys.current["KeyQ"]) move.current.y -= speed;
 
-    // Shift the camera and its orbit pivot together = panning across the plane.
+    // Shift the camera and its orbit pivot together = panning through 3D space.
     if (move.current.lengthSq() > 0) {
       camera.position.add(move.current);
       c.target.add(move.current);

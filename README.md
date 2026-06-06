@@ -69,8 +69,8 @@ Audio quality can be A/B tested with `audioQuality=full` or
 
 - **Explore:** `WASD` move · mouse look · click the scene to look · `Esc` frees the cursor.
   On square/hex tiled maps, **AR Walk** can use Android WebXR pose tracking as the movement source; it renders the Polyphonia environment (not the live camera passthrough) so the space is fully immersive while you physically walk.
-- **Edit** (toggle with the button or `Tab`): `WASD` pan · drag to
-  orbit/turn · scroll to zoom · click a pillar to select, then drag the gizmo to
+- **Edit** (toggle with the button or `Tab`): `WASD` pan · `Q`/`E` lower/raise
+  elevation · drag to orbit/turn · scroll to zoom · click a pillar to select, then drag the gizmo to
   move it. Selected stems show Near/Far rings and a rolloff gradient on the
   ground; the pillar size reflects volume. The Loop panel can audition the seam,
   trim loop start/end, adjust crossfade, or disable looping. The Environment

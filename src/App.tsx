@@ -55,7 +55,7 @@ function hudShortcutHint({
   if (selectedMapPointKey) return "drag point to reshape · terminal points can branch or become rooms · Delete removes point · Esc clears";
   if (selectedMapSegmentId) return "adjust segment width · click point to edit branches · Esc clears";
   if (selectedStart) return "drag start marker · choose Move/Rotate in Map · Esc clears";
-  return `WASD to move · drag to orbit · click a track or map point · ${mod}+O adds stem · ${mod}+Z undo · F fullscreen`;
+  return `WASD to move · Q/E down/up · drag to orbit · click a track or map point · ${mod}+O adds stem · ${mod}+Z undo · F fullscreen`;
 }
 
 export default function App() {
