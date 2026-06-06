@@ -39,14 +39,14 @@ earlier ones.
 
 ## Milestone 5 — Immersive environments
 
-- [x] **M5.1 Environment model** — add composition-level environment metadata (`environment.type`, palette/material preset, ambience intensity, optional tiling settings) with persistence/export/publish compatibility and safe defaults for older compositions.
-- [x] **M5.2 Visual environment presets** — replace the bare abstract grid with selectable preset spaces (e.g. studio void, cavern, forest clearing, crystalline hall) while preserving edit readability, marker selection, and performance.
-- [x] **M5.3 Environment picker** — add an Edit-mode environment panel so composers can choose a preset and tune visual intensity without touching stem placement or audio settings.
+- [x] **M5.1 Environment model** — add composition-level visual metadata with persistence/export/publish compatibility and safe defaults for older compositions; later simplified to an optional authored detail-pack selection.
+- [x] **M5.2 Visual environment foundation** — provide a neutral base space that preserves edit readability, marker selection, and performance beneath optional authored detail packs.
+- [x] **M5.3 Detail pack picker** — add an Edit-mode panel so composers can choose an optional authored visual pack and quality tier without touching stem placement or audio settings.
 - [x] **M5.4 Map model and presets** — add composition-level walkable maps with Open, Line, and Y presets, visible lighted ground paths, closed route ends, and Explore-mode movement constraints.
 - [x] **M5.5 Composition start point** — each composition stores a start position + facing direction; Edit mode can set or jump to it, and Explore entry begins there.
 - [ ] **M5.6 Map shape editor** — replace preset-only maps with editable route geometry: add/move/delete endpoints, branches, widths, and closed boundaries directly in Edit mode.
 - [ ] **M5.7 Map-aware stem tools** — snap stems to paths, show distance along branches, warn when stems are outside the walkable area, and provide quick distribute-along-path helpers.
-- [ ] **M5.8 Material-aware ambience** — map environment material presets to broad acoustic character (dry/soft → low reflections, stone/glass → brighter/longer reflections) using a conservative global reverb/filter path that can be bypassed.
+- [ ] **M5.8 Pack-aware ambience** — let detail packs suggest broad acoustic character (dry/soft → low reflections, stone/glass → brighter/longer reflections) using a conservative global reverb/filter path that can be bypassed.
 - [x] **M5.9 Occlusion and obstruction pass** — introduce geometry-aware sound shaping between listener and stems (line-of-sight checks against environment/map obstacles; blocked sounds get softer/darker without breaking timing, with room/tunnel/wall thickness affecting dampening strength).
 - [x] **M5.10 Looping space model** — support composition-level spatial tiling (`none`, square, hex, path-loop`) with tile size/origin and compatible map topology so a stem layout can repeat infinitely like the audio loop.
 - [x] **M5.11 Tiled map rendering and audio instances** — render nearby visual tiles/map copies and create/cull nearby virtual stem instances around the listener, bounded by adaptive distance/performance limits so infinite space stays cheap.

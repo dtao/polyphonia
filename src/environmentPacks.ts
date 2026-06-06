@@ -1,4 +1,4 @@
-import type { EnvironmentMaterial, EnvironmentQuality, EnvironmentType } from "./environment";
+import type { EnvironmentQuality } from "./environment";
 
 export interface EnvironmentPackAttribution {
   title: string;
@@ -17,8 +17,6 @@ export interface EnvironmentPackAsset {
 export interface EnvironmentPackDefinition {
   id: string;
   name: string;
-  environmentType: EnvironmentType;
-  material: EnvironmentMaterial;
   description: string;
   variants: readonly string[];
   assets: readonly EnvironmentPackAsset[];
@@ -48,8 +46,6 @@ export const ENVIRONMENT_PACKS: readonly EnvironmentPackDefinition[] = [
   {
     id: "atlas-cavern",
     name: "Atlas Cavern",
-    environmentType: "cavern",
-    material: "stone",
     description: "Authored rock chambers, columns, and overhead formations",
     variants: ["ember"],
     assets: [
@@ -86,10 +82,6 @@ export const ENVIRONMENT_PACKS: readonly EnvironmentPackDefinition[] = [
 
 export function environmentPackById(id: string | undefined): EnvironmentPackDefinition | undefined {
   return id ? ENVIRONMENT_PACKS.find((pack) => pack.id === id) : undefined;
-}
-
-export function environmentPacksForType(type: EnvironmentType): readonly EnvironmentPackDefinition[] {
-  return ENVIRONMENT_PACKS.filter((pack) => pack.environmentType === type);
 }
 
 export function environmentPackAsset(

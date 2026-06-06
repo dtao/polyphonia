@@ -138,7 +138,7 @@ function ARBackdrop() {
     <mesh ref={mesh} renderOrder={-1000} visible={false} frustumCulled={false}>
       <sphereGeometry args={[50, 32, 16]} />
       <meshBasicMaterial
-        color={environmentBackgroundColor(environment.type)}
+        color={environmentBackgroundColor}
         side={THREE.BackSide}
         depthTest={false}
         depthWrite={false}

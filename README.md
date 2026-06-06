@@ -18,11 +18,9 @@ these spatial compositions.
   experimental movement modes: **AR Walk** uses Android WebXR pose tracking for
   room-scale walking, while **Geo Drive** uses GPS movement at 100 ft per unit
   for car-scale exploration.
-- **Immersive spaces** — compositions carry environment metadata and can render
-  procedural spaces such as a studio void, cavern, forest clearing, or crystal
-  hall. Environment metadata can also select an optional authored detail pack
-  and quality tier while retaining the procedural preset as a safe fallback.
-  The Atlas Cavern pack dresses existing paths, ramps, tunnels, rooms,
+- **Immersive spaces** — every composition starts from the same neutral visual
+  space and can optionally select an authored detail pack at an automatic, low,
+  or high quality tier. The Atlas Cavern pack dresses existing paths, ramps, tunnels, rooms,
   platforms, and standalone walls with a GLTF rock kit and aligned PBR stone
   textures without replacing the map used for movement or acoustics. Its
   high-quality mode adds restrained bloom, ambient occlusion, tone mapping,
@@ -206,10 +204,10 @@ SPA fallback so routes like `/c/:id`, `/gallery`, and `/artist/:slug` serve
 ```
 src/
   audio/        AudioEngine (Web Audio) + procedural placeholder synth
-  scene/        React Three Fiber scene: environments, Player, EditControls, gizmo, markers
+  scene/        React Three Fiber scene: detail packs, Player, EditControls, gizmo, markers
   ui/           EntryScreen, PropertiesPanel, AddStem, EnvironmentPanel, LoopPanel, PublishControl, Account, Viewer, Gallery, ArtistPage
   artist.ts       artist identity helpers (slugs, artist routes)
-  environment.ts  environment presets, materials, and tiling metadata
+  environment.ts  optional detail-pack selection metadata
   composition.ts  types + the built-in "Journey" demo
   store.ts        Zustand store
   persistence.ts  local-first save/load + export/import

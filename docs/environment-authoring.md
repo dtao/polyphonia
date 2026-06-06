@@ -44,13 +44,12 @@ assets: [
 Add the pack to `src/environmentPacks.ts`. Every entry must provide:
 
 - a stable id and display name
-- compatible procedural environment type and fallback material
 - variants and low/high asset URLs
 - attribution for every third-party source
 - triangle, draw-call, and maximum texture-size budgets
 - optional lighting and postprocessing settings
 
-Compositions store only the pack id, variant, and requested quality. Do not put
+Compositions store only the optional pack id, variant, and requested quality. Do not put
 asset URLs, licenses, or renderer-specific data into composition manifests.
 
 ## Atlas Cavern Reference Pipeline
