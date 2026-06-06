@@ -1007,10 +1007,17 @@ export function tiledMapTransforms(
   map: Pick<CompositionMap, "segments" | "tiling" | "elevations">,
   viewer: [number, number],
   radius = 120,
+  limits: { tileRange?: number; pathDepth?: number } = {},
 ): LoopPreviewTransform[] {
-  if (map.tiling.type === "path-loop") return pathLoopChainTransforms(map, viewer, radius);
-  if (map.tiling.type === "square") return squareTileTransforms(map.tiling, viewer, radius);
-  if (map.tiling.type === "hex") return hexTileTransforms(map.tiling, viewer, radius);
+  if (map.tiling.type === "path-loop") {
+    return pathLoopChainTransforms(map, viewer, radius, limits.pathDepth ?? MAX_PATH_LOOP_DEPTH);
+  }
+  if (map.tiling.type === "square") {
+    return squareTileTransforms(map.tiling, viewer, radius, limits.tileRange ?? MAX_TILE_PREVIEW_RANGE);
+  }
+  if (map.tiling.type === "hex") {
+    return hexTileTransforms(map.tiling, viewer, radius, limits.tileRange ?? MAX_TILE_PREVIEW_RANGE);
+  }
   return [];
 }
 
@@ -1026,6 +1033,7 @@ function pathLoopChainTransforms(
   map: Pick<CompositionMap, "segments" | "tiling" | "elevations">,
   viewer: [number, number],
   radius: number,
+  maxDepth: number,
 ): LoopPreviewTransform[] {
   const loop = pathLoopForMap(map);
   if (!loop?.start || !loop.end) return [];
@@ -1033,7 +1041,7 @@ function pathLoopChainTransforms(
   const startStep = loopPreviewTransform(map, loop.start, loop.end, viewer, Infinity, "start");
   const transforms: LoopPreviewTransform[] = [];
   for (const step of [endStep, startStep]) {
-    if (step) transforms.push(...chainLoopDirection(map, step, viewer, radius));
+    if (step) transforms.push(...chainLoopDirection(map, step, viewer, radius, maxDepth));
   }
   return transforms;
 }
@@ -1043,12 +1051,13 @@ function chainLoopDirection(
   step: LoopPreviewTransform,
   viewer: [number, number],
   radius: number,
+  maxDepth: number,
 ): LoopPreviewTransform[] {
   const stepElevation = pointElevation(map, mapPointKey(step.anchor)) - pointElevation(map, mapPointKey(step.source));
   const transforms: LoopPreviewTransform[] = [];
   let anchor = step.anchor;
   let rotation = step.rotation;
-  for (let depth = 1; depth <= MAX_PATH_LOOP_DEPTH; depth++) {
+  for (let depth = 1; depth <= maxDepth; depth++) {
     // Gate on the copy's near seam: once that anchor is past the radius the rest
     // of the copy fades out, so stop chaining further in this direction.
     if (Math.hypot(viewer[0] - anchor[0], viewer[1] - anchor[1]) > radius) break;
@@ -1097,12 +1106,17 @@ export function pointInOriginalTile(map: Pick<CompositionMap, "tiling">, point: 
   return point;
 }
 
-function squareTileTransforms(tiling: MapTiling, viewer: [number, number], radius: number): LoopPreviewTransform[] {
+function squareTileTransforms(
+  tiling: MapTiling,
+  viewer: [number, number],
+  radius: number,
+  maxRange: number,
+): LoopPreviewTransform[] {
   const size = Math.max(1, tiling.tileSize);
   const [ox, oz] = tiling.origin;
   const cx = Math.round((viewer[0] - ox) / size);
   const cz = Math.round((viewer[1] - oz) / size);
-  const range = Math.min(MAX_TILE_PREVIEW_RANGE, Math.max(1, Math.ceil(radius / size) + 1));
+  const range = Math.min(maxRange, Math.max(1, Math.ceil(radius / size) + 1));
   const transforms: LoopPreviewTransform[] = [];
   for (let ix = cx - range; ix <= cx + range; ix++) {
     for (let iz = cz - range; iz <= cz + range; iz++) {
@@ -1116,14 +1130,19 @@ function squareTileTransforms(tiling: MapTiling, viewer: [number, number], radiu
   return transforms;
 }
 
-function hexTileTransforms(tiling: MapTiling, viewer: [number, number], radius: number): LoopPreviewTransform[] {
+function hexTileTransforms(
+  tiling: MapTiling,
+  viewer: [number, number],
+  radius: number,
+  maxRange: number,
+): LoopPreviewTransform[] {
   const size = Math.max(1, tiling.tileSize);
   const [ox, oz] = tiling.origin;
   const stepX = size;
   const stepZ = (Math.sqrt(3) / 2) * size;
   const approxR = Math.round((viewer[1] - oz) / stepZ);
   const approxQ = Math.round((viewer[0] - ox) / stepX - approxR * 0.5);
-  const range = Math.min(MAX_TILE_PREVIEW_RANGE, Math.max(1, Math.ceil(radius / Math.min(stepX, stepZ)) + 1));
+  const range = Math.min(maxRange, Math.max(1, Math.ceil(radius / Math.min(stepX, stepZ)) + 1));
   const transforms: LoopPreviewTransform[] = [];
   for (let q = approxQ - range; q <= approxQ + range; q++) {
     for (let r = approxR - range; r <= approxR + range; r++) {

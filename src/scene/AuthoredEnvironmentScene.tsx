@@ -1,6 +1,6 @@
 import { TransformControls, useGLTF } from "@react-three/drei";
 import { ThreeEvent, useFrame, useThree } from "@react-three/fiber";
-import { Component, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Component, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import * as THREE from "three";
 import { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
@@ -14,8 +14,8 @@ import { tiledMapTransforms } from "../map";
 import { arWalk, useStore, viewState } from "../store";
 import { DetailMapDressing } from "./DetailMapDressing";
 import { environmentInstanceBatches } from "./environmentInstances";
-
-const AUTHORED_SCENE_TILE_RADIUS = 130;
+import { radialFade, RADIAL_FADE_OUTER } from "./fade";
+import { environmentGenerationRadius, ENVIRONMENT_PREVIEW_LIMITS } from "./environmentVisibility";
 
 export function AuthoredEnvironmentScene({
   environment,
@@ -259,33 +259,94 @@ function AuthoredSceneInstances({
     const next: [number, number] = arWalk.active ? [viewState.x, viewState.z] : [camera.position.x, camera.position.z];
     setViewer((current) => (Math.hypot(current[0] - next[0], current[1] - next[1]) > 1.5 ? next : current));
   });
+  const scenePositions = useMemo(() => {
+    scene.updateMatrixWorld(true);
+    const positions: Array<[number, number]> = [];
+    const position = new THREE.Vector3();
+    scene.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return;
+      position.setFromMatrixPosition(object.matrixWorld);
+      if (position.y >= -500) positions.push([position.x, position.z]);
+    });
+    return positions;
+  }, [scene]);
+  const generationRadius = useMemo(
+    () => environmentGenerationRadius(map, scenePositions),
+    [map, scenePositions],
+  );
   const previews = useMemo(
-    () => (tiled ? tiledMapTransforms(map, viewer, AUTHORED_SCENE_TILE_RADIUS) : []),
-    [map, tiled, viewer],
+    () =>
+      tiled
+        ? tiledMapTransforms(map, viewer, generationRadius, ENVIRONMENT_PREVIEW_LIMITS)
+        : [],
+    [generationRadius, map, tiled, viewer],
   );
   const batches = useMemo(() => environmentInstanceBatches(scene, map, previews), [map, previews, scene]);
-  const meshes = useMemo(
-    () =>
-      batches.map((batch) => {
-        const mesh = new THREE.InstancedMesh(batch.geometry, batch.material, batch.matrices.length);
-        batch.matrices.forEach((matrix, index) => mesh.setMatrixAt(index, matrix));
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        mesh.instanceMatrix.needsUpdate = true;
-        mesh.computeBoundingSphere();
-        return mesh;
-      }),
-    [batches],
-  );
-  useEffect(() => () => meshes.forEach((mesh) => mesh.dispose()), [meshes]);
 
   return (
     <group>
-      {meshes.map((mesh) => (
-        <primitive key={mesh.uuid} object={mesh} />
+      {batches.map((batch, index) => (
+        <AuthoredInstanceBatch
+          key={`${batch.geometry.uuid}:${index}`}
+          geometry={batch.geometry}
+          material={batch.material}
+          matrices={batch.matrices}
+        />
       ))}
     </group>
   );
+}
+
+function AuthoredInstanceBatch({
+  geometry,
+  material,
+  matrices,
+}: {
+  geometry: THREE.BufferGeometry;
+  material: THREE.Material | THREE.Material[];
+  matrices: THREE.Matrix4[];
+}) {
+  const camera = useThree((state) => state.camera);
+  const mesh = useMemo(
+    () => new THREE.InstancedMesh(geometry, material, matrices.length),
+    [geometry, material, matrices.length],
+  );
+  const position = useMemo(() => new THREE.Vector3(), []);
+  const fadeMatrix = useMemo(() => new THREE.Matrix4(), []);
+  const fadeScale = useMemo(() => new THREE.Vector3(), []);
+  const lastUpdate = useRef(-Infinity);
+
+  const refill = useCallback(() => {
+    let count = 0;
+    for (const matrix of matrices) {
+      position.setFromMatrixPosition(matrix);
+      const distance = position.distanceTo(camera.position);
+      if (distance > RADIAL_FADE_OUTER) continue;
+      const fade = radialFade(distance);
+      if (fade <= 0.002) continue;
+      const placed = fade < 0.999 ? fadeMatrix.copy(matrix).scale(fadeScale.setScalar(fade)) : matrix;
+      mesh.setMatrixAt(count++, placed);
+    }
+    mesh.count = count;
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingSphere();
+  }, [camera, fadeMatrix, fadeScale, matrices, mesh, position]);
+
+  useEffect(() => {
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    return () => mesh.dispose();
+  }, [mesh]);
+  useLayoutEffect(() => {
+    refill();
+  }, [refill]);
+  useFrame(({ clock }) => {
+    if (clock.elapsedTime - lastUpdate.current < 0.25) return;
+    lastUpdate.current = clock.elapsedTime;
+    refill();
+  });
+
+  return <primitive object={mesh} />;
 }
 
 function validateAssetBudget(scene: THREE.Object3D, pack: EnvironmentPackDefinition): void {

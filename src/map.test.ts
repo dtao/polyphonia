@@ -256,6 +256,20 @@ describe("spatial tiling", () => {
     expect(tiledMapTransforms(map, [0, 0], 12).some((copy) => copy.id === "square:1:0")).toBe(true);
   });
 
+  it("allows object previews to expand beyond the structural tile range", () => {
+    const map = {
+      ...defaultMap,
+      tiling: { type: "square" as const, origin: [0, 0] as [number, number], tileSize: 10 },
+    };
+
+    expect(tiledMapTransforms(map, [0, 0], 45).some((copy) => copy.id === "square:4:0")).toBe(false);
+    expect(
+      tiledMapTransforms(map, [0, 0], 45, { tileRange: 8 }).some(
+        (copy) => copy.id === "square:4:0",
+      ),
+    ).toBe(true);
+  });
+
   it("wraps movement past one path-loop endpoint to the other", () => {
     const map = normalizeMap({
       preset: "custom",

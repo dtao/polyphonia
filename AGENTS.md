@@ -241,12 +241,15 @@ git commit -F /tmp/polyphonia-commit-msg.txt
   rather than inventing its own start/end constants — that drift is exactly what
   caused the recurring pop-in. Standard opaque materials respect the scene fog,
   whose far distance is pinned to `RADIAL_FADE_OUTER`, so they fade at the same
-  circle for free. Generation/cull radii (how far copies/instances spawn) are a
-  separate perf knob and must stay `>= RADIAL_FADE_OUTER` so nothing is still
-  visible when it is culled. The one deliberate exception is the structural
-  map-copy fade (`MAP_COPY_FADE_*` in `Scene.tsx`), which fades a whole tiled
-  copy by anchor distance to hide the tiling seam and is coupled to the preview
-  radius, not the per-object gradient.
+  circle for free. Generation and culling are separate lifecycle concerns:
+  actual instances may cull at `RADIAL_FADE_OUTER`, but repeated copies admitted
+  by a tile/loop anchor must generate beyond it by the maximum object offset
+  within the copy plus a movement buffer. Otherwise a newly admitted copy can
+  place an object inside the fully visible circle before `radialFade` ever sees
+  it. The one deliberate exception is the structural map-copy fade
+  (`MAP_COPY_FADE_*` in `Scene.tsx`), which fades a whole tiled copy by anchor
+  distance to hide the tiling seam and is coupled to the preview radius, not the
+  per-object gradient.
 - **Uploaded stems are `blob:` object URLs** (from IndexedDB). They aren't
   serializable and must be revoked on delete (`revokeBlobUrls`). Persistence
   swaps them to `{kind:"stored"}` + IndexedDB; cloud swaps them to public CDN

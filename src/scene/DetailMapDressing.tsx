@@ -20,6 +20,7 @@ import {
 import { arWalk, loopPreviewGroups, viewState } from "../store";
 import { pathJointPatches } from "./MapScene";
 import { radialFade, RADIAL_FADE_OUTER } from "./fade";
+import { environmentGenerationRadius, ENVIRONMENT_PREVIEW_LIMITS } from "./environmentVisibility";
 
 interface DetailPlacement {
   position: [number, number, number];
@@ -48,13 +49,10 @@ const packTextureCache = new Map<string, THREE.Texture[]>();
 const DETAIL_FLOOR_TILE_RADIUS = 92;
 // Instanced environmental objects (rocks/trees/crystals) are cheap, so they
 // repeat across the wider visible field — like the stem orbs do — out to the
-// cull distance instead of stopping at the textured-floor band. Far instances
-// fall back to low-detail geometry (see DetailInstances) and are culled past the
-// shared radial-fade outer radius, by which point they have already faded to
-// nothing. Rather than pop in at the cull radius, instances scale up over the
-// radial-fade band as you approach — the equivalent of the stem orbs' distance
-// fade for solid geometry, which shares one material and so can't fade opacity
-// per instance.
+// generation distance instead of stopping at the textured-floor band. Actual
+// instances still cull at the shared radial-fade outer radius; preview copies
+// are generated farther out based on their objects' offsets so every instance
+// exists before it enters the fade band.
 const DETAIL_OBJECT_CULL = RADIAL_FADE_OUTER;
 
 export function DetailMapDressing({
@@ -95,9 +93,25 @@ export function DetailMapDressing({
     () => (tiled ? tiledMapTransforms(map, viewer, DETAIL_FLOOR_TILE_RADIUS) : []),
     [tiled, map, viewer],
   );
+  const generationPositions = useMemo(
+    () =>
+      detailLandmarks.flatMap(({ landmark }) =>
+        detailPlacements(map, quality, landmark).map(
+          (placement) => [placement.position[0], placement.position[2]] as [number, number],
+        ),
+      ),
+    [detailLandmarks, map, quality],
+  );
+  const objectGenerationRadius = useMemo(
+    () => environmentGenerationRadius(map, generationPositions),
+    [generationPositions, map],
+  );
   const objectPreviews = useMemo(
-    () => (tiled ? tiledMapTransforms(map, viewer, DETAIL_OBJECT_CULL) : []),
-    [tiled, map, viewer],
+    () =>
+      tiled
+        ? tiledMapTransforms(map, viewer, objectGenerationRadius, ENVIRONMENT_PREVIEW_LIMITS)
+        : [],
+    [tiled, map, objectGenerationRadius, viewer],
   );
 
   // The preview group's floor shells and object copies are positioned from the
