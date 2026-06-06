@@ -49,6 +49,7 @@ import {
   importCreatorLandmark,
   importCreatorMaterial,
   loadCreatorAssets,
+  registerCreatorAssets,
   removeCreatorAssetRecord,
 } from "./creatorAssets";
 
@@ -657,19 +658,45 @@ export const useStore = create<StoreState>((set, get) => ({
   },
   importMaterialAsset: async (input) => {
     const asset = await importCreatorMaterial(input);
-    set((state) => ({ creatorAssets: [...state.creatorAssets, asset] }));
+    const creatorAssets = [...get().creatorAssets, asset];
+    registerCreatorAssets(creatorAssets);
+    set({ creatorAssets });
     return asset.id;
   },
   importLandmarkAsset: async (input) => {
     const asset = await importCreatorLandmark(input);
-    set((state) => ({ creatorAssets: [...state.creatorAssets, asset] }));
+    const creatorAssets = [...get().creatorAssets, asset];
+    registerCreatorAssets(creatorAssets);
+    set({ creatorAssets });
     return asset.id;
   },
   removeCreatorAsset: async (id) => {
     await removeCreatorAssetRecord(id);
-    set((state) => ({
-      creatorAssets: state.creatorAssets.filter((asset) => asset.id !== id),
-    }));
+    const creatorAssets = get().creatorAssets.filter((asset) => asset.id !== id);
+    registerCreatorAssets(creatorAssets);
+    set((state) => {
+      const surfaces = Object.fromEntries(
+        Object.entries(state.composition.environment.surfaces ?? {})
+          .filter(([, assetId]) => assetId !== id),
+      );
+      const landmarks = (state.composition.environment.landmarks ?? [])
+        .filter((landmark) => landmark.assetId !== id);
+      return {
+        creatorAssets,
+        ...withHistory(state, `creator-asset:${id}:remove`),
+        composition: {
+          ...touchComposition(state.composition),
+          environment: normalizeEnvironment({
+            ...state.composition.environment,
+            surfaces,
+            landmarks,
+          }),
+        },
+        selectedLandmarkId: landmarks.some(
+          (landmark) => landmark.id === state.selectedLandmarkId,
+        ) ? state.selectedLandmarkId : null,
+      };
+    });
   },
 
   initAuth: () => {
