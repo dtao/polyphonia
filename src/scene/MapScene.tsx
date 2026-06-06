@@ -1217,8 +1217,13 @@ export function pathJointPatches(map: CompositionMap): Array<{ polygon: [number,
     const points: [number, number][] = [];
     for (const segment of jointSegments) {
       const end = pointKey(segment.start) === pointKey(point) ? "start" : "end";
+      // Mitered corners reach the outer wedge tip; the square slab-end corners
+      // guarantee the hull also bridges to where the rectangular textured slabs
+      // actually stop, so no sliver is left between slab and patch.
       points.push(borderPoint(segment, segments, end, -1));
       points.push(borderPoint(segment, segments, end, 1));
+      points.push(offsetEndpoint(segment, end, -1));
+      points.push(offsetEndpoint(segment, end, 1));
     }
     const polygon = convexHull(uniquePoints(points));
     if (polygon.length >= 3) patches.push({ polygon, y });

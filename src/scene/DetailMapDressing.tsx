@@ -264,10 +264,12 @@ function MapShell({ map, materials }: { map: CompositionMap; materials: PackMate
 }
 
 // Flat textured caps over the wedge gaps where path segments meet at an angle.
-// The per-segment slabs above stop square at each end, so without these the pack
+// The per-segment slabs stop square at each end, so without these the pack
 // texture is missing across angled joints and the plainer reactive floor shows
-// through. Each patch sits at the joint's shared elevation + 0.03 — flush with
-// the segment slab tops (see SegmentShell) so the texture reads continuously.
+// through. Each patch sits at elevation + 0.05 — 0.02 proud of the segment slab
+// tops (which sit at + 0.03, see SegmentShell) — so it both wins the depth test
+// over the slabs (no coplanar z-fighting) and covers the slabs' overlapping
+// rectangles at the joint, hiding the flicker they produced there.
 function JointPatches({ map, material }: { map: CompositionMap; material: THREE.Material }) {
   const geometry = useMemo(() => jointPatchGeometry(map), [map]);
   useEffect(() => () => geometry?.dispose(), [geometry]);
@@ -298,14 +300,18 @@ function jointPatchGeometry(map: CompositionMap): THREE.BufferGeometry | null {
     const spanX = maxX - minX || 1;
     const spanZ = maxZ - minZ || 1;
     for (const [px, pz] of polygon) {
-      positions.push(px, y + 0.03, pz);
+      positions.push(px, y + 0.05, pz);
       uvs.push((px - minX) / spanX, (pz - minZ) / spanZ);
     }
     const triangles = THREE.ShapeUtils.triangulateShape(
       polygon.map(([px, pz]) => new THREE.Vector2(px, pz)),
       [],
     );
-    for (const triangle of triangles) indices.push(base + triangle[0], base + triangle[1], base + triangle[2]);
+    // The convex hull is CCW in (x, z), which maps to a downward-facing normal in
+    // 3D (Y up). Flip the winding so the patch faces up and renders with the
+    // single-sided pack floor material (the reactive floor gets away with the
+    // original winding only because PathMaterial is DoubleSide).
+    for (const triangle of triangles) indices.push(base + triangle[0], base + triangle[2], base + triangle[1]);
   }
   if (!indices.length) return null;
   const geometry = new THREE.BufferGeometry();
