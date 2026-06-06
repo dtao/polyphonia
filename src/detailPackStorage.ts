@@ -1,5 +1,6 @@
 import type { EnvironmentPackDefinition } from "./environmentPacks";
 import { ENVIRONMENT_PACKS } from "./environmentPacks";
+import { validateDetailPackBundle } from "./detailPackValidation";
 import { ASSET_STORE, databaseRequest, DETAIL_PACK_STORE } from "./localDatabase";
 
 export interface DetailPackBundleAsset {
@@ -27,6 +28,7 @@ export async function importDetailPackPayload(
   if (payload.version !== 1 || !payload.manifest || !payload.assets) {
     throw new Error("Unrecognized or unsupported detail-pack bundle.");
   }
+  await validateDetailPackBundle(payload);
   assertImportableManifest(payload.manifest);
 
   const replacements = new Map<string, string>();
@@ -110,7 +112,25 @@ export async function getStoredDetailPack(id: string): Promise<EnvironmentPackDe
 }
 
 export async function removeStoredDetailPack(id: string): Promise<void> {
+  const removed = await getStoredDetailPack(id);
   await databaseRequest<void>(DETAIL_PACK_STORE, "readwrite", (store) => store.delete(id));
+  if (!removed) return;
+  const remaining = await databaseRequest<EnvironmentPackDefinition[]>(
+    DETAIL_PACK_STORE,
+    "readonly",
+    (store) => store.getAll(),
+  );
+  const stillUsed = new Set(
+    remaining.flatMap(packAssetReferences).filter((reference) => reference.startsWith("asset:")),
+  );
+  for (const reference of packAssetReferences(removed)) {
+    if (!reference.startsWith("asset:") || stillUsed.has(reference)) continue;
+    const hash = reference.slice("asset:".length);
+    await databaseRequest<void>(ASSET_STORE, "readwrite", (store) => store.delete(hash));
+    const url = objectUrls.get(hash);
+    if (url) URL.revokeObjectURL(url);
+    objectUrls.delete(hash);
+  }
 }
 
 export function packAssetReferences(pack: EnvironmentPackDefinition): string[] {

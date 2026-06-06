@@ -26,7 +26,9 @@ these spatial compositions.
   used for movement or acoustics. High-quality mode adds restrained bloom,
   ambient occlusion, tone mapping, vignette, and shadowed authored lighting;
   automatic low quality keeps the dressing while reducing repeated assets and
-  expensive effects.
+  expensive effects. Creators can also build or import local detail packs,
+  upload floor/wall/ceiling material channels, place pack landmarks directly,
+  and carry those assets through export or cloud publishing.
   Editable path maps can define terminal loop points for corridor-like
   spaces that wrap back on themselves. Path segments can be marked as enclosed
   **tunnels** whose walls and ceiling muffle sound passing in or out the sides,

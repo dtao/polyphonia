@@ -37,6 +37,8 @@ Custom packs can be imported locally as a self-contained
   "manifest": {
     "id": "creator-pack",
     "name": "Creator Pack",
+    "description": "A creator-owned visual layer",
+    "variants": ["default"],
     "assets": [{ "url": "bundle:scene", "quality": "high" }],
     "materials": {
       "floor": {
@@ -47,12 +49,33 @@ Custom packs can be imported locally as a self-contained
         "metalness": 0
       }
     },
-    "landmarks": []
+    "landmarks": [{
+      "id": "monolith",
+      "name": "Monolith",
+      "nodePrefix": "Monolith_",
+      "placement": "floor",
+      "fallback": "rock"
+    }],
+    "attribution": [{
+      "title": "Creator Pack",
+      "author": "Creator",
+      "license": "Creator-owned"
+    }],
+    "budgets": {
+      "maxTextureSize": 2048,
+      "maxTriangles": 180000,
+      "maxDrawCalls": 120
+    }
   },
   "assets": {
     "scene": {
       "name": "scene.glb",
       "type": "model/gltf-binary",
+      "data": "<base64>"
+    },
+    "floor-albedo": {
+      "name": "floor.webp",
+      "type": "image/webp",
       "data": "<base64>"
     }
   }
@@ -61,10 +84,17 @@ Custom packs can be imported locally as a self-contained
 
 Every `bundle:<key>` reference resolves to an entry in `assets`. Imports are
 content-hashed, deduplicated in IndexedDB, and restored as local object URLs.
+The in-app pack builder produces this bundle from selected material channels
+and a GLB landmark kit.
 When a composition is published, local assets are uploaded under immutable
 content hashes to the `environment-assets` bucket. The published composition
 references a versioned `detail_packs` manifest, which viewers load before
 rendering the environment.
+
+Imports reject remote URLs, malformed or externally linked GLBs, animations,
+skinned meshes, unsupported required extensions, duplicate landmark ids, and
+assets outside the declared triangle, draw-call, texture, file-count, and byte
+budgets.
 
 Prefer one GLB per quality tier. Register both assets under the same pack id:
 

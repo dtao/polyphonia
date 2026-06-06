@@ -608,7 +608,21 @@ export const useStore = create<StoreState>((set, get) => ({
       pack,
     ];
     registerCustomEnvironmentPacks(customDetailPacks);
-    set({ customDetailPacks });
+    set((state) => ({
+      customDetailPacks,
+      ...withHistory(state, `environment:pack:${pack.id}`),
+      composition: {
+        ...touchComposition(state.composition),
+        environment: {
+          pack: {
+            id: pack.id,
+            variant: pack.variants[0],
+            quality: "auto",
+          },
+        },
+      },
+      selectedLandmarkId: null,
+    }));
   },
   removeDetailPack: async (id) => {
     await removeStoredDetailPack(id);

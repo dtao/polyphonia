@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { environmentPackById, ENVIRONMENT_PACKS } from "../environmentPacks";
 import { useStore } from "../store";
+import { DetailPackBuilder } from "./DetailPackBuilder";
 
 export function EnvironmentPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () => void; onClose: () => void }) {
   const environment = useStore((s) => s.composition.environment);
@@ -11,6 +12,7 @@ export function EnvironmentPanel({ open, onOpen, onClose }: { open: boolean; onO
   const removeDetailPack = useStore((s) => s.removeDetailPack);
   const fileInput = useRef<HTMLInputElement>(null);
   const [importError, setImportError] = useState("");
+  const [building, setBuilding] = useState(false);
   const selectedPack = environmentPackById(environment.pack?.id);
   const packs = [...ENVIRONMENT_PACKS, ...customPacks];
 
@@ -130,8 +132,21 @@ export function EnvironmentPanel({ open, onOpen, onClose }: { open: boolean; onO
           <span aria-hidden>⇧</span>
           <span>Import pack</span>
         </button>
+        <button style={importButton} onClick={() => setBuilding(true)}>
+          <span aria-hidden>＋</span>
+          <span>Create pack</span>
+        </button>
         {importError && <div style={errorText}>{importError}</div>}
       </div>
+      {building && (
+        <DetailPackBuilder
+          onClose={() => setBuilding(false)}
+          onCreate={async (file) => {
+            setImportError("");
+            await importDetailPack(file);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -243,6 +258,8 @@ const landmarkButton: React.CSSProperties = {
 const importSection: React.CSSProperties = {
   marginTop: 12,
   paddingTop: 10,
+  display: "grid",
+  gap: 6,
   borderTop: "1px solid rgba(255,255,255,0.1)",
 };
 
