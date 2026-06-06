@@ -3,6 +3,7 @@ import { Line, TransformControls } from "@react-three/drei";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
+import { newId } from "../id";
 import { canAddBranchAtPoint, clampToMap, CompositionMap, doorOpenAmount, DOOR_DEPTH, entranceLocalCenter, isTunnelSegment, loopRoleForPoint, MapPlatform, MapRoom, MapWall, platformElevation, platformLocalPolygon, pointHasAttachment, RoomEntrance, roomElevation, roomLocalPoint, roomWorldPoint, RoomSide, ROOM_WALL_THICKNESS, solidWallSpans, surfaceHeightAt, tunnelHeight, tunnelSideWalls, wallOpenings, WalkableSegment } from "../map";
 import { useStore, viewState } from "../store";
 import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
@@ -144,37 +145,13 @@ function WallAddButton({ room, side }: { room: MapRoom; side: RoomSide }) {
   const pos: [number, number, number] =
     side === "north" ? [0, 1, -hd - out] : side === "south" ? [0, 1, hd + out] : side === "west" ? [-hw - out, 1, 0] : [hw + out, 1, 0];
   return (
-    <group
+    <AddButtonGlyph
       position={pos}
       onClick={(e) => {
         e.stopPropagation();
         addEntrance(room.id, side);
       }}
-      onPointerOver={(e) => {
-        e.stopPropagation();
-        document.body.style.cursor = "pointer";
-      }}
-      onPointerOut={() => {
-        document.body.style.cursor = "auto";
-      }}
-    >
-      <mesh rotation={[-Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[0.62, 24]} />
-        <meshBasicMaterial color="#13243a" transparent opacity={0.85} depthWrite={false} />
-      </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[0.58, 0.66, 24]} />
-        <meshBasicMaterial color="#8fffe8" transparent opacity={0.8} depthWrite={false} toneMapped={false} />
-      </mesh>
-      <mesh position={[0, 0.03, 0]}>
-        <boxGeometry args={[0.5, 0.02, 0.12]} />
-        <meshBasicMaterial color="#8fffe8" toneMapped={false} />
-      </mesh>
-      <mesh position={[0, 0.03, 0]}>
-        <boxGeometry args={[0.12, 0.02, 0.5]} />
-        <meshBasicMaterial color="#8fffe8" toneMapped={false} />
-      </mesh>
-    </group>
+    />
   );
 }
 
@@ -419,6 +396,79 @@ function Platform({ platform, map, editMode, selected }: { platform: MapPlatform
         <meshStandardMaterial color={selected ? "#16302e" : "#14161e"} roughness={0.9} metalness={0.08} side={THREE.DoubleSide} />
       </mesh>
       <Line points={outline} color={selected ? "#8fffe8" : "#5d6b86"} lineWidth={selected ? 2.4 : 1.4} transparent opacity={selected ? 0.95 : 0.6} />
+      {editMode && selected && <PlatformPathEditor platform={platform} map={map} elevationY={elevationY} />}
+    </group>
+  );
+}
+
+function PlatformPathEditor({ platform, map, elevationY }: { platform: MapPlatform; map: CompositionMap; elevationY: number }) {
+  return (
+    <group>
+      {(["north", "south", "east", "west"] as RoomSide[]).map((side) => (
+        <PlatformAddButton key={side} platform={platform} map={map} side={side} elevationY={elevationY} />
+      ))}
+    </group>
+  );
+}
+
+function PlatformAddButton({ platform, map, side, elevationY }: { platform: MapPlatform; map: CompositionMap; side: RoomSide; elevationY: number }) {
+  const setMap = useStore((s) => s.setMap);
+  const selectMapPoint = useStore((s) => s.selectMapPoint);
+  const averageWidth = map.segments.length ? map.segments.reduce((sum, s) => sum + s.width, 0) / map.segments.length : 7.5;
+  const extentX = platform.width / 2;
+  const extentZ = platform.shape === "rect" ? platform.depth / 2 : platform.width / 2;
+  const out = 1;
+  const localStart: [number, number] =
+    side === "north" ? [0, -extentZ] : side === "south" ? [0, extentZ] : side === "west" ? [-extentX, 0] : [extentX, 0];
+  const localDir: [number, number] =
+    side === "north" ? [0, -1] : side === "south" ? [0, 1] : side === "west" ? [-1, 0] : [1, 0];
+  const pos: [number, number, number] = [localStart[0] + localDir[0] * out, 1, localStart[1] + localDir[1] * out];
+
+  function addPath(e: ThreeEvent<MouseEvent>) {
+    e.stopPropagation();
+    const start = platformWorldPoint(platform, localStart);
+    const end = platformWorldPoint(platform, [localStart[0] + localDir[0] * 12, localStart[1] + localDir[1] * 12]);
+    const currentMap = useStore.getState().composition.map;
+    setMap({
+      preset: "custom",
+      segments: [...currentMap.segments, { id: newId(), start, end, width: averageWidth }],
+      elevations: elevationY ? { ...(currentMap.elevations ?? {}), [pointKey(start)]: elevationY, [pointKey(end)]: elevationY } : currentMap.elevations,
+    });
+    selectMapPoint(pointKey(end));
+  }
+
+  return <AddButtonGlyph position={pos} onClick={addPath} />;
+}
+
+function AddButtonGlyph({ position, onClick }: { position: [number, number, number]; onClick: (e: ThreeEvent<MouseEvent>) => void }) {
+  return (
+    <group
+      position={position}
+      onClick={onClick}
+      onPointerOver={(e) => {
+        e.stopPropagation();
+        document.body.style.cursor = "pointer";
+      }}
+      onPointerOut={() => {
+        document.body.style.cursor = "auto";
+      }}
+    >
+      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <circleGeometry args={[0.62, 24]} />
+        <meshBasicMaterial color="#13243a" transparent opacity={0.85} depthWrite={false} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.58, 0.66, 24]} />
+        <meshBasicMaterial color="#8fffe8" transparent opacity={0.8} depthWrite={false} toneMapped={false} />
+      </mesh>
+      <mesh position={[0, 0.03, 0]}>
+        <boxGeometry args={[0.5, 0.02, 0.12]} />
+        <meshBasicMaterial color="#8fffe8" toneMapped={false} />
+      </mesh>
+      <mesh position={[0, 0.03, 0]}>
+        <boxGeometry args={[0.12, 0.02, 0.5]} />
+        <meshBasicMaterial color="#8fffe8" toneMapped={false} />
+      </mesh>
     </group>
   );
 }
@@ -443,6 +493,12 @@ function platformOutlinePoints(platform: MapPlatform): Array<[number, number, nu
   }
   const polygon = platformLocalPolygon(platform);
   return [...polygon, polygon[0]].map(([x, z]) => [x, y, z] as [number, number, number]);
+}
+
+function platformWorldPoint(platform: MapPlatform, localPoint: [number, number]): [number, number] {
+  const c = Math.cos(platform.rotation);
+  const s = Math.sin(platform.rotation);
+  return [platform.center[0] + localPoint[0] * c + localPoint[1] * s, platform.center[1] - localPoint[0] * s + localPoint[1] * c];
 }
 
 // Free-standing walls — sound occluders placed anywhere. Click to select; the
