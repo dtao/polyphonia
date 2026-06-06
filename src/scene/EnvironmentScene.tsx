@@ -2,6 +2,10 @@ import { Grid } from "@react-three/drei";
 import type { EnvironmentSettings } from "../environment";
 import type { CompositionMap } from "../map";
 import { AuthoredEnvironmentScene } from "./AuthoredEnvironmentScene";
+import type { CreatorLandmarkAsset, CreatorMaterialAsset } from "../creatorAssets";
+import { useStore } from "../store";
+import { CreatorLandmarks } from "./CreatorLandmarks";
+import { SurfaceMapDressing } from "./DetailMapDressing";
 
 export const environmentBackgroundColor = "#030407";
 
@@ -14,6 +18,16 @@ export function EnvironmentScene({
   map: CompositionMap;
   editMode: boolean;
 }) {
+  const creatorAssets = useStore((state) => state.creatorAssets);
+  const materials = creatorAssets.filter((asset): asset is CreatorMaterialAsset => asset.kind === "material");
+  const landmarks = creatorAssets.filter((asset): asset is CreatorLandmarkAsset => asset.kind === "landmark");
+  const materialById = new Map(materials.map((asset) => [asset.id, asset.material]));
+  const floor = environment.surfaces?.floor ? materialById.get(environment.surfaces.floor) : undefined;
+  const wall = environment.surfaces?.wall ? materialById.get(environment.surfaces.wall) : undefined;
+  const ceiling = environment.surfaces?.ceiling ? materialById.get(environment.surfaces.ceiling) : undefined;
+  const surfaceMaterials = floor
+    ? { floor, ...(wall ? { wall } : {}), ...(ceiling ? { ceiling } : {}) }
+    : undefined;
   return (
     <>
       <color attach="background" args={[environmentBackgroundColor]} />
@@ -34,7 +48,22 @@ export function EnvironmentScene({
         />
       )}
 
-      {environment.pack && <AuthoredEnvironmentScene environment={environment} map={map} editMode={editMode} />}
+      {environment.pack && (
+        <AuthoredEnvironmentScene
+          environment={environment}
+          map={map}
+          editMode={editMode}
+          surfaceMaterials={surfaceMaterials}
+        />
+      )}
+      {!environment.pack && surfaceMaterials && (
+        <SurfaceMapDressing map={map} materials={surfaceMaterials} editMode={editMode} />
+      )}
+      <CreatorLandmarks
+        assets={landmarks}
+        placements={environment.landmarks ?? []}
+        editMode={editMode}
+      />
     </>
   );
 }

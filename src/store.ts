@@ -786,12 +786,16 @@ export const useStore = create<StoreState>((set, get) => ({
   addLandmark: (assetId) => {
     const state = get();
     const [x, z] = state.composition.map.start.position;
+    const creatorAsset = state.creatorAssets.find(
+      (asset) => asset.kind === "landmark" && asset.id === assetId,
+    );
+    const scale = creatorAsset?.kind === "landmark" ? creatorAsset.defaultScale : 1;
     const landmark: EnvironmentLandmarkPlacement = {
       id: newId(),
       assetId,
       position: [x, surfaceHeightAt(state.composition.map, [x, z]), z],
       rotation: [0, 0, 0],
-      scale: [1, 1, 1],
+      scale: [scale, scale, scale],
     };
     set((s) => ({
       ...withHistory(s, `landmark:${landmark.id}:add`),

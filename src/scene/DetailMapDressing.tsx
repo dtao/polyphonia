@@ -31,6 +31,12 @@ interface PackMaterials {
   ceiling: THREE.MeshStandardMaterial;
 }
 
+export interface SurfaceMaterialDefinitions {
+  floor: EnvironmentPackMaterial;
+  wall?: EnvironmentPackMaterial;
+  ceiling?: EnvironmentPackMaterial;
+}
+
 const packTextureCache = new Map<string, THREE.Texture[]>();
 
 // How far out (in world units) adjacent loop copies receive the textured floor
@@ -51,6 +57,7 @@ export function DetailMapDressing({
   pack,
   editMode,
   quality,
+  surfaceMaterials,
 }: {
   map: CompositionMap;
   detailLandmarks: Array<{
@@ -60,8 +67,9 @@ export function DetailMapDressing({
   pack: EnvironmentPackDefinition;
   editMode: boolean;
   quality: "low" | "high";
+  surfaceMaterials?: SurfaceMaterialDefinitions;
 }) {
-  const materials = usePackMaterials(pack, editMode);
+  const materials = useSurfaceMaterials(pack.id, surfaceMaterials ?? pack.materials, editMode);
   const camera = useThree((s) => s.camera);
 
   // Adjacent tile copies of the textured floor/dressing keep the loop boundary
@@ -113,6 +121,19 @@ export function DetailMapDressing({
       ))}
     </group>
   );
+}
+
+export function SurfaceMapDressing({
+  map,
+  materials,
+  editMode,
+}: {
+  map: CompositionMap;
+  materials: SurfaceMaterialDefinitions;
+  editMode: boolean;
+}) {
+  const resolved = useSurfaceMaterials("creator-surfaces", materials, editMode);
+  return <MapShell map={map} materials={resolved} />;
 }
 
 function LandmarkInstances({
@@ -422,14 +443,18 @@ function emptyInstancedMesh(geometry: THREE.BufferGeometry, material: THREE.Mate
   return mesh;
 }
 
-function usePackMaterials(pack: EnvironmentPackDefinition, editMode: boolean): PackMaterials {
+function useSurfaceMaterials(
+  cacheId: string,
+  source: SurfaceMaterialDefinitions,
+  editMode: boolean,
+): PackMaterials {
   const definitions = useMemo(
     () => ({
-      floor: pack.materials.floor,
-      wall: pack.materials.wall ?? pack.materials.floor,
-      ceiling: pack.materials.ceiling ?? pack.materials.wall ?? pack.materials.floor,
+      floor: source.floor,
+      wall: source.wall ?? source.floor,
+      ceiling: source.ceiling ?? source.wall ?? source.floor,
     }),
-    [pack],
+    [source],
   );
   const urls = useMemo(
     () => [...new Set(Object.values(definitions).flatMap(materialTextureUrls))],
@@ -437,7 +462,7 @@ function usePackMaterials(pack: EnvironmentPackDefinition, editMode: boolean): P
   );
   const loaded = useTexture(urls) as THREE.Texture[];
   const textures = useMemo(() => {
-    const cacheKey = `${pack.id}:${urls.join("|")}`;
+    const cacheKey = `${cacheId}:${urls.join("|")}`;
     const cached = packTextureCache.get(cacheKey);
     if (cached) return cached;
     const created = loaded.map((source, index) => {
@@ -454,7 +479,7 @@ function usePackMaterials(pack: EnvironmentPackDefinition, editMode: boolean): P
     });
     packTextureCache.set(cacheKey, created);
     return created;
-  }, [definitions, loaded, pack.id, urls]);
+  }, [cacheId, definitions, loaded, urls]);
   const textureByUrl = useMemo(
     () => new Map(urls.map((url, index) => [url, textures[index]])),
     [textures, urls],

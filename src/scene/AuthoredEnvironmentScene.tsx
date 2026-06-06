@@ -8,6 +8,7 @@ import type { EnvironmentSettings } from "../environment";
 import type { EnvironmentLandmarkPlacement } from "../environment";
 import { environmentPackAsset, environmentPackById, resolvedEnvironmentQuality } from "../environmentPacks";
 import type { EnvironmentPackDefinition } from "../environmentPacks";
+import type { SurfaceMaterialDefinitions } from "./DetailMapDressing";
 import type { CompositionMap } from "../map";
 import { tiledMapTransforms } from "../map";
 import { arWalk, useStore, viewState } from "../store";
@@ -20,10 +21,12 @@ export function AuthoredEnvironmentScene({
   environment,
   map,
   editMode,
+  surfaceMaterials,
 }: {
   environment: EnvironmentSettings;
   map: CompositionMap;
   editMode: boolean;
+  surfaceMaterials?: SurfaceMaterialDefinitions;
 }) {
   const gl = useThree((state) => state.gl);
   const ktx2Loader = useMemo(
@@ -55,6 +58,7 @@ export function AuthoredEnvironmentScene({
           pack={pack}
           placements={environment.landmarks ?? []}
           extendLoader={extendLoader}
+          surfaceMaterials={surfaceMaterials}
         />
       </Suspense>
     </AssetErrorBoundary>
@@ -69,6 +73,7 @@ function EnvironmentAsset({
   pack,
   placements,
   extendLoader,
+  surfaceMaterials,
 }: {
   url: string;
   map: CompositionMap;
@@ -77,6 +82,7 @@ function EnvironmentAsset({
   pack: EnvironmentPackDefinition;
   placements: EnvironmentLandmarkPlacement[];
   extendLoader: (loader: any) => void;
+  surfaceMaterials?: SurfaceMaterialDefinitions;
 }) {
   const gltf = useGLTF(url, "/draco-gltf/", true, extendLoader);
   useEffect(() => validateAssetBudget(gltf.scene, pack), [gltf.scene, pack]);
@@ -121,6 +127,7 @@ function EnvironmentAsset({
           pack={pack}
           editMode={editMode}
           quality={quality}
+          surfaceMaterials={surfaceMaterials}
         />
       )}
       <PlacedLandmarks
