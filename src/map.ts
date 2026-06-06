@@ -1141,15 +1141,23 @@ function sharedEndpoint(a: WalkableSegment, b: WalkableSegment): [number, number
   return null;
 }
 
-// A segment is "connected" to a room through a doorway when one of its
-// endpoints lands inside that doorway's threshold rect.
-function segmentTouchesRoomDoorway(room: MapRoom, segment: WalkableSegment): boolean {
+// A segment is connected to a room through a doorway when its walkable
+// footprint overlaps that doorway's threshold. Checking the footprint rather
+// than exact endpoint containment keeps angled approaches and wall-line
+// endpoints traversable.
+export function segmentTouchesRoomDoorway(room: MapRoom, segment: WalkableSegment): boolean {
   const startLocal = toRoomLocal(room, segment.start);
   const endLocal = toRoomLocal(room, segment.end);
   return room.entrances.some((entrance) => {
     const rect = doorwayRect(room, entrance);
-    return pointInRect(startLocal, rect) || pointInRect(endLocal, rect);
+    return segmentFootprintIntersectsRect(startLocal, endLocal, segment.width, rect);
   });
+}
+
+export function segmentEndTouchesRoomDoorway(room: MapRoom, segment: WalkableSegment, end: SegmentEnd): boolean {
+  const point = end === "start" ? segment.start : segment.end;
+  const local = toRoomLocal(room, point);
+  return room.entrances.some((entrance) => pointInRect(local, doorwayRect(room, entrance)));
 }
 
 function roomsConnectThroughDoorways(a: MapRoom, b: MapRoom): boolean {
@@ -1265,6 +1273,32 @@ function cross(ax: number, az: number, bx: number, bz: number): number {
 
 function pointInRect(p: [number, number], r: Rect): boolean {
   return p[0] >= r.minX && p[0] <= r.maxX && p[1] >= r.minZ && p[1] <= r.maxZ;
+}
+
+function segmentFootprintIntersectsRect(a: [number, number], b: [number, number], width: number, r: Rect): boolean {
+  if (pointInRect(a, r) || pointInRect(b, r)) return true;
+  const corners: [number, number][] = [
+    [r.minX, r.minZ],
+    [r.maxX, r.minZ],
+    [r.maxX, r.maxZ],
+    [r.minX, r.maxZ],
+  ];
+  if (corners.some((corner) => pointInLocalSegment(corner, a, b, width))) return true;
+  const edges: Array<[[number, number], [number, number]]> = [
+    [corners[0], corners[1]],
+    [corners[1], corners[2]],
+    [corners[2], corners[3]],
+    [corners[3], corners[0]],
+  ];
+  return edges.some(([c, d]) => lineSegmentsIntersect(a, b, c, d));
+}
+
+function pointInLocalSegment(point: [number, number], a: [number, number], b: [number, number], width: number): boolean {
+  const closest = closestPointOnSegment(point, a, b);
+  const dx = point[0] - closest[0];
+  const dz = point[1] - closest[1];
+  const radius = width / 2;
+  return dx * dx + dz * dz <= radius * radius;
 }
 
 function closestInRect(p: [number, number], r: Rect): [number, number] {

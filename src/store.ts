@@ -15,7 +15,7 @@ import {
 } from "./persistence";
 import { newId } from "./id";
 import { EnvironmentSettings, defaultEnvironment, normalizeEnvironment } from "./environment";
-import { attachmentForPoint, canAddBranchAtPoint, canAddPlatformAtPoint, canAddRoomAtPoint, CompositionMap, entranceDoorwayCenter, entranceOuterPoint, MAP_PRESETS, MapPlatform, MapRoom, MapWall, RoomEntrance, RoomSide, defaultMap, mapPointKey, normalizeMap, pointInOriginalTile, roomElevation, surfaceHeightAt, WalkableSegment } from "./map";
+import { attachmentForPoint, canAddBranchAtPoint, canAddPlatformAtPoint, canAddRoomAtPoint, CompositionMap, entranceDoorwayCenter, entranceOuterPoint, MAP_PRESETS, MapPlatform, MapRoom, MapWall, RoomEntrance, RoomSide, defaultMap, mapPointKey, normalizeMap, pointInOriginalTile, roomElevation, segmentEndTouchesRoomDoorway, surfaceHeightAt, WalkableSegment } from "./map";
 import { ArtistIdentity } from "./artist";
 import {
   AuthUser,
@@ -225,6 +225,18 @@ function pushRedo(redoStack: Composition[], comp: Composition): Composition[] {
 function unitDir(v: [number, number]): [number, number] {
   const length = Math.hypot(v[0], v[1]);
   return length > 0 ? [v[0] / length, v[1] / length] : [0, -1];
+}
+
+function moveEndpointElevations(elevations: Record<string, number> | undefined, movedEndpoints: Map<string, [number, number]>): Record<string, number> | undefined {
+  if (!elevations || !movedEndpoints.size) return elevations;
+  const next = { ...elevations };
+  for (const [oldKey, point] of movedEndpoints) {
+    const value = next[oldKey];
+    if (value === undefined) continue;
+    delete next[oldKey];
+    next[mapPointKey(point)] = value;
+  }
+  return Object.keys(next).length ? next : undefined;
 }
 
 function pruneSelection(
@@ -445,7 +457,31 @@ export const useStore = create<StoreState>((set, get) => ({
 
   updateRoom: (id, patch) => {
     const map = get().composition.map;
-    get().setMap({ rooms: map.rooms.map((room) => (room.id === id ? { ...room, ...patch } : room)) });
+    const room = map.rooms.find((r) => r.id === id);
+    if (!room) return;
+    const centerDelta: [number, number] | null =
+      patch.center && (patch.center[0] !== room.center[0] || patch.center[1] !== room.center[1])
+        ? [patch.center[0] - room.center[0], patch.center[1] - room.center[1]]
+        : null;
+    if (!centerDelta) {
+      get().setMap({ rooms: map.rooms.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
+      return;
+    }
+
+    const movedEndpoints = new Map<string, [number, number]>();
+    const segments = map.segments.map((segment) => {
+      let next = segment;
+      for (const end of ["start", "end"] as const) {
+        if (!segmentEndTouchesRoomDoorway(room, segment, end)) continue;
+        const point = end === "start" ? segment.start : segment.end;
+        const moved: [number, number] = [point[0] + centerDelta[0], point[1] + centerDelta[1]];
+        movedEndpoints.set(mapPointKey(point), moved);
+        next = { ...next, [end]: moved };
+      }
+      return next;
+    });
+    const elevations = moveEndpointElevations(map.elevations, movedEndpoints);
+    get().setMap({ segments, rooms: map.rooms.map((r) => (r.id === id ? { ...r, ...patch } : r)), elevations });
   },
 
   deleteRoom: (id) => {
