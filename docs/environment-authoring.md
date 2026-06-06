@@ -61,6 +61,10 @@ Custom packs can be imported locally as a self-contained
 
 Every `bundle:<key>` reference resolves to an entry in `assets`. Imports are
 content-hashed, deduplicated in IndexedDB, and restored as local object URLs.
+When a composition is published, local assets are uploaded under immutable
+content hashes to the `environment-assets` bucket. The published composition
+references a versioned `detail_packs` manifest, which viewers load before
+rendering the environment.
 
 Prefer one GLB per quality tier. Register both assets under the same pack id:
 

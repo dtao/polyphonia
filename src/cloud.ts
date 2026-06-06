@@ -2,6 +2,17 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { Composition, normalizeComposition } from "./composition";
 import { newId } from "./id";
 import { ArtistIdentity, slugifyArtist } from "./artist";
+import {
+  getStoredDetailPack,
+  packAssetReferences,
+  rewritePackUrls,
+  storedAsset,
+} from "./detailPackStorage";
+import {
+  environmentPackById,
+  registerCustomEnvironmentPack,
+  type EnvironmentPackDefinition,
+} from "./environmentPacks";
 
 // Cloud sharing via Supabase: stems go to a public Storage bucket, the manifest
 // (with stems rewritten to public CDN URLs) goes to a Postgres row owned by the
@@ -23,6 +34,8 @@ function supabase(): SupabaseClient {
 const BUCKET = "stems";
 const TABLE = "compositions";
 const ARTISTS_TABLE = "artists";
+const DETAIL_PACKS_TABLE = "detail_packs";
+const DETAIL_PACK_ASSET_BUCKET = "environment-assets";
 const isUploaded = (url: string) => url.startsWith("blob:");
 export const normalizePublishedTitle = (title: string) => title.trim().replace(/\s+/g, " ").toLowerCase() || "untitled";
 
@@ -32,6 +45,10 @@ async function sha256(blob: Blob): Promise<string> {
   return Array.from(new Uint8Array(digest))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
+}
+
+async function sha256Text(value: string): Promise<string> {
+  return sha256(new Blob([value], { type: "text/plain" }));
 }
 
 // ===== Auth (email magic link) =====
@@ -224,8 +241,22 @@ export async function publishComposition(comp: Composition): Promise<PublishResu
     }
   }
 
+  const publishedEnvironment = await publishCustomDetailPack(comp, user.id);
+  const publishedComposition = publishedEnvironment
+    ? { ...comp, environment: publishedEnvironment }
+    : comp;
+
   // title/artist are denormalized columns (for the gallery); manifest stays canonical.
-  const { error } = await sb.from(TABLE).upsert(buildPublishedCompositionRow({ comp, tracks, id, userId: user.id, artist, title }));
+  const { error } = await sb.from(TABLE).upsert(
+    buildPublishedCompositionRow({
+      comp: publishedComposition,
+      tracks,
+      id,
+      userId: user.id,
+      artist,
+      title,
+    }),
+  );
   if (error) throw error;
   return { id, ...artist };
 }
@@ -239,7 +270,7 @@ export async function fetchPublishedComposition(id: string): Promise<Composition
     .maybeSingle();
   if (error) throw error;
   if (!data?.manifest) return null;
-  return normalizeComposition({
+  const composition = normalizeComposition({
     ...(data.manifest as Composition),
     artist: data.artist ?? (data.manifest as Composition).artist,
     artistId: data.artist_id ?? (data.manifest as Composition).artistId,
@@ -247,6 +278,68 @@ export async function fetchPublishedComposition(id: string): Promise<Composition
     artistAvatarUrl: data.artist_avatar_url ?? (data.manifest as Composition).artistAvatarUrl,
     artistAvatarEmailHash: data.artist_avatar_email_hash ?? (data.manifest as Composition).artistAvatarEmailHash,
   });
+  const packId = composition.environment.pack?.id;
+  if (packId && !environmentPackById(packId)) {
+    const pack = await fetchPublishedDetailPack(packId);
+    if (pack) registerCustomEnvironmentPack(pack);
+  }
+  return composition;
+}
+
+async function publishCustomDetailPack(
+  comp: Composition,
+  userId: string,
+): Promise<Composition["environment"] | undefined> {
+  const localId = comp.environment.pack?.id;
+  if (!localId) return undefined;
+  const storedPack = await getStoredDetailPack(localId);
+  if (!storedPack) return undefined;
+
+  const version = (await sha256Text(`${userId}:${localId}:${JSON.stringify(storedPack)}`)).slice(0, 32);
+  const remoteId = `pack-${version}`;
+  const urls = new Map<string, string>();
+  for (const reference of [...new Set(packAssetReferences(storedPack))]) {
+    if (!reference.startsWith("asset:")) continue;
+    const hash = reference.slice("asset:".length);
+    const entry = await storedAsset(hash);
+    if (!entry) throw new Error(`Detail-pack asset ${hash} is missing from local storage.`);
+    const safeName = (entry.name || "asset").replace(/[^\w.-]+/g, "_");
+    const path = `${userId}/${remoteId}/${hash}/${safeName}`;
+    const bucket = supabase().storage.from(DETAIL_PACK_ASSET_BUCKET);
+    const publicUrl = bucket.getPublicUrl(path).data.publicUrl;
+    const { error } = await bucket.upload(path, entry.blob, {
+      contentType: entry.type || entry.blob.type || "application/octet-stream",
+      upsert: true,
+    });
+    if (error) throw error;
+    urls.set(reference, publicUrl);
+  }
+
+  const manifest = rewritePackUrls(
+    { ...storedPack, id: remoteId },
+    (url) => urls.get(url) ?? url,
+  );
+  const { error } = await supabase()
+    .from(DETAIL_PACKS_TABLE)
+    .upsert({ id: remoteId, owner: userId, manifest });
+  if (error) throw error;
+  return {
+    ...comp.environment,
+    pack: {
+      ...comp.environment.pack!,
+      id: remoteId,
+    },
+  };
+}
+
+async function fetchPublishedDetailPack(id: string): Promise<EnvironmentPackDefinition | null> {
+  const { data, error } = await supabase()
+    .from(DETAIL_PACKS_TABLE)
+    .select("manifest")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.manifest ? data.manifest as EnvironmentPackDefinition : null;
 }
 
 export interface GallerySummary {

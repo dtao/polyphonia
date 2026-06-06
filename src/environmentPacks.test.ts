@@ -3,11 +3,14 @@ import {
   ENVIRONMENT_PACKS,
   environmentPackAsset,
   environmentPackById,
+  registerCustomEnvironmentPack,
+  registerCustomEnvironmentPacks,
   resolvedEnvironmentQuality,
 } from "./environmentPacks";
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  registerCustomEnvironmentPacks([]);
 });
 
 describe("environment pack registry", () => {
@@ -23,6 +26,17 @@ describe("environment pack registry", () => {
   it("keeps pack ids unique", () => {
     const ids = ENVIRONMENT_PACKS.map((pack) => pack.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("registers remotely resolved creator packs for viewer rendering", () => {
+    const custom = {
+      ...ENVIRONMENT_PACKS[0],
+      id: "pack-published-version",
+      name: "Published creator pack",
+    };
+    registerCustomEnvironmentPack(custom);
+
+    expect(environmentPackById(custom.id)).toBe(custom);
   });
 
   it("uses reduced quality for constrained devices in auto mode", () => {

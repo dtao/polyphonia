@@ -99,13 +99,15 @@ Audio quality can be A/B tested with `audioQuality=full` or
 Sharing uses [Supabase](https://supabase.com) directly from the frontend — no
 custom server. In a Supabase project:
 
-1. Create a **public** Storage bucket named `stems`, tables, and policies by
-   running the SQL migrations in [`supabase/migrations`](supabase/migrations):
+1. Create the public Storage buckets, tables, and policies by running the SQL
+   migrations in [`supabase/migrations`](supabase/migrations):
 
    - `202605300001_initial_sharing.sql` sets up the original sharing schema
      (`compositions` + `stems` bucket).
    - `202605300002_add_artist_identities.sql` adds artist identity, slug routes,
      avatar metadata, and per-artist composition title uniqueness.
+   - `202606060001_custom_detail_packs.sql` adds immutable creator pack
+     manifests and the public `environment-assets` bucket.
 
    The resulting schema is:
 

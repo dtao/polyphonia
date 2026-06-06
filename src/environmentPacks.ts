@@ -291,6 +291,10 @@ export function registerCustomEnvironmentPacks(packs: readonly EnvironmentPackDe
   for (const pack of packs) customEnvironmentPacks.set(pack.id, pack);
 }
 
+export function registerCustomEnvironmentPack(pack: EnvironmentPackDefinition): void {
+  customEnvironmentPacks.set(pack.id, pack);
+}
+
 export function allEnvironmentPacks(): EnvironmentPackDefinition[] {
   return [...ENVIRONMENT_PACKS, ...customEnvironmentPacks.values()];
 }
