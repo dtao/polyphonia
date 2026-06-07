@@ -1642,25 +1642,14 @@ function ReflectiveUnderfloorMaterial({ tracks, previewFade }: { tracks: TrackDe
   );
 }
 
-// Heights (above the branch point's surface) of the floor grab sphere and the
-// floating knob that drags elevation.
+// Height of a branch point marker above its walkable surface.
 const HANDLE_BASE = 0.58;
-const ELEVATION_KNOB_LIFT = 1.8;
 
 function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpointCounts: Map<string, number> }) {
-  const controls = useThree((s) => s.controls as { enabled?: boolean } | undefined);
-  const camera = useThree((s) => s.camera);
   const selectedMapPointKey = useStore((s) => s.selectedMapPointKey);
-  const setMap = useStore((s) => s.setMap);
+  const moveMapPoint = useStore((s) => s.moveMapPoint);
   const selectMapPoint = useStore((s) => s.selectMapPoint);
-  const drag = useRef<{ pointKey: string; axis: "xz" | "y" } | null>(null);
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const ground = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), []);
-  const hit = useMemo(() => new THREE.Vector3(), []);
-  // Reused scratch objects for the vertical drag plane.
-  const vplane = useMemo(() => new THREE.Plane(), []);
-  const vnormal = useMemo(() => new THREE.Vector3(), []);
-  const vpoint = useMemo(() => new THREE.Vector3(), []);
+  const [gizmoObject, setGizmoObject] = useState<THREE.Group | null>(null);
   const endpoints = useMemo(() => {
     const points = new Map<string, [number, number]>();
     for (const segment of map.segments) {
@@ -1676,86 +1665,20 @@ function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpoint
       loopRole: loopRoleForPoint(map, key),
     }));
   }, [endpointCounts, map]);
+  const selectedPoint = selectedMapPointKey ? findPoint(map, selectedMapPointKey) : null;
+  const selectedElevation = selectedPoint ? elevationAt(map, selectedPoint) : 0;
 
-  // Route a drag move to the right axis: ground plane (X/Z) or elevation (Y).
-  function onDragMove(e: ThreeEvent<PointerEvent>) {
-    if (!drag.current) return;
-    if (drag.current.axis === "y") moveElevation(e);
-    else moveEndpoint(e);
-  }
-
-  function moveEndpoint(e: ThreeEvent<PointerEvent>) {
-    if (!drag.current) return;
-    e.stopPropagation();
-    if (!e.ray.intersectPlane(ground, hit)) return;
-    const next: [number, number] = [hit.x, hit.z];
-    const activeKey = drag.current.pointKey;
-    const nextKey = pointKey(next);
-    drag.current.pointKey = nextKey;
-    setActiveId(nextKey);
+  function moveEndpoint() {
+    if (!gizmoObject) return;
     const currentMap = useStore.getState().composition.map;
-    setMap({
-      preset: "custom",
-      segments: currentMap.segments.map((segment) => ({
-        ...segment,
-        start: pointKey(segment.start) === activeKey ? next : segment.start,
-        end: pointKey(segment.end) === activeKey ? next : segment.end,
-      })),
-      // Carry the point's height to its new key so moving a raised point keeps it.
-      elevations: renameElevationKey(currentMap.elevations, activeKey, nextKey),
-    });
-    selectMapPoint(nextKey);
-  }
-
-  // Drag the floating knob to set the surface height at this branch point. A
-  // vertical plane through the point (facing the camera) turns cursor height
-  // into elevation; the point itself doesn't move, so its key is unchanged.
-  function moveElevation(e: ThreeEvent<PointerEvent>) {
-    if (!drag.current) return;
-    e.stopPropagation();
-    const key = drag.current.pointKey;
-    const point = endpoints.find((p) => p.key === key)?.point ?? findPoint(map, key);
-    if (!point) return;
-    vnormal.set(camera.position.x - point[0], 0, camera.position.z - point[1]);
-    if (vnormal.lengthSq() < 1e-6) vnormal.set(0, 0, 1);
-    vnormal.normalize();
-    vpoint.set(point[0], 0, point[1]);
-    vplane.setFromNormalAndCoplanarPoint(vnormal, vpoint);
-    if (!e.ray.intersectPlane(vplane, hit)) return;
-    const elevation = Math.round((hit.y - HANDLE_BASE - ELEVATION_KNOB_LIFT) * 100) / 100;
-    setMap({ preset: "custom", elevations: { ...(map.elevations ?? {}), [key]: elevation } });
-  }
-
-  function endDrag(e?: ThreeEvent<PointerEvent>) {
-    e?.stopPropagation();
-    drag.current = null;
-    setActiveId(null);
-    if (controls) controls.enabled = true;
-    const target = e?.nativeEvent.target as Element | null | undefined;
-    target?.releasePointerCapture?.(e?.pointerId ?? -1);
-    document.body.style.cursor = "grab";
-  }
-
-  function startDrag(e: ThreeEvent<PointerEvent>, key: string) {
-    e.stopPropagation();
-    drag.current = { pointKey: key, axis: "xz" };
-    setActiveId(key);
-    selectMapPoint(key);
-    if (controls) controls.enabled = false;
-    const target = e.nativeEvent.target as Element | null;
-    target?.setPointerCapture?.(e.pointerId);
-    document.body.style.cursor = "grabbing";
-  }
-
-  function startElevationDrag(e: ThreeEvent<PointerEvent>, key: string) {
-    e.stopPropagation();
-    drag.current = { pointKey: key, axis: "y" };
-    setActiveId(key);
-    selectMapPoint(key);
-    if (controls) controls.enabled = false;
-    const target = e.nativeEvent.target as Element | null;
-    target?.setPointerCapture?.(e.pointerId);
-    document.body.style.cursor = "ns-resize";
+    const activeKey = useStore.getState().selectedMapPointKey;
+    if (!activeKey || !findPoint(currentMap, activeKey)) return;
+    const next: [number, number] = [
+      Math.round(gizmoObject.position.x * 1000) / 1000,
+      Math.round(gizmoObject.position.z * 1000) / 1000,
+    ];
+    const elevation = Math.round(gizmoObject.position.y * 100) / 100;
+    moveMapPoint(activeKey, next, elevation);
   }
 
   function selectEndpoint(e: ThreeEvent<MouseEvent>, key: string) {
@@ -1764,15 +1687,8 @@ function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpoint
   }
 
   return (
-    <group onPointerUp={endDrag} onPointerCancel={endDrag}>
-      {drag.current && (
-        <mesh position={[0, 0.64, 0]} rotation={[-Math.PI / 2, 0, 0]} onPointerMove={onDragMove} onPointerUp={endDrag} onPointerCancel={endDrag}>
-          <planeGeometry args={[240, 240]} />
-          <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
-        </mesh>
-      )}
+    <group>
       {endpoints.map(({ id, key, point, shared, hasRoom, loopRole }) => {
-        const active = activeId === id;
         const selected = selectedMapPointKey === key;
         const loopColor = loopRole === "start" ? "#56e0c0" : loopRole === "end" ? "#ff9f6e" : null;
         const terminalColor = loopColor ?? (hasRoom ? "#8fffe8" : "#ffffff");
@@ -1781,23 +1697,20 @@ function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpoint
             key={id}
             position={[point[0], HANDLE_BASE + elevationAt(map, point), point[1]]}
             renderOrder={50}
-            onPointerDown={(e) => startDrag(e, key)}
             onClick={(e) => selectEndpoint(e, key)}
-            onPointerMove={onDragMove}
-            onPointerUp={endDrag}
             onPointerOver={(e) => {
               e.stopPropagation();
-              document.body.style.cursor = "grab";
+              document.body.style.cursor = "pointer";
             }}
             onPointerOut={() => {
-              if (!drag.current) document.body.style.cursor = "auto";
+              document.body.style.cursor = "auto";
             }}
           >
             <sphereGeometry args={[shared || hasRoom || loopRole ? 1.6 : 1.35, 24, 16]} />
             <meshBasicMaterial transparent opacity={0} depthWrite={false} />
             <mesh>
-              <sphereGeometry args={[active ? 0.95 : selected ? 0.82 : shared || hasRoom || loopRole ? 0.72 : 0.58, 24, 16]} />
-              <meshBasicMaterial color={active ? "#8fffe8" : selected ? "#9fb4ff" : shared ? "#ffd166" : terminalColor} transparent opacity={1} toneMapped={false} />
+              <sphereGeometry args={[selected ? 0.82 : shared || hasRoom || loopRole ? 0.72 : 0.58, 24, 16]} />
+              <meshBasicMaterial color={selected ? "#9fb4ff" : shared ? "#ffd166" : terminalColor} transparent opacity={1} toneMapped={false} />
             </mesh>
             {loopRole && (
               <mesh rotation={[-Math.PI / 2, 0, 0]}>
@@ -1805,72 +1718,54 @@ function EndpointEditor({ map, endpointCounts }: { map: CompositionMap; endpoint
                 <meshBasicMaterial color={loopColor ?? "#ffffff"} transparent opacity={0.9} toneMapped={false} depthWrite={false} />
               </mesh>
             )}
-            {(active || selected) && (
+            {selected && (
               <>
                 <mesh>
-                  <sphereGeometry args={[active ? 1.35 : 1.12, 24, 16]} />
+                  <sphereGeometry args={[1.12, 24, 16]} />
                   <meshBasicMaterial
-                    color={active ? "#8fffe8" : "#9fb4ff"}
+                    color="#9fb4ff"
                     transparent
-                    opacity={active ? 0.22 : 0.16}
+                    opacity={0.16}
                     toneMapped={false}
                     depthWrite={false}
                     blending={THREE.AdditiveBlending}
                   />
                 </mesh>
-                <EndpointSelectionRing active={active} color={active ? "#8fffe8" : "#9fb4ff"} />
-              </>
-            )}
-            {selected && (
-              <>
-                {/* Stick from the point up to the grab knob. */}
-                <mesh position={[0, ELEVATION_KNOB_LIFT / 2, 0]}>
-                  <cylinderGeometry args={[0.05, 0.05, ELEVATION_KNOB_LIFT, 8]} />
-                  <meshBasicMaterial color="#8fffe8" transparent opacity={0.6} toneMapped={false} depthWrite={false} />
-                </mesh>
-                {/* Drag this knob up/down to set the branch point's elevation. */}
-                <mesh
-                  position={[0, ELEVATION_KNOB_LIFT, 0]}
-                  onPointerDown={(e) => startElevationDrag(e, key)}
-                  onPointerMove={onDragMove}
-                  onPointerUp={endDrag}
-                  onPointerOver={(e) => {
-                    e.stopPropagation();
-                    document.body.style.cursor = "ns-resize";
-                  }}
-                  onPointerOut={() => {
-                    if (!drag.current) document.body.style.cursor = "auto";
-                  }}
-                >
-                  <sphereGeometry args={[0.55, 20, 14]} />
-                  <meshBasicMaterial color="#8fffe8" transparent opacity={0.92} toneMapped={false} />
-                </mesh>
+                <EndpointSelectionRing color="#9fb4ff" />
               </>
             )}
           </mesh>
         );
       })}
+      {selectedPoint && (
+        <>
+          <group
+            ref={setGizmoObject}
+            position={[selectedPoint[0], selectedElevation, selectedPoint[1]]}
+          />
+          {gizmoObject && (
+            <TransformControls
+              object={gizmoObject}
+              mode="translate"
+              showX
+              showY
+              showZ
+              size={0.9}
+              onObjectChange={moveEndpoint}
+            />
+          )}
+        </>
+      )}
     </group>
   );
 }
 
-// Move a point's elevation entry to a new key when the point moves in XZ.
-function renameElevationKey(elevations: Record<string, number> | undefined, fromKey: string, toKey: string): Record<string, number> {
-  const next = { ...(elevations ?? {}) };
-  if (fromKey === toKey) return next;
-  if (fromKey in next) {
-    next[toKey] = next[fromKey];
-    delete next[fromKey];
-  }
-  return next;
-}
-
-function EndpointSelectionRing({ active, color }: { active: boolean; color: string }) {
+function EndpointSelectionRing({ color }: { color: string }) {
   const group = useRef<THREE.Group>(null);
   const dots = useMemo(() => Array.from({ length: 24 }, (_, i) => (i / 24) * Math.PI * 2), []);
   useFrame((_, dt) => {
     if (!group.current) return;
-    group.current.rotation.y += dt * (active ? 1.1 : 0.62);
+    group.current.rotation.y += dt * 0.62;
   });
 
   return (

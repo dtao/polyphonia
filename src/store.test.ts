@@ -182,6 +182,34 @@ describe("store edit contracts", () => {
     expect(state.composition.map.elevations?.[clonedKey]).toBe(5);
   });
 
+  it("moves every endpoint at a branch point and keeps its elevation selected", () => {
+    useStore.setState((state) => ({
+      composition: normalizeComposition({
+        ...state.composition,
+        map: {
+          ...state.composition.map,
+          preset: "custom",
+          segments: [
+            { id: "west", start: [-10, 0], end: [0, 0], width: 6 },
+            { id: "north", start: [0, 0], end: [0, -10], width: 6 },
+          ],
+          elevations: { "0.000,0.000": 3 },
+        },
+      }),
+      selectedMapPointKey: "0.000,0.000",
+    }));
+
+    useStore.getState().moveMapPoint("0.000,0.000", [4, 2], 7);
+
+    const state = useStore.getState();
+    expect(state.composition.map.segments).toMatchObject([
+      { start: [-10, 0], end: [4, 2] },
+      { start: [4, 2], end: [0, -10] },
+    ]);
+    expect(state.composition.map.elevations).toEqual({ "4.000,2.000": 7 });
+    expect(state.selectedMapPointKey).toBe("4.000,2.000");
+  });
+
   it("keeps placed landmarks when changing detail packs", () => {
     useStore.getState().setEnvironment({
       pack: { id: "verdant-grove", variant: "temperate", quality: "auto" },

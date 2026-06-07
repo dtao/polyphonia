@@ -49,7 +49,7 @@ function hudShortcutHint({
   if (selectedId) return `drag to move stem · ${del} removes · ${clone} clones · ${esc} clears`;
   if (selectedLandmarkId) return `drag to place landmark · adjust rotation and scale below · ${del} removes · ${clone} clones · ${esc} clears`;
   if (branchStartPointKey) return `click floor to place branch · ${del} removes point · ${esc} clears`;
-  if (selectedMapPointKey) return `drag point to reshape · ${clone} branches · ${del} removes point · ${esc} clears`;
+  if (selectedMapPointKey) return `drag gizmo to move point · ${clone} branches · ${del} removes point · ${esc} clears`;
   if (selectedMapSegmentId) return `adjust segment width · click point to edit branches · ${esc} clears`;
   if (selectedStart) return `drag start marker · choose Move/Rotate in Map · ${esc} clears`;
   return `WASD to move · Q/E down/up · drag to orbit · click a track or map point · ${shortcutKeys("undo")} undo · ${shortcutKeys("toggle-fullscreen")} fullscreen`;

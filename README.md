@@ -101,7 +101,9 @@ Audio quality can be A/B tested with `audioQuality=full` or
   trim loop start/end, adjust crossfade, or disable looping. The Environment
   panel selects optional detail packs, imports materials/models, assigns map
   surfaces, and places landmarks. Selected walls use the same three-axis move
-  gizmo as stems, with endpoint handles for reshaping.
+  gizmo as stems, with endpoint handles for reshaping. Selected path points use
+  that three-axis gizmo too, moving connected branches in X/Z and setting ramp
+  elevation on Y.
 
 ## Sharing setup (optional)
 

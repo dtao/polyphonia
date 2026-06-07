@@ -171,6 +171,7 @@ interface StoreState {
   toggleMode: () => void;
   select: (id: string | null) => void;
   selectMapPoint: (key: string | null) => void;
+  moveMapPoint: (key: string, point: [number, number], elevation: number) => void;
   selectMapSegment: (id: string | null) => void;
   setBranchStartPoint: (key: string | null) => void;
   selectStart: () => void;
@@ -813,6 +814,34 @@ export const useStore = create<StoreState>((set, get) => ({
   toggleMode: () => get().setMode(get().mode === "edit" ? "explore" : "edit"),
   select: (selectedId) => set({ selectedId, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null }),
   selectMapPoint: (selectedMapPointKey) => set({ selectedMapPointKey, selectedMapSegmentId: null, selectedId: null, selectedStart: false, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null }),
+  moveMapPoint: (key, point, elevation) =>
+    set((s) => {
+      if (!s.composition.map.segments.some((segment) => mapPointExists(segment, key))) return s;
+      const nextKey = mapPointKey(point);
+      const elevations = { ...(s.composition.map.elevations ?? {}) };
+      if (key !== nextKey) delete elevations[key];
+      if (elevation === 0) delete elevations[nextKey];
+      else elevations[nextKey] = elevation;
+      const nextMap = normalizeMap({
+        ...s.composition.map,
+        preset: "custom",
+        segments: s.composition.map.segments.map((segment) => ({
+          ...segment,
+          start: mapPointKey(segment.start) === key ? point : segment.start,
+          end: mapPointKey(segment.end) === key ? point : segment.end,
+        })),
+        elevations,
+      });
+      return {
+        ...withHistory(s, "map:elevations,preset,segments"),
+        composition: {
+          ...touchComposition(s.composition),
+          map: nextMap,
+        },
+        selectedMapPointKey: nextKey,
+        branchStartPointKey: s.branchStartPointKey === key ? null : s.branchStartPointKey,
+      };
+    }),
   selectMapSegment: (selectedMapSegmentId) => set({ selectedMapSegmentId, selectedMapPointKey: null, selectedId: null, branchStartPointKey: null, selectedStart: false, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null }),
   setBranchStartPoint: (branchStartPointKey) => set({ branchStartPointKey, selectedMapPointKey: branchStartPointKey, selectedMapSegmentId: null, selectedId: null, selectedStart: false, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null }),
   selectStart: () => set({ selectedStart: true, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null }),
