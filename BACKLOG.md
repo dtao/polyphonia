@@ -70,9 +70,14 @@ earlier ones.
 - [x] **M6.5 Runtime optimization pass** — introduce instancing/LOD/culling/texture budgets so high-detail environments stay responsive in the browser.
 - [x] **M6.6 Environment authoring workflow** — support both reviewed environment packs and independently imported licensed PBR materials/GLB landmarks, with validation, reusable local records, composition assignment, portable exports, cloud delivery, and authoring documentation.
 
+## Milestone 7 — Advanced composition features
+
+- [ ] **M7.1 Stem timing offset** — let each stem shift earlier or later by musical intervals such as 1/16, 1/8, 1/4, and 1/2 notes, while keeping all stems synchronized to the shared audio clock and saved in the composition manifest.
+- [ ] **M7.2 Variable stem durations** - it should be possible for some stems to be 4 bars while other stems are 8 bars in length. In this case the 4-bar stems should automatically loop at 2x the interval of the 8-bar stems.
+- [ ] **M7.3 Stem tails** - if a stem is a bit longer than a whole number multiple of the BPM - for example, slightly longer than 8 bars - it should be looped before the audio ends (but still allowing the remainder to be played), allowing reverb tails to be heard across loop seams.
+
 ## Polish & fixes
 
-- [ ] **P1 Stem timing offset** — let each stem shift earlier or later by musical intervals such as 1/16, 1/8, 1/4, and 1/2 notes, while keeping all stems synchronized to the shared audio clock and saved in the composition manifest.
 - [ ] **P2 Stem direction** — similar to real-world speakers, it should be possible for stems to be unidirectional (current behavior) or to be "pointed" in a direction, with the ability for the user to configure the width and dispersion of the sound.
 - [ ] P3 Extending one segment into another should "connect" them (unified bridge point).
 - [x] P4 Environmental objects (e.g. trees, stones) should never appear directly in the middle portion of a path segment.
@@ -90,4 +95,6 @@ earlier ones.
 - [x] P16 Placed landmarks should not disappear when changing detail packs in Edit mode.
 - [x] P17 Default room/wall/tunnel height should be above eye height - maybe 1.5x (it would probably be best to actually make these values explicitly related so future adjustments to eye height will update the other values).
 - [x] P18 Walls should have standard movement control (same control used to move stems) allowing users to drag along 3 dimensions.
-- [x] P19 Crossing loop boundary can make landmark objects suddenly appear/disappear
+- [x] P19 Crossing loop boundary can make landmark objects suddenly appear/disappear.
+- [ ] P20 Color chooser should dismiss (like other UI elements) when user clicks away.
+- [ ] P21 There should be no landmark objects when creating a new composition.
