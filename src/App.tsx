@@ -84,10 +84,10 @@ export default function App() {
     selectedLandmarkId,
   });
 
-  // Load the saved composition library + auth session on launch.
+  // Load the saved composition library after the authenticated route opens.
+  // Authentication is initialized once at the router root.
   useEffect(() => {
     useStore.getState().initLibrary();
-    useStore.getState().initAuth();
   }, []);
 
   // Track pointer-lock so we can hide the UI chrome during camera control and
