@@ -19,6 +19,7 @@ beforeEach(() => {
     }),
     library: [],
     engine: null,
+    publishProgress: null,
     viewer: true,
     undoStack: [],
     redoStack: [],
@@ -46,6 +47,7 @@ describe("store edit contracts", () => {
       setVolume: vi.fn(),
       setPosition: vi.fn(),
       setFalloff: vi.fn(),
+      setDirectivity: vi.fn(),
       replaceComposition: vi.fn().mockResolvedValue(undefined),
     };
     useStore.setState({ engine: engine as any });
@@ -54,24 +56,42 @@ describe("store edit contracts", () => {
     store.setTrackVolume("bass", 0.4);
     store.setTrackPosition("bass", [3, 2, -4]);
     store.setTrackFalloff("bass", { rolloff: 2 });
+    store.setTrackDirectivity("bass", {
+      direction: [1, 0],
+      width: 90,
+      dispersion: 60,
+      outsideGain: 0.15,
+    });
 
     expect(useStore.getState().composition.tracks[0]).toMatchObject({
       volume: 0.4,
       position: [3, 2, -4],
       rolloff: 2,
+      directivity: {
+        direction: [1, 0],
+        width: 90,
+        dispersion: 60,
+        outsideGain: 0.15,
+      },
     });
     expect(engine.setVolume).toHaveBeenCalledWith("bass", 0.4);
     expect(engine.setPosition).toHaveBeenCalledWith("bass", [3, 2, -4]);
     expect(engine.setFalloff).toHaveBeenCalledWith("bass", { rolloff: 2 });
-    expect(useStore.getState().undoStack).toHaveLength(3);
+    expect(engine.setDirectivity).toHaveBeenCalledWith("bass", {
+      direction: [1, 0],
+      width: 90,
+      dispersion: 60,
+      outsideGain: 0.15,
+    });
+    expect(useStore.getState().undoStack).toHaveLength(4);
 
     await useStore.getState().undo();
-    expect(useStore.getState().composition.tracks[0].rolloff).toBeUndefined();
+    expect(useStore.getState().composition.tracks[0].directivity).toBeUndefined();
     expect(useStore.getState().redoStack).toHaveLength(1);
     expect(engine.replaceComposition).toHaveBeenCalledTimes(1);
 
     await useStore.getState().redo();
-    expect(useStore.getState().composition.tracks[0].rolloff).toBe(2);
+    expect(useStore.getState().composition.tracks[0].directivity?.width).toBe(90);
     expect(engine.replaceComposition).toHaveBeenCalledTimes(2);
   });
 
@@ -210,6 +230,63 @@ describe("store edit contracts", () => {
     expect(state.selectedMapPointKey).toBe("4.000,2.000");
   });
 
+  it("connects a moved endpoint into the middle of another segment", () => {
+    useStore.setState((state) => ({
+      composition: normalizeComposition({
+        ...state.composition,
+        map: {
+          ...state.composition.map,
+          preset: "custom",
+          segments: [
+            { id: "branch", start: [0, 0], end: [5, 0], width: 6 },
+            { id: "trunk", start: [10, 0], end: [10, 10], width: 8 },
+          ],
+          rooms: [{
+            id: "room-a",
+            center: [10, -4],
+            rotation: 0,
+            width: 8,
+            depth: 8,
+            height: 4,
+            entrances: [{ side: "north", width: 4, offset: 0 }],
+            attachment: { segmentId: "trunk", end: "start" },
+          }],
+          tiling: {
+            ...state.composition.map.tiling,
+            type: "path-loop",
+            pathLoop: {
+              start: { segmentId: "branch", end: "start" },
+              end: { segmentId: "trunk", end: "end" },
+            },
+          },
+          elevations: {
+            "10.000,0.000": 2,
+            "10.000,10.000": 6,
+          },
+        },
+      }),
+      selectedMapPointKey: "5.000,0.000",
+    }));
+
+    useStore.getState().moveMapPoint("5.000,0.000", [10.4, 5], 9);
+
+    const state = useStore.getState();
+    const joined = state.composition.map.segments.filter((segment) =>
+      [segment.start, segment.end].some((point) => point[0] === 10 && point[1] === 5),
+    );
+    const continuation = state.composition.map.segments.find((segment) =>
+      segment.id !== "trunk" && segment.start[0] === 10 && segment.start[1] === 5,
+    );
+    expect(joined).toHaveLength(3);
+    expect(state.composition.map.elevations?.["10.000,5.000"]).toBe(4);
+    expect(state.selectedMapPointKey).toBe("10.000,5.000");
+    expect(state.composition.map.rooms[0].attachment).toEqual({ segmentId: "trunk", end: "start" });
+    expect(state.composition.map.tiling.pathLoop?.end).toEqual({
+      segmentId: continuation?.id,
+      end: "end",
+    });
+  });
+
   it("keeps placed landmarks when changing detail packs", () => {
     useStore.getState().setEnvironment({
       pack: { id: "verdant-grove", variant: "temperate", quality: "auto" },
@@ -223,6 +300,35 @@ describe("store edit contracts", () => {
     });
 
     expect(useStore.getState().composition.environment.landmarks).toEqual([landmark]);
+  });
+
+  it("starts new compositions without placed landmarks", () => {
+    useStore.setState((state) => ({
+      composition: normalizeComposition({
+        ...state.composition,
+        environment: {
+          pack: { id: "verdant-grove", variant: "temperate", quality: "high" },
+          surfaces: { floor: "moss", wall: "stone" },
+          landmarks: [{
+            id: "landmark-a",
+            assetId: "evergreen",
+            packId: "verdant-grove",
+            position: [2, 0, 3],
+            rotation: [0, 0, 0],
+            scale: [1, 1, 1],
+          }],
+        },
+      }),
+      selectedLandmarkId: "landmark-a",
+    }));
+
+    useStore.getState().newComposition({ title: "Empty", bpm: 100 });
+
+    expect(useStore.getState().composition.environment).toEqual({
+      pack: { id: "verdant-grove", variant: "temperate", quality: "high" },
+      surfaces: { floor: "moss", wall: "stone" },
+    });
+    expect(useStore.getState().selectedLandmarkId).toBeNull();
   });
 
   it("persists vertical wall movement and keeps it when cloning", () => {

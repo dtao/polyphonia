@@ -44,7 +44,9 @@ these spatial compositions.
   wall thickness controls, so thin barriers lightly darken sound while thick
   barriers heavily damp it.
 - **Edit** — an overhead edit mode to place tracks in space (drag gizmo), and a
-  properties panel to rename, recolor, set volume, and tune distance falloff.
+  properties panel to rename, recolor, set volume, tune distance falloff, or
+  point a stem like a directional speaker with configurable beam width and
+  dispersion.
 - **Build from scratch** — create a new composition (title / BPM, plus an
   artist name for local-only use) and add stems by file picker or
   drag-and-drop; uploads drop into the running loop in time.
@@ -56,8 +58,8 @@ these spatial compositions.
   `.polyphonia.json` (audio, custom packs, and every referenced creator asset
   embedded) and re-import it anywhere.
 - **Share** — publish a composition to the cloud and get a stable read-only link
-  (`/c/:id`) anyone can open, with visible audio-loading progress for first
-  plays. *(Requires Supabase config — see below.)*
+  (`/c/:id`) anyone can open, with visible progress while publishing or loading
+  audio for first plays. *(Requires Supabase config — see below.)*
 - **Account artist identity** — signed-in accounts keep a primary artist
   profile; new compositions and publishing use that artist automatically.
 - **Discover artists** — browse the public gallery or an artist page
@@ -106,7 +108,8 @@ Audio quality can be A/B tested with `audioQuality=full` or
   past the loop length back onto the start so reverb decays across the seam), or
   disable looping. The Environment
   panel selects optional detail packs, imports materials/models, assigns map
-  surfaces, and places landmarks. Selected walls use the same three-axis move
+  surfaces, and places landmarks. Directional stems show their heading and outer
+  cone on the ground while selected. Selected walls use the same three-axis move
   gizmo as stems, with endpoint handles for reshaping. Selected path points use
   that three-axis gizmo too, moving connected branches in X/Z and setting ramp
   elevation on Y.

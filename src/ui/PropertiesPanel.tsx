@@ -1,13 +1,25 @@
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
 import { shortcutKeys } from "../shortcuts";
 import { StemLoopMeter } from "./StemLoopMeter";
+
+const TRACK_COLORS = ["#5b8cff", "#ff7a6b", "#ffd166", "#b96bff", "#56e0c0", "#f78fb3", "#7ee081", "#ffa057"];
 
 // Edit-mode inspector for the selected track. Every control applies live —
 // volume and falloff flow straight to the audio engine as you drag.
 export function PropertiesPanel() {
   const mode = useStore((s) => s.mode);
   const track = useStore((s) => s.composition.tracks.find((t) => t.id === s.selectedId));
-  const { renameTrack, setTrackColor, setTrackVolume, setTrackMinVolume, setTrackFalloff, deleteTrack, duplicateTrack } = useStore.getState();
+  const {
+    renameTrack,
+    setTrackColor,
+    setTrackVolume,
+    setTrackMinVolume,
+    setTrackFalloff,
+    setTrackDirectivity,
+    deleteTrack,
+    duplicateTrack,
+  } = useStore.getState();
 
   if (mode !== "edit" || !track) return null;
 
@@ -15,15 +27,17 @@ export function PropertiesPanel() {
   const far = Math.max(track.maxDistance ?? 40, near + 1);
   const maxVolume = track.volume ?? 1;
   const minVolume = Math.min(track.minVolume ?? 0, maxVolume);
+  const directivity = track.directivity;
+  const directionDegrees = directivity
+    ? (Math.atan2(directivity.direction[0], -directivity.direction[1]) * 180 / Math.PI + 360) % 360
+    : 0;
 
   return (
     <div style={panel} data-stem-panel>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-        <input
-          type="color"
+        <TrackColorChooser
           value={track.color}
-          onChange={(e) => setTrackColor(track.id, e.target.value)}
-          style={{ width: 28, height: 28, border: "none", background: "none", padding: 0, cursor: "pointer" }}
+          onChange={(color) => setTrackColor(track.id, color)}
         />
         <input
           value={track.name}
@@ -83,6 +97,74 @@ export function PropertiesPanel() {
         onChange={(v) => setTrackFalloff(track.id, { rolloff: v })}
       />
 
+      <label style={toggleRow}>
+        <input
+          type="checkbox"
+          checked={Boolean(directivity)}
+          onChange={(event) =>
+            setTrackDirectivity(
+              track.id,
+              event.target.checked
+                ? { direction: [0, -1], width: 90, dispersion: 90, outsideGain: 0.1 }
+                : undefined,
+            )
+          }
+        />
+        Directional speaker
+      </label>
+      {directivity && (
+        <div style={directivityGroup}>
+          <Slider
+            label="Direction"
+            help="0° points north; 90° points east."
+            value={directionDegrees}
+            min={0}
+            max={359}
+            step={1}
+            onChange={(degrees) => {
+              const radians = degrees * Math.PI / 180;
+              setTrackDirectivity(track.id, {
+                ...directivity,
+                direction: [Math.sin(radians), -Math.cos(radians)],
+              });
+            }}
+          />
+          <Slider
+            label="Beam width"
+            help="Full-volume angle in front of the stem."
+            value={directivity.width}
+            min={1}
+            max={360}
+            step={1}
+            onChange={(width) =>
+              setTrackDirectivity(track.id, {
+                ...directivity,
+                width,
+                dispersion: Math.min(directivity.dispersion, 360 - width),
+              })
+            }
+          />
+          <Slider
+            label="Dispersion"
+            help="Angular fade from the beam to the outside level."
+            value={directivity.dispersion}
+            min={0}
+            max={360 - directivity.width}
+            step={1}
+            onChange={(dispersion) => setTrackDirectivity(track.id, { ...directivity, dispersion })}
+          />
+          <Slider
+            label="Outside level"
+            help="Volume heard beyond the directional cone."
+            value={directivity.outsideGain}
+            min={0}
+            max={1}
+            step={0.01}
+            onChange={(outsideGain) => setTrackDirectivity(track.id, { ...directivity, outsideGain })}
+          />
+        </div>
+      )}
+
       <div style={actionRow}>
         <button
           style={duplicateBtn}
@@ -95,6 +177,70 @@ export function PropertiesPanel() {
           Delete
         </button>
       </div>
+    </div>
+  );
+}
+
+function TrackColorChooser({ value, onChange }: { value: string; onChange: (color: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const dismiss = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("pointerdown", dismiss, true);
+    window.addEventListener("keydown", escape);
+    return () => {
+      window.removeEventListener("pointerdown", dismiss, true);
+      window.removeEventListener("keydown", escape);
+    };
+  }, [open]);
+
+  return (
+    <div ref={root} style={colorChooser}>
+      <button
+        type="button"
+        aria-label="Choose track color"
+        aria-expanded={open}
+        style={{ ...colorButton, background: value }}
+        onClick={() => setOpen((current) => !current)}
+      />
+      {open && (
+        <div style={colorPopover}>
+          <div style={colorGrid}>
+            {TRACK_COLORS.map((color) => (
+              <button
+                key={color}
+                type="button"
+                aria-label={`Set color ${color}`}
+                style={{
+                  ...colorSwatch,
+                  background: color,
+                  outline: color.toLowerCase() === value.toLowerCase() ? "2px solid white" : "none",
+                }}
+                onClick={() => {
+                  onChange(color);
+                  setOpen(false);
+                }}
+              />
+            ))}
+          </div>
+          <label style={customColorLabel}>
+            Custom
+            <input
+              type="color"
+              value={value}
+              onChange={(event) => onChange(event.target.value)}
+              style={customColorInput}
+            />
+          </label>
+        </div>
+      )}
     </div>
   );
 }
@@ -141,6 +287,8 @@ const panel: React.CSSProperties = {
   bottom: 16,
   left: 16,
   width: 300,
+  maxHeight: "calc(100vh - 90px)",
+  overflowY: "auto",
   boxSizing: "border-box",
   padding: 16,
   borderRadius: 12,
@@ -161,6 +309,86 @@ const nameInput: React.CSSProperties = {
   color: "white",
   padding: "6px 8px",
   fontSize: 15,
+};
+
+const toggleRow: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 7,
+  margin: "4px 0 10px",
+  fontSize: 12,
+  color: "rgba(255,255,255,0.82)",
+  cursor: "pointer",
+};
+
+const directivityGroup: React.CSSProperties = {
+  paddingTop: 2,
+  marginBottom: 4,
+  borderTop: "1px solid rgba(255,255,255,0.08)",
+};
+
+const colorChooser: React.CSSProperties = {
+  position: "relative",
+  flex: "0 0 auto",
+};
+
+const colorButton: React.CSSProperties = {
+  width: 28,
+  height: 28,
+  padding: 0,
+  borderRadius: 7,
+  border: "2px solid rgba(255,255,255,0.72)",
+  boxShadow: "0 0 0 1px rgba(0,0,0,0.45)",
+  cursor: "pointer",
+};
+
+const colorPopover: React.CSSProperties = {
+  position: "absolute",
+  bottom: 36,
+  left: 0,
+  zIndex: 20,
+  width: 152,
+  padding: 10,
+  borderRadius: 9,
+  border: "1px solid rgba(255,255,255,0.16)",
+  background: "#151a29",
+  boxShadow: "0 12px 32px rgba(0,0,0,0.42)",
+};
+
+const colorGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(4, 26px)",
+  gap: 8,
+};
+
+const colorSwatch: React.CSSProperties = {
+  width: 26,
+  height: 26,
+  padding: 0,
+  borderRadius: 6,
+  border: "1px solid rgba(255,255,255,0.35)",
+  outlineOffset: 2,
+  cursor: "pointer",
+};
+
+const customColorLabel: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 10,
+  marginTop: 10,
+  fontSize: 11,
+  color: "rgba(255,255,255,0.68)",
+};
+
+const customColorInput: React.CSSProperties = {
+  width: 50,
+  height: 24,
+  padding: 0,
+  border: "1px solid rgba(255,255,255,0.2)",
+  borderRadius: 5,
+  background: "transparent",
+  cursor: "pointer",
 };
 
 const actionRow: React.CSSProperties = {

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import * as THREE from "three";
-import { Composition, TrackDef, compositionRevision, defaultComposition, normalizeComposition, touchComposition } from "./composition";
+import { Composition, StemDirectivity, TrackDef, compositionRevision, defaultComposition, normalizeComposition, touchComposition } from "./composition";
 import { AudioEngine, AudioLoadProgress } from "./audio/AudioEngine";
 import {
   SerializedComposition,
@@ -20,10 +20,11 @@ import {
   defaultEnvironment,
   normalizeEnvironment,
 } from "./environment";
-import { attachmentForPoint, canAddBranchAtPoint, canAddPlatformAtPoint, canAddRoomAtPoint, CompositionMap, entranceDoorwayCenter, entranceLocalCenter, entranceOuterPoint, MAP_PRESETS, MapPlatform, MapRoom, MapWall, RoomEntrance, RoomSide, defaultMap, mapPointKey, normalizeMap, platformContains, platformElevation, pointInOriginalTile, roomContains, roomElevation, roomWorldPoint, surfaceHeightAt, WalkableSegment } from "./map";
+import { attachmentForPoint, canAddBranchAtPoint, canAddPlatformAtPoint, canAddRoomAtPoint, CompositionMap, entranceDoorwayCenter, entranceLocalCenter, entranceOuterPoint, MAP_PRESETS, MapPlatform, MapRoom, MapWall, RoomAttachment, RoomEntrance, RoomSide, defaultMap, mapPointKey, normalizeMap, platformContains, platformElevation, pointElevation, pointInOriginalTile, roomContains, roomElevation, roomWorldPoint, surfaceHeightAt, WalkableSegment } from "./map";
 import { ArtistIdentity } from "./artist";
 import {
   AuthUser,
+  PublishProgress,
   signInWithEmail,
   signOut as cloudSignOut,
   onAuthChange,
@@ -124,6 +125,7 @@ interface StoreState {
   library: SerializedComposition[];
   engine: AudioEngine | null;
   audioLoading: AudioLoadingState;
+  publishProgress: PublishProgress | null;
   undoStack: Composition[];
   redoStack: Composition[];
   customDetailPacks: EnvironmentPackDefinition[];
@@ -226,6 +228,7 @@ interface StoreState {
   setTrackLoop: (id: string, loop: { loopStart?: number | null; loopEnd?: number | null; loopRepeat?: boolean }) => void;
   // Downsampled waveform peaks + source duration for the selected stem's meter.
   trackPeaks: (id: string, bins: number) => { peaks: Float32Array; duration: number } | null;
+  setTrackDirectivity: (id: string, directivity: StemDirectivity | undefined) => void;
   renameTrack: (id: string, name: string) => void;
   setTrackColor: (id: string, color: string) => void;
   deleteTrack: (id: string) => void;
@@ -325,6 +328,89 @@ function movedSegmentEndpoints(before: WalkableSegment[], after: WalkableSegment
     }
   }
   return moved;
+}
+
+const MAP_POINT_CONNECT_DISTANCE = 1.25;
+
+function connectMapPoint(
+  map: CompositionMap,
+  movingKey: string,
+  attempted: [number, number],
+  attemptedElevation: number,
+): { map: CompositionMap; point: [number, number]; elevation: number } {
+  let best: { segment: WalkableSegment; point: [number, number]; t: number; distance: number } | null = null;
+  for (const segment of map.segments) {
+    if (mapPointExists(segment, movingKey)) continue;
+    const dx = segment.end[0] - segment.start[0];
+    const dz = segment.end[1] - segment.start[1];
+    const lengthSq = dx * dx + dz * dz;
+    if (lengthSq < 0.000001) continue;
+    const t = Math.max(0, Math.min(1, ((attempted[0] - segment.start[0]) * dx + (attempted[1] - segment.start[1]) * dz) / lengthSq));
+    const point: [number, number] = [segment.start[0] + dx * t, segment.start[1] + dz * t];
+    const distance = Math.hypot(attempted[0] - point[0], attempted[1] - point[1]);
+    if (distance <= MAP_POINT_CONNECT_DISTANCE && (!best || distance < best.distance)) {
+      best = { segment, point, t, distance };
+    }
+  }
+  if (!best) return { map, point: attempted, elevation: attemptedElevation };
+
+  const target = best.t < 0.02 ? best.segment.start : best.t > 0.98 ? best.segment.end : best.point;
+  const targetKey = mapPointKey(target);
+  const startElevation = pointElevation(map, mapPointKey(best.segment.start));
+  const endElevation = pointElevation(map, mapPointKey(best.segment.end));
+  const elevation = startElevation + (endElevation - startElevation) * best.t;
+  if (targetKey === mapPointKey(best.segment.start) || targetKey === mapPointKey(best.segment.end)) {
+    return { map, point: target, elevation };
+  }
+
+  const continuationId = newId();
+  const first: WalkableSegment = {
+    ...best.segment,
+    end: target,
+    connections: best.segment.connections?.start
+      ? { start: best.segment.connections.start }
+      : undefined,
+  };
+  const second: WalkableSegment = {
+    ...best.segment,
+    id: continuationId,
+    start: target,
+    connections: best.segment.connections?.end
+      ? { end: best.segment.connections.end }
+      : undefined,
+  };
+  const remapFarEnd = (attachment: RoomAttachment | undefined): RoomAttachment | undefined =>
+    attachment?.segmentId === best.segment.id && attachment.end === "end"
+      ? { segmentId: continuationId, end: "end" }
+      : attachment;
+  const remapLoop = (loop: CompositionMap["loop"]): CompositionMap["loop"] =>
+    loop
+      ? {
+          start: remapFarEnd(loop.start),
+          end: remapFarEnd(loop.end),
+        }
+      : undefined;
+
+  return {
+    point: target,
+    elevation,
+    map: {
+      ...map,
+      segments: map.segments.flatMap((segment) =>
+        segment.id === best.segment.id ? [first, second] : [segment],
+      ),
+      rooms: map.rooms.map((room) => ({ ...room, attachment: remapFarEnd(room.attachment) })),
+      platforms: map.platforms.map((platform) => ({
+        ...platform,
+        attachment: remapFarEnd(platform.attachment),
+      })),
+      tiling: {
+        ...map.tiling,
+        pathLoop: remapLoop(map.tiling.pathLoop),
+      },
+      loop: remapLoop(map.loop),
+    },
+  };
 }
 
 function setConnectedEndpointElevations(
@@ -614,6 +700,7 @@ export const useStore = create<StoreState>((set, get) => ({
   library: [],
   engine: null,
   audioLoading: { status: "idle" },
+  publishProgress: null,
   undoStack: [],
   redoStack: [],
   customDetailPacks: [],
@@ -744,22 +831,36 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   publishCurrent: async () => {
-    const published = await publishComposition(get().composition);
-    const publishedAt = new Date().toISOString();
-    const composition = {
-      ...get().composition,
-      artist: published.artist,
-      artistId: published.artistId,
-      artistSlug: published.artistSlug,
-      artistAvatarUrl: published.artistAvatarUrl,
-      artistAvatarEmailHash: published.artistAvatarEmailHash,
-      publishedId: published.id,
-    };
-    composition.publishedRevision = compositionRevision(composition);
-    composition.publishedAt = publishedAt;
-    const library = upsert(get().library, serializeComposition(composition));
-    set({ composition, library });
-    persistLibrary(library, composition.id);
+    set({
+      publishProgress: {
+        completed: 0,
+        total: get().composition.tracks.length + 3,
+        label: "Preparing publish",
+      },
+    });
+    try {
+      const published = await publishComposition(
+        get().composition,
+        (publishProgress) => set({ publishProgress }),
+      );
+      const publishedAt = new Date().toISOString();
+      const composition = {
+        ...get().composition,
+        artist: published.artist,
+        artistId: published.artistId,
+        artistSlug: published.artistSlug,
+        artistAvatarUrl: published.artistAvatarUrl,
+        artistAvatarEmailHash: published.artistAvatarEmailHash,
+        publishedId: published.id,
+      };
+      composition.publishedRevision = compositionRevision(composition);
+      composition.publishedAt = publishedAt;
+      const library = upsert(get().library, serializeComposition(composition));
+      set({ composition, library });
+      persistLibrary(library, composition.id);
+    } finally {
+      set({ publishProgress: null });
+    }
   },
 
   unpublishComposition: async (compId) => {
@@ -821,18 +922,19 @@ export const useStore = create<StoreState>((set, get) => ({
   moveMapPoint: (key, point, elevation) =>
     set((s) => {
       if (!s.composition.map.segments.some((segment) => mapPointExists(segment, key))) return s;
-      const nextKey = mapPointKey(point);
-      const elevations = { ...(s.composition.map.elevations ?? {}) };
+      const connected = connectMapPoint(s.composition.map, key, point, elevation);
+      const nextKey = mapPointKey(connected.point);
+      const elevations = { ...(connected.map.elevations ?? {}) };
       if (key !== nextKey) delete elevations[key];
-      if (elevation === 0) delete elevations[nextKey];
-      else elevations[nextKey] = elevation;
+      if (connected.elevation === 0) delete elevations[nextKey];
+      else elevations[nextKey] = connected.elevation;
       const nextMap = normalizeMap({
-        ...s.composition.map,
+        ...connected.map,
         preset: "custom",
-        segments: s.composition.map.segments.map((segment) => ({
+        segments: connected.map.segments.map((segment) => ({
           ...segment,
-          start: mapPointKey(segment.start) === key ? point : segment.start,
-          end: mapPointKey(segment.end) === key ? point : segment.end,
+          start: mapPointKey(segment.start) === key ? connected.point : segment.start,
+          end: mapPointKey(segment.end) === key ? connected.point : segment.end,
         })),
         elevations,
       });
@@ -1356,6 +1458,13 @@ export const useStore = create<StoreState>((set, get) => ({
     get().engine?.setTrackLoop(id, loop);
   },
   trackPeaks: (id, bins) => get().engine?.trackPeaks(id, bins) ?? null,
+  setTrackDirectivity: (id, directivity) => {
+    set((s) => ({
+      ...withHistory(s, `track:${id}:directivity`),
+      composition: patchTrack(s.composition, id, { directivity }),
+    }));
+    get().engine?.setDirectivity(id, directivity);
+  },
 
   // Name and color are presentation-only — no audio side effects.
   renameTrack: (id, name) => set((s) => ({ ...withHistory(s, `track:${id}:name`), composition: patchTrack(s.composition, id, { name }) })),
@@ -1555,6 +1664,7 @@ export const useStore = create<StoreState>((set, get) => ({
   newComposition: (meta) => {
     const { composition, library } = get();
     const now = new Date().toISOString();
+    const { landmarks: _landmarks, ...environment } = composition.environment;
     revokeBlobUrls(composition);
     const comp: Composition = {
       id: newId(),
@@ -1565,7 +1675,7 @@ export const useStore = create<StoreState>((set, get) => ({
       artistAvatarUrl: get().accountArtist?.artistAvatarUrl,
       artistAvatarEmailHash: get().accountArtist?.artistAvatarEmailHash,
       bpm: meta.bpm || 120,
-      environment: get().composition.environment,
+      environment,
       map: normalizeMap(MAP_PRESETS.line),
       tracks: [],
       createdAt: now,
@@ -1574,7 +1684,14 @@ export const useStore = create<StoreState>((set, get) => ({
     const next = upsert(upsert(library, serializeComposition(composition)), serializeComposition(comp));
     moveViewToMapStart(comp.map);
     clearHistoryMarkers();
-    set({ composition: comp, selectedId: null, library: next, undoStack: [], redoStack: [] });
+    set({
+      composition: comp,
+      selectedId: null,
+      selectedLandmarkId: null,
+      library: next,
+      undoStack: [],
+      redoStack: [],
+    });
     persistLibrary(next, comp.id);
   },
 

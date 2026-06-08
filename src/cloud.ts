@@ -173,6 +173,12 @@ export interface PublishResult extends ArtistIdentity {
   id: string;
 }
 
+export interface PublishProgress {
+  completed: number;
+  total: number;
+  label: string;
+}
+
 interface CompositionRow {
   id: string;
   manifest: Composition;
@@ -214,7 +220,10 @@ export function buildPublishedCompositionRow(args: {
 // stems to Storage, rewrites their URLs to public CDN URLs, and upserts the
 // manifest as a row owned by the current user. Reuses the composition's existing
 // publishedId so re-publishing keeps the same stable link.
-export async function publishComposition(comp: Composition): Promise<PublishResult> {
+export async function publishComposition(
+  comp: Composition,
+  onProgress?: (progress: PublishProgress) => void,
+): Promise<PublishResult> {
   const sb = supabase();
   const user = await getCurrentUser();
   if (!user) throw new Error("Please sign in to publish.");
@@ -228,8 +237,16 @@ export async function publishComposition(comp: Composition): Promise<PublishResu
   const prevHash: Record<string, string | undefined> = {};
   for (const t of prev?.tracks ?? []) prevHash[t.id] = t.hash;
 
+  const total = comp.tracks.length + 3;
+  let completed = 0;
+  const report = (label: string, advance = false) => {
+    if (advance) completed++;
+    onProgress?.({ completed, total, label });
+  };
+
   const tracks = [];
   for (const t of comp.tracks) {
+    report(`Preparing ${t.name}`);
     if (t.source.kind === "file" && isUploaded(t.source.url)) {
       const blob = await (await fetch(t.source.url)).blob();
       const hash = await sha256(blob);
@@ -247,16 +264,22 @@ export async function publishComposition(comp: Composition): Promise<PublishResu
     } else {
       tracks.push(t); // built-in /stems URL or synth — leave as-is
     }
+    report(`Prepared ${t.name}`, true);
   }
 
+  report("Publishing environment pack");
   const publishedEnvironment = await publishCustomDetailPack(comp, user.id);
+  report("Published environment pack", true);
   const packComposition = publishedEnvironment ? { ...comp, environment: publishedEnvironment } : comp;
+  report("Publishing creator assets");
   const creatorEnvironment = await publishCreatorAssets(packComposition, user.id);
+  report("Published creator assets", true);
   const publishedComposition = creatorEnvironment
     ? { ...packComposition, environment: creatorEnvironment }
     : packComposition;
 
   // title/artist are denormalized columns (for the gallery); manifest stays canonical.
+  report("Saving composition");
   const { error } = await sb.from(TABLE).upsert(
     buildPublishedCompositionRow({
       comp: publishedComposition,
@@ -268,6 +291,7 @@ export async function publishComposition(comp: Composition): Promise<PublishResu
     }),
   );
   if (error) throw error;
+  report("Published", true);
   return { id, ...artist };
 }
 

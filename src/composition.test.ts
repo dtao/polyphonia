@@ -96,11 +96,46 @@ describe("composition compatibility and revisions", () => {
       ...defaultComposition,
       tracks: [{ ...defaultComposition.tracks[0], loopStart: 0.5, loopEnd: 2, loopRepeat: true }, ...defaultComposition.tracks.slice(1)],
     };
+    const changedDirectivity = {
+      ...defaultComposition,
+      tracks: [{
+        ...defaultComposition.tracks[0],
+        directivity: {
+          direction: [1, 0] as [number, number],
+          width: 90,
+          dispersion: 60,
+          outsideGain: 0.15,
+        },
+      }, ...defaultComposition.tracks.slice(1)],
+    };
 
     expect(compositionRevision(changedVolume)).not.toBe(baseline);
     expect(compositionRevision(changedEnvironment)).not.toBe(baseline);
     expect(compositionRevision(changedMap)).not.toBe(baseline);
     expect(compositionRevision(changedLoopTail)).not.toBe(baseline);
     expect(compositionRevision(changedStemLoop)).not.toBe(baseline);
+    expect(compositionRevision(changedDirectivity)).not.toBe(baseline);
+  });
+
+  it("normalizes directional speaker settings from saved manifests", () => {
+    const normalized = normalizeComposition({
+      ...defaultComposition,
+      tracks: [{
+        ...defaultComposition.tracks[0],
+        directivity: {
+          direction: [3, 4],
+          width: 400,
+          dispersion: 90,
+          outsideGain: -1,
+        },
+      }],
+    });
+
+    expect(normalized.tracks[0].directivity).toEqual({
+      direction: [0.6, 0.8],
+      width: 360,
+      dispersion: 0,
+      outsideGain: 0,
+    });
   });
 });

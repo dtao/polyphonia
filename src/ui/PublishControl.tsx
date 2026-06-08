@@ -11,6 +11,7 @@ export function PublishControl() {
   const user = useStore((s) => s.user);
   const publishCurrent = useStore((s) => s.publishCurrent);
   const unpublishComposition = useStore((s) => s.unpublishComposition);
+  const publishProgress = useStore((s) => s.publishProgress);
 
   const [busy, setBusy] = useState<null | string>(null);
   const [error, setError] = useState<string | null>(null);
@@ -95,6 +96,22 @@ export function PublishControl() {
   return (
     <div style={panel}>
       {body}
+      {publishProgress && (
+        <div style={progressBlock} role="status">
+          <div style={progressLabel}>
+            <span>{publishProgress.label}</span>
+            <span>{Math.round((publishProgress.completed / publishProgress.total) * 100)}%</span>
+          </div>
+          <div style={progressTrack}>
+            <div
+              style={{
+                ...progressFill,
+                width: `${Math.max(2, (publishProgress.completed / publishProgress.total) * 100)}%`,
+              }}
+            />
+          </div>
+        </div>
+      )}
       {error && <div style={{ color: "#ff9b8f", fontSize: 12, marginTop: 6 }}>{error}</div>}
     </div>
   );
@@ -143,4 +160,31 @@ const linkInput: React.CSSProperties = {
   color: "white",
   padding: "6px 8px",
   fontSize: 12,
+};
+
+const progressBlock: React.CSSProperties = {
+  marginTop: 10,
+};
+
+const progressLabel: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 8,
+  marginBottom: 5,
+  color: "rgba(255,255,255,0.72)",
+  fontSize: 11,
+};
+
+const progressTrack: React.CSSProperties = {
+  height: 5,
+  overflow: "hidden",
+  borderRadius: 999,
+  background: "rgba(255,255,255,0.12)",
+};
+
+const progressFill: React.CSSProperties = {
+  height: "100%",
+  borderRadius: 999,
+  background: "#7398ff",
+  transition: "width 160ms ease",
 };

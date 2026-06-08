@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { Composition, TrackDef } from "../composition";
+import { Composition, StemDirectivity, TrackDef } from "../composition";
 import { CompositionMap, MapRoom, containingRoom, loopPreviewElevationOffset, roomWallObstructionCount, tiledMapTransforms, transformLoopPoint, tunnelObstructionCount, wallObstructionCount } from "../map";
 import { createPlaceholderStems } from "./synth";
 
@@ -25,6 +25,7 @@ interface LiveTrackInstance {
 interface AudibleTrackInstance {
   id: string;
   position: [number, number, number];
+  direction: [number, number];
 }
 
 type AudioPerformanceMode = "full" | "reduced";
@@ -715,6 +716,16 @@ export class AudioEngine {
     return { peaks, duration: buffer.duration };
   }
 
+  setDirectivity(id: string, directivity: StemDirectivity | undefined): void {
+    const t = this.find(id);
+    if (!t) return;
+    t.def = { ...t.def, directivity };
+    for (const instance of t.instances.values()) {
+      this.applyPannerDirectivity(instance.panner, directivity);
+    }
+    this.updateTrackAcoustics(t, this.ctx.currentTime);
+  }
+
   // Stop everything and release the audio context. The engine is dead after.
   dispose(): void {
     clearTimeout(this.auditionTimer);
@@ -789,6 +800,7 @@ export class AudioEngine {
       const instance = t.instances.get(audible.id);
       if (!instance) continue;
       this.setPannerPosition(instance.panner, audible.position);
+      this.setPannerOrientation(instance.panner, audible.direction);
       const level = this.distanceLevel(t.def, audible.position, minVolume, maxVolume);
       const ratio = maxVolume > 0 ? (level / maxVolume) * stackGain : 0;
       this.setContinuousParam(instance.distanceGain.gain, ratio, at);
@@ -867,14 +879,21 @@ export class AudioEngine {
 
   private audibleTrackInstances(def: TrackDef): AudibleTrackInstance[] {
     const base = def.position;
-    if (!this.map) return [{ id: "base", position: base }];
+    const direction = def.directivity?.direction ?? [0, -1];
+    if (!this.map) return [{ id: "base", position: base, direction }];
     const previews = tiledMapTransforms(this.map, [this.listenerPosition.x, this.listenerPosition.z], this.tileAudioPreviewRadius);
-    if (!previews.length) return [{ id: "base", position: base }];
+    if (!previews.length) return [{ id: "base", position: base, direction }];
 
-    const candidates: AudibleTrackInstance[] = [{ id: "base", position: base }];
+    const candidates: AudibleTrackInstance[] = [{ id: "base", position: base, direction }];
     for (const preview of previews) {
       const [x, z] = transformLoopPoint(preview, [base[0], base[2]]);
-      candidates.push({ id: preview.id, position: [x, base[1] + loopPreviewElevationOffset(this.map, preview), z] });
+      const c = Math.cos(preview.rotation);
+      const s = Math.sin(preview.rotation);
+      candidates.push({
+        id: preview.id,
+        position: [x, base[1] + loopPreviewElevationOffset(this.map, preview), z],
+        direction: [direction[0] * c + direction[1] * s, -direction[0] * s + direction[1] * c],
+      });
     }
     const far = Math.max(def.maxDistance ?? 40, def.refDistance ?? 4);
     const audibleDistance = Math.max(far, this.tileAudioPreviewRadius);
@@ -916,6 +935,23 @@ export class AudioEngine {
     }
   }
 
+  private setPannerOrientation(p: PannerNode, [x, z]: [number, number]) {
+    const at = this.ctx.currentTime;
+    if (p.orientationX) {
+      this.setContinuousParam(p.orientationX, x, at);
+      this.setContinuousParam(p.orientationY, 0, at);
+      this.setContinuousParam(p.orientationZ, z, at);
+    } else {
+      (p as any).setOrientation(x, 0, z);
+    }
+  }
+
+  private applyPannerDirectivity(panner: PannerNode, directivity: StemDirectivity | undefined): void {
+    panner.coneInnerAngle = directivity?.width ?? 360;
+    panner.coneOuterAngle = directivity ? Math.min(360, directivity.width + directivity.dispersion) : 360;
+    panner.coneOuterGain = directivity?.outsideGain ?? 1;
+  }
+
   private syncTrackInstances(t: LiveTrack, audibleInstances: AudibleTrackInstance[], at: number): void {
     const desired = new Set(audibleInstances.map((instance) => instance.id));
     for (const [id, instance] of t.instances) {
@@ -929,21 +965,23 @@ export class AudioEngine {
 
     for (const audible of audibleInstances) {
       if (!t.instances.has(audible.id)) {
-        const instance = this.createTrackInstance(t, audible.id, audible.position);
+        const instance = this.createTrackInstance(t, audible);
         instance.distanceGain.gain.setValueAtTime(0, at);
         t.instances.set(audible.id, instance);
       }
     }
   }
 
-  private createTrackInstance(t: LiveTrack, id: string, position: [number, number, number]): LiveTrackInstance {
+  private createTrackInstance(t: LiveTrack, audible: AudibleTrackInstance): LiveTrackInstance {
     const panner = this.ctx.createPanner();
     panner.panningModel = this.panningModel;
     panner.distanceModel = "inverse";
     panner.refDistance = t.def.refDistance ?? 4;
     panner.maxDistance = t.def.maxDistance ?? 40;
     panner.rolloffFactor = 0;
-    this.setPannerPosition(panner, position);
+    this.setPannerPosition(panner, audible.position);
+    this.setPannerOrientation(panner, audible.direction);
+    this.applyPannerDirectivity(panner, t.def.directivity);
 
     const distanceGain = this.ctx.createGain();
     distanceGain.gain.value = 0;
@@ -960,7 +998,7 @@ export class AudioEngine {
     occlusionGain.connect(panner);
     panner.connect(this.dryBus);
 
-    return { id, panner, distanceGain, occlusionGain, occlusionFilter };
+    return { id: audible.id, panner, distanceGain, occlusionGain, occlusionFilter };
   }
 
   private disconnectTrackInstances(t: LiveTrack): void {
