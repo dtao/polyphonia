@@ -75,6 +75,8 @@ earlier ones.
 - [ ] **M7.1 Stem timing offset** — let each stem shift earlier or later by musical intervals such as 1/16, 1/8, 1/4, and 1/2 notes, while keeping all stems synchronized to the shared audio clock and saved in the composition manifest.
 - [ ] **M7.2 Variable stem durations** - it should be possible for some stems to be 4 bars while other stems are 8 bars in length. In this case the 4-bar stems should automatically loop at 2x the interval of the 8-bar stems.
 - [ ] **M7.3 Stem tails** - if a stem is a bit longer than a whole number multiple of the BPM - for example, slightly longer than 8 bars - it should be looped before the audio ends (but still allowing the remainder to be played), allowing reverb tails to be heard across loop seams.
+- [ ] **M7.4 Audio playback visualization** - in Edit mode, there should be a visual bar near the bottom of the screen showing the full length of the loop (with beat markers based on BPM) including an indicator of the current position as the audio plays.
+- [ ] **M7.5 Stem playback visualization** - in Edit mode, click on stem to reveal a visual meter of the track, similar to the visual bar for the overall composition loop (from M7.4) but for this specific stem - allowing user to indicate where stem sub-loop should begin and end.
 
 ## Polish & fixes
 
@@ -98,3 +100,4 @@ earlier ones.
 - [x] P19 Crossing loop boundary can make landmark objects suddenly appear/disappear.
 - [ ] P20 Color chooser should dismiss (like other UI elements) when user clicks away.
 - [ ] P21 There should be no landmark objects when creating a new composition.
+- [ ] P22 Publishing (and updating) should have a progress bar, just like loading.
