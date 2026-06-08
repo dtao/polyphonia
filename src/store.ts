@@ -235,7 +235,7 @@ interface StoreState {
   deleteTrack: (id: string) => void;
   duplicateTrack: (id: string) => Promise<void>;
   addStem: (file: File) => Promise<void>;
-  setLoopSettings: (settings: Partial<Pick<Composition, "loopEnabled" | "loopStart" | "loopEndTrim" | "loopCrossfade" | "loopTail">>) => void;
+  setLoopSettings: (settings: Partial<Pick<Composition, "loopEnabled" | "loopStart" | "loopEndTrim" | "loopCrossfade" | "loopTail" | "bars">>) => void;
   auditionLoopSeam: () => void;
   loopProgress: () => { mode: "playing" | "audition"; position: number; duration: number } | null;
   setEnvironment: (environment: Partial<EnvironmentSettings>) => void;

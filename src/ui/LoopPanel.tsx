@@ -26,6 +26,9 @@ export function LoopPanel({ open, onOpen, onClose }: { open: boolean; onOpen: ()
   const endTrim = comp.loopEndTrim ?? 0;
   const crossfade = comp.loopCrossfade ?? 0.035;
   const tail = comp.loopTail ?? false;
+  const bars = comp.bars;
+  const beatLength = 60 / comp.bpm;
+  const loopDuration = bars ? bars * 4 * beatLength : null;
 
   if (!open) {
     return (
@@ -101,10 +104,65 @@ export function LoopPanel({ open, onOpen, onClose }: { open: boolean; onOpen: ()
         />
         Ring out tails
       </label>
+
+      <div style={{ marginTop: 10, opacity: enabled ? 1 : 0.45 }}>
+        <div style={sliderHead}>
+          <span>Loop duration</span>
+          <span>{bars ? `${bars} bars` : "Auto"}</span>
+        </div>
+        {bars && <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", marginBottom: 6 }}>
+          {loopDuration?.toFixed(2)}s / {(loopDuration! / 60).toFixed(2)}m
+        </div>}
+        <div style={{ display: "flex", gap: 6 }}>
+          <input
+            type="number"
+            min={1}
+            max={64}
+            step={1}
+            value={bars ?? ""}
+            placeholder="Auto"
+            disabled={!enabled}
+            onChange={(e) => {
+              const val = e.target.value ? parseInt(e.target.value, 10) : undefined;
+              setLoopSettings({ bars: val });
+            }}
+            style={{
+              flex: 1,
+              padding: "6px 8px",
+              borderRadius: 6,
+              border: "1px solid rgba(255,255,255,0.2)",
+              background: "rgba(255,255,255,0.05)",
+              color: "white",
+              fontSize: 13,
+              cursor: !enabled ? "default" : "text",
+            }}
+          />
+          {bars && (
+            <button
+              disabled={!enabled}
+              onClick={() => setLoopSettings({ bars: undefined })}
+              style={{
+                padding: "6px 12px",
+                borderRadius: 6,
+                border: "1px solid rgba(255,255,255,0.2)",
+                background: "rgba(255,255,255,0.05)",
+                color: "rgba(255,255,255,0.7)",
+                fontSize: 12,
+                cursor: !enabled ? "default" : "pointer",
+                transition: "all 0.2s",
+              }}
+            >
+              Auto
+            </button>
+          )}
+        </div>
+      </div>
+
       <div style={help}>
         Audition plays the loop boundary: tail into start. Ring out tails folds a
         stem's overrun past the loop length (up to ~2 bars) back onto the start,
-        so reverb decays across the seam.
+        so reverb decays across the seam. Set loop duration to override the
+        auto-detected length from the longest stem.
       </div>
     </div>
   );
