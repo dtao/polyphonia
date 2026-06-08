@@ -17,6 +17,8 @@ export type StemSource =
 export interface TrackDef {
   /** Stable identity, independent of name — so renaming never breaks lookups. */
   id: string;
+  /** Shared audio identity. Cloned spatial tracks retain this to reuse one media asset. */
+  audioAssetId?: string;
   name: string;
   color: string;
   position: [number, number, number];
@@ -34,6 +36,9 @@ export interface TrackDef {
   /** Content hash of the stem audio, set in published manifests for change detection. */
   hash?: string;
 }
+
+export const audioAssetKey = (track: Pick<TrackDef, "id" | "audioAssetId">): string =>
+  track.audioAssetId ?? track.id;
 
 export interface Composition {
   id: string;

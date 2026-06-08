@@ -54,7 +54,8 @@ these spatial compositions.
   home grid and switch between them.
 - **Portable** — export a composition as a single self-contained
   `.polyphonia.json` (audio, custom packs, and every referenced creator asset
-  embedded) and re-import it anywhere.
+  embedded) and re-import it anywhere. Cloned spatial instances share one
+  embedded audio asset rather than multiplying the file size.
 - **Share** — publish a composition to the cloud and get a stable read-only link
   (`/c/:id`) anyone can open, with visible audio-loading progress for first
   plays. *(Requires Supabase config — see below.)*
@@ -213,7 +214,9 @@ SPA fallback so routes like `/c/:id`, `/gallery`, and `/artist/:slug` serve
   wrong elevation. The engine renders any manifest, which is what lets one demo
   grow into a platform.
 - **Persistence** ([src/persistence.ts](src/persistence.ts)) — local-first
-  library (localStorage manifests + IndexedDB stem blobs), plus export/import.
+  library (localStorage manifests + deduplicated IndexedDB stem blobs), plus
+  export/import. Multiple cloned tracks can independently place and mix one
+  shared audio asset.
 - **Cloud** ([src/cloud.ts](src/cloud.ts)) — publish uploads stems to Supabase
   Storage and the manifest to Postgres; the `/c/:id` viewer and artist pages
   fetch public rows back.
