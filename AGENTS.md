@@ -203,6 +203,12 @@ Prefer composing the full message as a temporary file and committing with:
 git commit -F /tmp/polyphonia-commit-msg.txt
 ```
 
+### Merging
+
+When integrating a feature branch into `main`, use a real merge commit
+(`git merge --no-ff`), not rebase + fast-forward. Preserve the branch's history
+and the merge point rather than flattening it into a linear history.
+
 ## Gotchas (hard-won — read before touching these areas)
 
 - **Audio sync:** never start stems independently. Use the engine's
