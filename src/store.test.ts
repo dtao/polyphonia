@@ -211,6 +211,63 @@ describe("store edit contracts", () => {
     expect(state.selectedMapPointKey).toBe("4.000,2.000");
   });
 
+  it("connects a moved endpoint into the middle of another segment", () => {
+    useStore.setState((state) => ({
+      composition: normalizeComposition({
+        ...state.composition,
+        map: {
+          ...state.composition.map,
+          preset: "custom",
+          segments: [
+            { id: "branch", start: [0, 0], end: [5, 0], width: 6 },
+            { id: "trunk", start: [10, 0], end: [10, 10], width: 8 },
+          ],
+          rooms: [{
+            id: "room-a",
+            center: [10, -4],
+            rotation: 0,
+            width: 8,
+            depth: 8,
+            height: 4,
+            entrances: [{ side: "north", width: 4, offset: 0 }],
+            attachment: { segmentId: "trunk", end: "start" },
+          }],
+          tiling: {
+            ...state.composition.map.tiling,
+            type: "path-loop",
+            pathLoop: {
+              start: { segmentId: "branch", end: "start" },
+              end: { segmentId: "trunk", end: "end" },
+            },
+          },
+          elevations: {
+            "10.000,0.000": 2,
+            "10.000,10.000": 6,
+          },
+        },
+      }),
+      selectedMapPointKey: "5.000,0.000",
+    }));
+
+    useStore.getState().moveMapPoint("5.000,0.000", [10.4, 5], 9);
+
+    const state = useStore.getState();
+    const joined = state.composition.map.segments.filter((segment) =>
+      [segment.start, segment.end].some((point) => point[0] === 10 && point[1] === 5),
+    );
+    const continuation = state.composition.map.segments.find((segment) =>
+      segment.id !== "trunk" && segment.start[0] === 10 && segment.start[1] === 5,
+    );
+    expect(joined).toHaveLength(3);
+    expect(state.composition.map.elevations?.["10.000,5.000"]).toBe(4);
+    expect(state.selectedMapPointKey).toBe("10.000,5.000");
+    expect(state.composition.map.rooms[0].attachment).toEqual({ segmentId: "trunk", end: "start" });
+    expect(state.composition.map.tiling.pathLoop?.end).toEqual({
+      segmentId: continuation?.id,
+      end: "end",
+    });
+  });
+
   it("keeps placed landmarks when changing detail packs", () => {
     useStore.getState().setEnvironment({
       pack: { id: "verdant-grove", variant: "temperate", quality: "auto" },

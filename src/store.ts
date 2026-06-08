@@ -20,7 +20,7 @@ import {
   defaultEnvironment,
   normalizeEnvironment,
 } from "./environment";
-import { attachmentForPoint, canAddBranchAtPoint, canAddPlatformAtPoint, canAddRoomAtPoint, CompositionMap, entranceDoorwayCenter, entranceLocalCenter, entranceOuterPoint, MAP_PRESETS, MapPlatform, MapRoom, MapWall, RoomEntrance, RoomSide, defaultMap, mapPointKey, normalizeMap, platformContains, platformElevation, pointInOriginalTile, roomContains, roomElevation, roomWorldPoint, surfaceHeightAt, WalkableSegment } from "./map";
+import { attachmentForPoint, canAddBranchAtPoint, canAddPlatformAtPoint, canAddRoomAtPoint, CompositionMap, entranceDoorwayCenter, entranceLocalCenter, entranceOuterPoint, MAP_PRESETS, MapPlatform, MapRoom, MapWall, RoomAttachment, RoomEntrance, RoomSide, defaultMap, mapPointKey, normalizeMap, platformContains, platformElevation, pointElevation, pointInOriginalTile, roomContains, roomElevation, roomWorldPoint, surfaceHeightAt, WalkableSegment } from "./map";
 import { ArtistIdentity } from "./artist";
 import {
   AuthUser,
@@ -323,6 +323,89 @@ function movedSegmentEndpoints(before: WalkableSegment[], after: WalkableSegment
     }
   }
   return moved;
+}
+
+const MAP_POINT_CONNECT_DISTANCE = 1.25;
+
+function connectMapPoint(
+  map: CompositionMap,
+  movingKey: string,
+  attempted: [number, number],
+  attemptedElevation: number,
+): { map: CompositionMap; point: [number, number]; elevation: number } {
+  let best: { segment: WalkableSegment; point: [number, number]; t: number; distance: number } | null = null;
+  for (const segment of map.segments) {
+    if (mapPointExists(segment, movingKey)) continue;
+    const dx = segment.end[0] - segment.start[0];
+    const dz = segment.end[1] - segment.start[1];
+    const lengthSq = dx * dx + dz * dz;
+    if (lengthSq < 0.000001) continue;
+    const t = Math.max(0, Math.min(1, ((attempted[0] - segment.start[0]) * dx + (attempted[1] - segment.start[1]) * dz) / lengthSq));
+    const point: [number, number] = [segment.start[0] + dx * t, segment.start[1] + dz * t];
+    const distance = Math.hypot(attempted[0] - point[0], attempted[1] - point[1]);
+    if (distance <= MAP_POINT_CONNECT_DISTANCE && (!best || distance < best.distance)) {
+      best = { segment, point, t, distance };
+    }
+  }
+  if (!best) return { map, point: attempted, elevation: attemptedElevation };
+
+  const target = best.t < 0.02 ? best.segment.start : best.t > 0.98 ? best.segment.end : best.point;
+  const targetKey = mapPointKey(target);
+  const startElevation = pointElevation(map, mapPointKey(best.segment.start));
+  const endElevation = pointElevation(map, mapPointKey(best.segment.end));
+  const elevation = startElevation + (endElevation - startElevation) * best.t;
+  if (targetKey === mapPointKey(best.segment.start) || targetKey === mapPointKey(best.segment.end)) {
+    return { map, point: target, elevation };
+  }
+
+  const continuationId = newId();
+  const first: WalkableSegment = {
+    ...best.segment,
+    end: target,
+    connections: best.segment.connections?.start
+      ? { start: best.segment.connections.start }
+      : undefined,
+  };
+  const second: WalkableSegment = {
+    ...best.segment,
+    id: continuationId,
+    start: target,
+    connections: best.segment.connections?.end
+      ? { end: best.segment.connections.end }
+      : undefined,
+  };
+  const remapFarEnd = (attachment: RoomAttachment | undefined): RoomAttachment | undefined =>
+    attachment?.segmentId === best.segment.id && attachment.end === "end"
+      ? { segmentId: continuationId, end: "end" }
+      : attachment;
+  const remapLoop = (loop: CompositionMap["loop"]): CompositionMap["loop"] =>
+    loop
+      ? {
+          start: remapFarEnd(loop.start),
+          end: remapFarEnd(loop.end),
+        }
+      : undefined;
+
+  return {
+    point: target,
+    elevation,
+    map: {
+      ...map,
+      segments: map.segments.flatMap((segment) =>
+        segment.id === best.segment.id ? [first, second] : [segment],
+      ),
+      rooms: map.rooms.map((room) => ({ ...room, attachment: remapFarEnd(room.attachment) })),
+      platforms: map.platforms.map((platform) => ({
+        ...platform,
+        attachment: remapFarEnd(platform.attachment),
+      })),
+      tiling: {
+        ...map.tiling,
+        pathLoop: remapLoop(map.tiling.pathLoop),
+      },
+      loop: remapLoop(map.loop),
+    },
+  };
 }
 
 function setConnectedEndpointElevations(
@@ -834,18 +917,19 @@ export const useStore = create<StoreState>((set, get) => ({
   moveMapPoint: (key, point, elevation) =>
     set((s) => {
       if (!s.composition.map.segments.some((segment) => mapPointExists(segment, key))) return s;
-      const nextKey = mapPointKey(point);
-      const elevations = { ...(s.composition.map.elevations ?? {}) };
+      const connected = connectMapPoint(s.composition.map, key, point, elevation);
+      const nextKey = mapPointKey(connected.point);
+      const elevations = { ...(connected.map.elevations ?? {}) };
       if (key !== nextKey) delete elevations[key];
-      if (elevation === 0) delete elevations[nextKey];
-      else elevations[nextKey] = elevation;
+      if (connected.elevation === 0) delete elevations[nextKey];
+      else elevations[nextKey] = connected.elevation;
       const nextMap = normalizeMap({
-        ...s.composition.map,
+        ...connected.map,
         preset: "custom",
-        segments: s.composition.map.segments.map((segment) => ({
+        segments: connected.map.segments.map((segment) => ({
           ...segment,
-          start: mapPointKey(segment.start) === key ? point : segment.start,
-          end: mapPointKey(segment.end) === key ? point : segment.end,
+          start: mapPointKey(segment.start) === key ? connected.point : segment.start,
+          end: mapPointKey(segment.end) === key ? connected.point : segment.end,
         })),
         elevations,
       });
