@@ -10,7 +10,7 @@ import { surfaceHeightAt } from "../map";
 // audio listener, so you can reposition a track and go hear it from elsewhere.
 export function EditControls() {
   const { camera } = useThree();
-  const start = useStore((s) => s.composition.map.start);
+  const compositionId = useStore((s) => s.composition.id);
   const map = useStore((s) => s.composition.map);
   const controls = useRef<any>(null);
   const keys = useRef<Record<string, boolean>>({});
@@ -32,7 +32,7 @@ export function EditControls() {
     c.target.set(viewState.x, groundY + 1.5, viewState.z);
     camera.position.set(viewState.x - viewState.fx * back, groundY + height, viewState.z - viewState.fz * back);
     c.update();
-  }, [camera, start.position, start.direction]);
+  }, [camera, compositionId]);
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
