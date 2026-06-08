@@ -97,8 +97,14 @@ Audio quality can be A/B tested with `audioQuality=full` or
 - **Edit** (toggle with the button or `Tab`): `WASD` pan · `Q`/`E` lower/raise
   elevation · drag to orbit/turn · scroll to zoom · click a pillar to select, then drag the gizmo to
   move it. Selected stems show Near/Far rings and a rolloff gradient on the
-  ground; the pillar size reflects volume. The Loop panel can audition the seam,
-  trim loop start/end, adjust crossfade, or disable looping. The Environment
+  ground; the pillar size reflects volume. A loop bar along the bottom shows the
+  whole composition loop with BPM beat markers and a live playhead. Selecting a
+  stem opens its inspector with a waveform meter: drag the in/out handles to set
+  a per-stem sub-loop (which plays once and trims to silence by default, or
+  tiles to fill the loop with "Repeat"). The Loop panel can audition the seam,
+  trim loop start/end, adjust crossfade, ring out tails (fold a stem's overrun
+  past the loop length back onto the start so reverb decays across the seam), or
+  disable looping. The Environment
   panel selects optional detail packs, imports materials/models, assigns map
   surfaces, and places landmarks. Selected walls use the same three-axis move
   gizmo as stems, with endpoint handles for reshaping. Selected path points use
@@ -198,7 +204,9 @@ SPA fallback so routes like `/c/:id`, `/gallery`, and `/artist/:slug` serve
   avoid crackle from audio underruns. Live setters let edits apply without
   restarting playback; loop buffers are padded/trimmed to a shared BPM-aligned
   musical length to hide MP3 encoder padding and keep every stem restarting
-  together.
+  together. With "ring out tails" enabled, a stem running slightly past that
+  length has its overrun (up to ~2 bars) folded back onto the loop start so
+  reverb tails carry across the seam.
 - **State** ([src/store.ts](src/store.ts)) — a Zustand store is the single source
   of truth: the current composition, the library, mode/selection, and the audio
   engine. The scene renders from it; edits flow back into it and out to the

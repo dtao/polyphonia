@@ -1,5 +1,6 @@
 import { useStore } from "../store";
 import { shortcutKeys } from "../shortcuts";
+import { StemLoopMeter } from "./StemLoopMeter";
 
 // Edit-mode inspector for the selected track. Every control applies live —
 // volume and falloff flow straight to the audio engine as you drag.
@@ -30,6 +31,8 @@ export function PropertiesPanel() {
           style={nameInput}
         />
       </div>
+
+      <StemLoopMeter track={track} />
 
       <Slider
         label="Max volume"
@@ -137,7 +140,7 @@ const panel: React.CSSProperties = {
   position: "absolute",
   bottom: 16,
   left: 16,
-  width: 240,
+  width: 300,
   boxSizing: "border-box",
   padding: 16,
   borderRadius: 12,

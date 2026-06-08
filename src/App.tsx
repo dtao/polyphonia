@@ -14,6 +14,7 @@ import { AddStem } from "./ui/AddStem";
 import { EntryScreen } from "./ui/EntryScreen";
 import { PublishControl } from "./ui/PublishControl";
 import { LoopPanel } from "./ui/LoopPanel";
+import { LoopBar } from "./ui/LoopBar";
 import { EnvironmentPanel } from "./ui/EnvironmentPanel";
 import { MapPanel } from "./ui/MapPanel";
 import { DebugPanel } from "./ui/DebugPanel";
@@ -306,6 +307,7 @@ export default function App() {
           )}
 
           <PropertiesPanel />
+          <LoopBar />
           <MapPointPanel />
           <MapSegmentPanel />
           <RoomPanel />

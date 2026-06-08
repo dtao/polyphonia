@@ -25,6 +25,7 @@ export function LoopPanel({ open, onOpen, onClose }: { open: boolean; onOpen: ()
   const start = comp.loopStart ?? 0;
   const endTrim = comp.loopEndTrim ?? 0;
   const crossfade = comp.loopCrossfade ?? 0.035;
+  const tail = comp.loopTail ?? false;
 
   if (!open) {
     return (
@@ -91,8 +92,19 @@ export function LoopPanel({ open, onOpen, onClose }: { open: boolean; onOpen: ()
         disabled={!enabled}
         onChange={(v) => setLoopSettings({ loopCrossfade: v })}
       />
+      <label style={{ ...toggle, marginTop: 10, opacity: enabled ? 1 : 0.45 }}>
+        <input
+          type="checkbox"
+          checked={tail}
+          disabled={!enabled}
+          onChange={(e) => setLoopSettings({ loopTail: e.target.checked })}
+        />
+        Ring out tails
+      </label>
       <div style={help}>
-        Audition plays the loop boundary: tail into start.
+        Audition plays the loop boundary: tail into start. Ring out tails folds a
+        stem's overrun past the loop length (up to ~2 bars) back onto the start,
+        so reverb decays across the seam.
       </div>
     </div>
   );
@@ -142,7 +154,7 @@ function LoopSlider({
 const panel: React.CSSProperties = {
   position: "absolute",
   left: "50%",
-  bottom: 16,
+  bottom: 64,
   zIndex: 30,
   transform: "translateX(-50%)",
   width: 280,
@@ -159,7 +171,7 @@ const panel: React.CSSProperties = {
 const collapsed: React.CSSProperties = {
   position: "absolute",
   left: "50%",
-  bottom: 16,
+  bottom: 64,
   zIndex: 10,
   transform: "translateX(-50%)",
   padding: "8px 14px",

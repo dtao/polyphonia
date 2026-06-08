@@ -31,6 +31,22 @@ export interface TrackDef {
   maxDistance?: number;
   /** How sharply volume drops with distance. */
   rolloff?: number;
+  /**
+   * Per-stem sub-loop in-point, in seconds into the decoded source audio. When
+   * set, the stem's loop begins here instead of at the shared loop start.
+   */
+  loopStart?: number;
+  /**
+   * Per-stem sub-loop out-point, in seconds into the decoded source audio. The
+   * region [loopStart, loopEnd] is this stem's loop. When shorter than the
+   * composition loop it is padded with silence (trim) unless loopRepeat is set.
+   */
+  loopEnd?: number;
+  /**
+   * When the sub-loop region is shorter than the composition loop, tile it to
+   * fill the loop instead of padding with silence. Off by default (trim).
+   */
+  loopRepeat?: boolean;
   /** Content hash of the stem audio, set in published manifests for change detection. */
   hash?: string;
 }
@@ -60,6 +76,13 @@ export interface Composition {
   loopEndTrim?: number;
   /** Seconds of end-to-start crossfade inside prepared loop buffers. */
   loopCrossfade?: number;
+  /**
+   * When a stem runs slightly past the musical loop length (e.g. a reverb
+   * tail trailing past 8 bars), fold that overrun back onto the start of the
+   * loop so the tail rings across the seam instead of being clipped. Capped to
+   * a couple of bars so genuinely longer stems are not folded in half.
+   */
+  loopTail?: boolean;
   /** Visual/acoustic environment metadata. */
   environment: EnvironmentSettings;
   /** Authored walkable area and simple boundary geometry. */
@@ -167,6 +190,7 @@ export function compositionRevision(comp: RevisionComposition): string {
       loopStart: comp.loopStart,
       loopEndTrim: comp.loopEndTrim,
       loopCrossfade: comp.loopCrossfade,
+      loopTail: comp.loopTail,
       environment: comp.environment,
       map: comp.map,
       tracks: (comp.tracks ?? []).map((track) => ({
@@ -180,6 +204,9 @@ export function compositionRevision(comp: RevisionComposition): string {
         refDistance: track.refDistance,
         maxDistance: track.maxDistance,
         rolloff: track.rolloff,
+        loopStart: track.loopStart,
+        loopEnd: track.loopEnd,
+        loopRepeat: track.loopRepeat,
       })),
     }),
   );

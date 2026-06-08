@@ -42,6 +42,13 @@ const REDUCED_TILE_AUDIO_PREVIEW_RADIUS = 80;
 const REDUCED_LISTENER_UPDATE_INTERVAL = 1 / 30;
 const REDUCED_ACOUSTICS_UPDATE_INTERVAL = 1 / 20;
 const REDUCED_ROOM_UPDATE_INTERVAL = 1 / 8;
+// How much overrun past the musical loop length we treat as a tail to fold
+// back across the seam. Capped so a genuinely longer stem (e.g. a 16-bar clip
+// against an 8-bar loop) is not folded onto its own first half.
+const LOOP_TAIL_MAX_BARS = 2;
+// Short fade applied to the very end of a folded tail so a capped (still
+// ringing) tail does not click where it stops.
+const LOOP_TAIL_FADE = 0.03;
 
 function preferredAudioPerformanceMode(): AudioPerformanceMode {
   if (typeof window !== "undefined") {
@@ -71,6 +78,8 @@ export class AudioEngine {
   private roomConvolver: ConvolverNode;
   private roomReverbWet: GainNode;
   private tracks: LiveTrack[] = [];
+  // Cached downsampled waveform peaks per track id, for the stem loop meter.
+  private peakCache = new Map<string, { bins: number; peaks: Float32Array }>();
   started = false;
   private loopStartTime = 0; // absolute ctx time the composition loop began
   private loopLength = 0; // musical loop length in seconds (0 = loop whole buffer)
@@ -79,6 +88,7 @@ export class AudioEngine {
   private loopStartOverride: number | undefined;
   private loopEndTrim = 0;
   private loopCrossfade = 0.035;
+  private loopTail = false;
   private bpm = 120;
   private auditionTimer: ReturnType<typeof setTimeout> | undefined;
   private auditionStartTime: number | null = null;
@@ -173,17 +183,18 @@ export class AudioEngine {
     if (this.loopEnabled && !this.loopLength) this.loopLength = this.inferLoopLength(loaded);
 
     for (const { def, buffer } of loaded) {
-      this.tracks.push(this.buildTrack(def, buffer, this.prepareLoopBuffer(buffer)));
+      this.tracks.push(this.buildTrack(def, buffer, this.prepareLoopBuffer(buffer, def)));
     }
   }
 
-  private setLoopFields(comp: Pick<Composition, "bpm" | "bars" | "loopEnabled" | "loopStart" | "loopEndTrim" | "loopCrossfade">): void {
+  private setLoopFields(comp: Pick<Composition, "bpm" | "bars" | "loopEnabled" | "loopStart" | "loopEndTrim" | "loopCrossfade" | "loopTail">): void {
     this.bpm = Math.max(1, comp.bpm || 120);
     this.loopEnabled = comp.loopEnabled ?? true;
     this.loopLength = comp.bars ? comp.bars * 4 * (60 / this.bpm) : 0;
     this.loopStartOverride = comp.loopStart;
     this.loopEndTrim = comp.loopEndTrim ?? 0;
     this.loopCrossfade = comp.loopCrossfade ?? 0.035;
+    this.loopTail = comp.loopTail ?? false;
   }
 
   // Seconds of (near-)silence before the first audible sample — i.e. the MP3
@@ -211,30 +222,80 @@ export class AudioEngine {
   // every loop iteration. MP3 decoders can leave tiny leading/trailing padding
   // even after loop points are set; looping a prepared buffer avoids drift and
   // hides small boundary clicks.
-  private prepareLoopBuffer(buffer: AudioBuffer): AudioBuffer {
+  private prepareLoopBuffer(buffer: AudioBuffer, def?: TrackDef): AudioBuffer {
     if (!this.loopEnabled) return buffer;
 
     const sr = buffer.sampleRate;
-    const trimStart = Math.max(0, this.loopStartOverride ?? this.loopOffset);
-    const trimEnd = Math.max(0, this.loopEndTrim);
+    const globalTrimStart = Math.max(0, this.loopStartOverride ?? this.loopOffset);
+    const globalTrimEnd = Math.max(0, this.loopEndTrim);
     const maxStartFrame = Math.max(0, buffer.length - 1);
-    const startFrame = Math.min(Math.round(trimStart * sr), maxStartFrame);
-    const availableFrames = Math.max(1, buffer.length - startFrame - Math.round(trimEnd * sr));
-    const targetFrames = this.loopLength ? Math.round(Math.max(0.1, this.loopLength - trimEnd) * sr) : availableFrames;
+
+    // A per-stem sub-loop in-point overrides the shared start trim.
+    const startSec = def?.loopStart != null ? Math.max(0, def.loopStart) : globalTrimStart;
+    const startFrame = Math.min(Math.round(startSec * sr), maxStartFrame);
+    const availableFrames = Math.max(1, buffer.length - startFrame - Math.round(globalTrimEnd * sr));
+
+    // Every prepared buffer is exactly loopFrames long so all stems restart
+    // together (the composition musical length, or the whole buffer when no
+    // musical length is known).
+    const targetFrames = this.loopLength ? Math.round(Math.max(0.1, this.loopLength - globalTrimEnd) * sr) : availableFrames;
     const loopFrames = Math.max(1, targetFrames);
     const out = this.ctx.createBuffer(buffer.numberOfChannels, loopFrames, sr);
+
+    // The stem's loop region. Default is the musical loop length, so audio past
+    // it is a foldable tail. A per-stem out-point shortens it; a shorter region
+    // is padded with silence (trim) unless loopRepeat tiles it to fill the loop.
+    const regionFrames = def?.loopEnd != null
+      ? Math.min(availableFrames, Math.max(1, Math.round((def.loopEnd - startSec) * sr)))
+      : Math.min(availableFrames, loopFrames);
+    const repeat = def?.loopRepeat ?? false;
+
+    // Frames running past the region end: a trailing reverb tail. When enabled
+    // (and not repeating) we fold up to LOOP_TAIL_MAX_BARS of it back onto the
+    // start so it rings across the seam instead of being clipped at the wrap.
+    const tailFrames = repeat ? 0 : this.tailFoldFrames(availableFrames - regionFrames, loopFrames, sr);
+
+    // The seam crossfade smooths a wrap from real audio back to the start. Skip
+    // it when a trimmed region leaves trailing silence (the loop restart is the
+    // stem's own clean onset, and a crossfade would bleed the start into the
+    // silence as a pre-echo).
+    const seamCrossfade = repeat || regionFrames >= loopFrames;
 
     for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
       const input = buffer.getChannelData(ch);
       const output = out.getChannelData(ch);
-      const copyFrames = Math.min(loopFrames, availableFrames);
-      for (let i = 0; i < copyFrames; i++) {
-        output[i] = input[startFrame + i] ?? 0;
+      for (let k = 0; k < loopFrames; k++) {
+        if (repeat) {
+          output[k] = input[startFrame + (k % regionFrames)] ?? 0;
+        } else {
+          output[k] = k < regionFrames ? (input[startFrame + k] ?? 0) : 0;
+        }
       }
-      this.crossfadeLoop(output, sr);
+      // Crossfade the loop region first so the seam uses the clean loop start,
+      // then add the tail on top of the head.
+      if (seamCrossfade) this.crossfadeLoop(output, sr);
+      if (tailFrames > 0) {
+        const tailStart = startFrame + regionFrames;
+        const fadeFrames = Math.min(Math.floor(LOOP_TAIL_FADE * sr), tailFrames);
+        for (let j = 0; j < tailFrames; j++) {
+          const fromEnd = tailFrames - j;
+          const gain = fadeFrames > 0 && fromEnd < fadeFrames ? fromEnd / fadeFrames : 1;
+          output[j] += (input[tailStart + j] ?? 0) * gain;
+        }
+      }
     }
 
     return out;
+  }
+
+  // How many overrun frames to fold back across the loop seam. Zero unless the
+  // tail option is on, a musical loop length is known, and audio actually runs
+  // past the loop region; capped to LOOP_TAIL_MAX_BARS and to one loop length.
+  private tailFoldFrames(overrun: number, loopFrames: number, sampleRate: number): number {
+    if (!this.loopTail || !this.loopLength) return 0;
+    if (overrun <= 0) return 0;
+    const maxTail = Math.round(LOOP_TAIL_MAX_BARS * 4 * (60 / this.bpm) * sampleRate);
+    return Math.min(overrun, maxTail, loopFrames);
   }
 
   private crossfadeLoop(data: Float32Array, sampleRate: number): void {
@@ -312,7 +373,7 @@ export class AudioEngine {
   // amount the existing loop has already advanced.
   addLiveTrack(def: TrackDef, buffer: AudioBuffer): void {
     if (this.loopEnabled && !this.loopLength) this.loopLength = this.inferLoopLength([{ buffer }]);
-    const t = this.buildTrack(def, buffer, this.prepareLoopBuffer(buffer));
+    const t = this.buildTrack(def, buffer, this.prepareLoopBuffer(buffer, def));
     this.tracks.push(t);
     if (this.started) {
       const when = this.ctx.currentTime + 0.06;
@@ -328,7 +389,7 @@ export class AudioEngine {
   duplicateLiveTrack(sourceId: string, def: TrackDef): void {
     const source = this.find(sourceId);
     if (!source) return;
-    const t = this.buildTrack(def, source.originalBuffer, this.prepareLoopBuffer(source.originalBuffer));
+    const t = this.buildTrack(def, source.originalBuffer, this.prepareLoopBuffer(source.originalBuffer, def));
     this.tracks.push(t);
     if (this.started) {
       const when = this.ctx.currentTime + 0.06;
@@ -338,7 +399,7 @@ export class AudioEngine {
     }
   }
 
-  updateLoopSettings(comp: Pick<Composition, "bpm" | "bars" | "loopEnabled" | "loopStart" | "loopEndTrim" | "loopCrossfade">): void {
+  updateLoopSettings(comp: Pick<Composition, "bpm" | "bars" | "loopEnabled" | "loopStart" | "loopEndTrim" | "loopCrossfade" | "loopTail">): void {
     clearTimeout(this.auditionTimer);
     this.auditionStartTime = null;
     const wasStarted = this.started;
@@ -355,7 +416,7 @@ export class AudioEngine {
       }
       t.source?.disconnect();
       t.source = undefined;
-      t.buffer = this.prepareLoopBuffer(t.originalBuffer);
+      t.buffer = this.prepareLoopBuffer(t.originalBuffer, t.def);
     }
 
     if (!wasStarted) return;
@@ -597,6 +658,63 @@ export class AudioEngine {
     this.updateTrackAcoustics(t, this.ctx.currentTime);
   }
 
+  // Rebuild one stem's loop buffer after a sub-loop edit and restart just that
+  // source, phase-aligned to the running loop. Loop-region changes alter the
+  // buffer contents, so (like updateLoopSettings) the source must be recreated.
+  setTrackLoop(id: string, loop: { loopStart?: number | null; loopEnd?: number | null; loopRepeat?: boolean }): void {
+    const t = this.find(id);
+    if (!t) return;
+    const next = { ...t.def };
+    if ("loopStart" in loop) next.loopStart = loop.loopStart ?? undefined;
+    if ("loopEnd" in loop) next.loopEnd = loop.loopEnd ?? undefined;
+    if ("loopRepeat" in loop) next.loopRepeat = loop.loopRepeat;
+    t.def = next;
+    t.buffer = this.prepareLoopBuffer(t.originalBuffer, t.def);
+    if (!this.started) return;
+    try {
+      t.source?.stop();
+    } catch {
+      /* already stopped */
+    }
+    t.source?.disconnect();
+    t.source = undefined;
+    const when = this.ctx.currentTime + 0.04;
+    const len = this.regionLength(t.buffer);
+    const phase = this.loopEnabled
+      ? ((((when - this.loopStartTime) % len) + len) % len)
+      : Math.min(Math.max(0, when - this.loopStartTime), len - 0.001);
+    this.startSource(t, when, phase);
+  }
+
+  // Downsampled peak envelope of a stem's decoded source audio plus its
+  // duration, for drawing the stem loop meter. Cached per track id.
+  trackPeaks(id: string, bins: number): { peaks: Float32Array; duration: number } | null {
+    const t = this.find(id);
+    if (!t) return null;
+    const buffer = t.originalBuffer;
+    const n = Math.max(1, Math.floor(bins));
+    const cached = this.peakCache.get(id);
+    if (cached && cached.bins === n) return { peaks: cached.peaks, duration: buffer.duration };
+    const peaks = new Float32Array(n);
+    const frames = buffer.length;
+    const per = frames / n;
+    for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+      const data = buffer.getChannelData(ch);
+      for (let b = 0; b < n; b++) {
+        const start = Math.floor(b * per);
+        const end = Math.min(frames, Math.floor((b + 1) * per));
+        let peak = 0;
+        for (let i = start; i < end; i++) {
+          const v = Math.abs(data[i]);
+          if (v > peak) peak = v;
+        }
+        if (peak > peaks[b]) peaks[b] = peak;
+      }
+    }
+    this.peakCache.set(id, { bins: n, peaks });
+    return { peaks, duration: buffer.duration };
+  }
+
   // Stop everything and release the audio context. The engine is dead after.
   dispose(): void {
     clearTimeout(this.auditionTimer);
@@ -626,6 +744,7 @@ export class AudioEngine {
     t.analyser.disconnect();
     this.disconnectTrackInstances(t);
     this.tracks.splice(i, 1);
+    this.peakCache.delete(id);
   }
 
   // Current audio level (0..1) for a track, for visual reactivity.

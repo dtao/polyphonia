@@ -91,9 +91,16 @@ describe("composition compatibility and revisions", () => {
       ...defaultComposition,
       map: { ...defaultComposition.map, wallHeight: 3 },
     };
+    const changedLoopTail = { ...defaultComposition, loopTail: true };
+    const changedStemLoop = {
+      ...defaultComposition,
+      tracks: [{ ...defaultComposition.tracks[0], loopStart: 0.5, loopEnd: 2, loopRepeat: true }, ...defaultComposition.tracks.slice(1)],
+    };
 
     expect(compositionRevision(changedVolume)).not.toBe(baseline);
     expect(compositionRevision(changedEnvironment)).not.toBe(baseline);
     expect(compositionRevision(changedMap)).not.toBe(baseline);
+    expect(compositionRevision(changedLoopTail)).not.toBe(baseline);
+    expect(compositionRevision(changedStemLoop)).not.toBe(baseline);
   });
 });

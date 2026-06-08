@@ -222,12 +222,16 @@ interface StoreState {
   setTrackMinVolume: (id: string, minVolume: number) => void;
   setTrackPosition: (id: string, position: [number, number, number]) => void;
   setTrackFalloff: (id: string, falloff: Partial<Falloff>) => void;
+  // Per-stem sub-loop in/out points (seconds into the source) and repeat flag.
+  setTrackLoop: (id: string, loop: { loopStart?: number | null; loopEnd?: number | null; loopRepeat?: boolean }) => void;
+  // Downsampled waveform peaks + source duration for the selected stem's meter.
+  trackPeaks: (id: string, bins: number) => { peaks: Float32Array; duration: number } | null;
   renameTrack: (id: string, name: string) => void;
   setTrackColor: (id: string, color: string) => void;
   deleteTrack: (id: string) => void;
   duplicateTrack: (id: string) => Promise<void>;
   addStem: (file: File) => Promise<void>;
-  setLoopSettings: (settings: Partial<Pick<Composition, "loopEnabled" | "loopStart" | "loopEndTrim" | "loopCrossfade">>) => void;
+  setLoopSettings: (settings: Partial<Pick<Composition, "loopEnabled" | "loopStart" | "loopEndTrim" | "loopCrossfade" | "loopTail">>) => void;
   auditionLoopSeam: () => void;
   loopProgress: () => { mode: "playing" | "audition"; position: number; duration: number } | null;
   setEnvironment: (environment: Partial<EnvironmentSettings>) => void;
@@ -1342,6 +1346,16 @@ export const useStore = create<StoreState>((set, get) => ({
     set((s) => ({ ...withHistory(s, `track:${id}:falloff`), composition: patchTrack(s.composition, id, falloff) }));
     get().engine?.setFalloff(id, falloff);
   },
+
+  setTrackLoop: (id, loop) => {
+    const patch: Partial<TrackDef> = {};
+    if ("loopStart" in loop) patch.loopStart = loop.loopStart ?? undefined;
+    if ("loopEnd" in loop) patch.loopEnd = loop.loopEnd ?? undefined;
+    if ("loopRepeat" in loop) patch.loopRepeat = loop.loopRepeat;
+    set((s) => ({ ...withHistory(s, `track:${id}:loop`), composition: patchTrack(s.composition, id, patch) }));
+    get().engine?.setTrackLoop(id, loop);
+  },
+  trackPeaks: (id, bins) => get().engine?.trackPeaks(id, bins) ?? null,
 
   // Name and color are presentation-only — no audio side effects.
   renameTrack: (id, name) => set((s) => ({ ...withHistory(s, `track:${id}:name`), composition: patchTrack(s.composition, id, { name }) })),
