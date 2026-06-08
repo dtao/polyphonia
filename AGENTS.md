@@ -205,9 +205,9 @@ git commit -F /tmp/polyphonia-commit-msg.txt
 
 ### Merging
 
-When integrating a feature branch into `main`, use a real merge commit
-(`git merge --no-ff`), not rebase + fast-forward. Preserve the branch's history
-and the merge point rather than flattening it into a linear history.
+Do not rebase feature branches to integrate them into `main`. A fast-forward or
+a real merge commit (`git merge --no-ff`) are both fine — the only firm rule is
+to avoid rewriting history with rebase.
 
 ## Gotchas (hard-won — read before touching these areas)
 
