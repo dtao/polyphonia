@@ -14,6 +14,17 @@ export type StemSource =
   // A real audio file. Drop stems in /public/stems and point here.
   | { kind: "file"; url: string };
 
+export interface StemDirectivity {
+  /** Horizontal unit direction in map X/Z coordinates. */
+  direction: [number, number];
+  /** Full-volume cone width in degrees. */
+  width: number;
+  /** Additional angular fade region outside the full-volume cone. */
+  dispersion: number;
+  /** Gain beyond the outer cone. */
+  outsideGain: number;
+}
+
 export interface TrackDef {
   /** Stable identity, independent of name — so renaming never breaks lookups. */
   id: string;
@@ -31,6 +42,8 @@ export interface TrackDef {
   maxDistance?: number;
   /** How sharply volume drops with distance. */
   rolloff?: number;
+  /** Optional speaker-like directional output; absent means omnidirectional. */
+  directivity?: StemDirectivity;
   /** Content hash of the stem audio, set in published manifests for change detection. */
   hash?: string;
 }
@@ -144,6 +157,30 @@ export function normalizeComposition(comp: Composition): Composition {
     updatedAt: comp.updatedAt ?? comp.createdAt ?? now,
     environment: normalizeEnvironment(comp.environment),
     map: normalizeMap(comp.map),
+    tracks: comp.tracks.map(normalizeTrack),
+  };
+}
+
+function normalizeTrack(track: TrackDef): TrackDef {
+  const directivity = normalizeDirectivity(track.directivity);
+  return {
+    ...track,
+    ...(directivity ? { directivity } : { directivity: undefined }),
+  };
+}
+
+function normalizeDirectivity(value: StemDirectivity | undefined): StemDirectivity | undefined {
+  if (!value || !Array.isArray(value.direction) || value.direction.length !== 2) return undefined;
+  const [x, z] = value.direction;
+  if (![x, z, value.width, value.dispersion, value.outsideGain].every(Number.isFinite)) return undefined;
+  const length = Math.hypot(x, z);
+  if (length < 0.000001) return undefined;
+  const width = Math.max(1, Math.min(360, value.width));
+  return {
+    direction: [x / length, z / length],
+    width,
+    dispersion: Math.max(0, Math.min(360 - width, value.dispersion)),
+    outsideGain: Math.max(0, Math.min(1, value.outsideGain)),
   };
 }
 
@@ -180,6 +217,7 @@ export function compositionRevision(comp: RevisionComposition): string {
         refDistance: track.refDistance,
         maxDistance: track.maxDistance,
         rolloff: track.rolloff,
+        directivity: track.directivity,
       })),
     }),
   );

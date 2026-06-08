@@ -9,7 +9,16 @@ const TRACK_COLORS = ["#5b8cff", "#ff7a6b", "#ffd166", "#b96bff", "#56e0c0", "#f
 export function PropertiesPanel() {
   const mode = useStore((s) => s.mode);
   const track = useStore((s) => s.composition.tracks.find((t) => t.id === s.selectedId));
-  const { renameTrack, setTrackColor, setTrackVolume, setTrackMinVolume, setTrackFalloff, deleteTrack, duplicateTrack } = useStore.getState();
+  const {
+    renameTrack,
+    setTrackColor,
+    setTrackVolume,
+    setTrackMinVolume,
+    setTrackFalloff,
+    setTrackDirectivity,
+    deleteTrack,
+    duplicateTrack,
+  } = useStore.getState();
 
   if (mode !== "edit" || !track) return null;
 
@@ -17,6 +26,10 @@ export function PropertiesPanel() {
   const far = Math.max(track.maxDistance ?? 40, near + 1);
   const maxVolume = track.volume ?? 1;
   const minVolume = Math.min(track.minVolume ?? 0, maxVolume);
+  const directivity = track.directivity;
+  const directionDegrees = directivity
+    ? (Math.atan2(directivity.direction[0], -directivity.direction[1]) * 180 / Math.PI + 360) % 360
+    : 0;
 
   return (
     <div style={panel} data-stem-panel>
@@ -80,6 +93,74 @@ export function PropertiesPanel() {
         step={0.1}
         onChange={(v) => setTrackFalloff(track.id, { rolloff: v })}
       />
+
+      <label style={toggleRow}>
+        <input
+          type="checkbox"
+          checked={Boolean(directivity)}
+          onChange={(event) =>
+            setTrackDirectivity(
+              track.id,
+              event.target.checked
+                ? { direction: [0, -1], width: 90, dispersion: 90, outsideGain: 0.1 }
+                : undefined,
+            )
+          }
+        />
+        Directional speaker
+      </label>
+      {directivity && (
+        <div style={directivityGroup}>
+          <Slider
+            label="Direction"
+            help="0° points north; 90° points east."
+            value={directionDegrees}
+            min={0}
+            max={359}
+            step={1}
+            onChange={(degrees) => {
+              const radians = degrees * Math.PI / 180;
+              setTrackDirectivity(track.id, {
+                ...directivity,
+                direction: [Math.sin(radians), -Math.cos(radians)],
+              });
+            }}
+          />
+          <Slider
+            label="Beam width"
+            help="Full-volume angle in front of the stem."
+            value={directivity.width}
+            min={1}
+            max={360}
+            step={1}
+            onChange={(width) =>
+              setTrackDirectivity(track.id, {
+                ...directivity,
+                width,
+                dispersion: Math.min(directivity.dispersion, 360 - width),
+              })
+            }
+          />
+          <Slider
+            label="Dispersion"
+            help="Angular fade from the beam to the outside level."
+            value={directivity.dispersion}
+            min={0}
+            max={360 - directivity.width}
+            step={1}
+            onChange={(dispersion) => setTrackDirectivity(track.id, { ...directivity, dispersion })}
+          />
+          <Slider
+            label="Outside level"
+            help="Volume heard beyond the directional cone."
+            value={directivity.outsideGain}
+            min={0}
+            max={1}
+            step={0.01}
+            onChange={(outsideGain) => setTrackDirectivity(track.id, { ...directivity, outsideGain })}
+          />
+        </div>
+      )}
 
       <div style={actionRow}>
         <button
@@ -203,6 +284,8 @@ const panel: React.CSSProperties = {
   bottom: 16,
   left: 16,
   width: 240,
+  maxHeight: "calc(100vh - 90px)",
+  overflowY: "auto",
   boxSizing: "border-box",
   padding: 16,
   borderRadius: 12,
@@ -223,6 +306,22 @@ const nameInput: React.CSSProperties = {
   color: "white",
   padding: "6px 8px",
   fontSize: 15,
+};
+
+const toggleRow: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 7,
+  margin: "4px 0 10px",
+  fontSize: 12,
+  color: "rgba(255,255,255,0.82)",
+  cursor: "pointer",
+};
+
+const directivityGroup: React.CSSProperties = {
+  paddingTop: 2,
+  marginBottom: 4,
+  borderTop: "1px solid rgba(255,255,255,0.08)",
 };
 
 const colorChooser: React.CSSProperties = {

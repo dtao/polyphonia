@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import * as THREE from "three";
-import { Composition, TrackDef, compositionRevision, defaultComposition, normalizeComposition, touchComposition } from "./composition";
+import { Composition, StemDirectivity, TrackDef, compositionRevision, defaultComposition, normalizeComposition, touchComposition } from "./composition";
 import { AudioEngine, AudioLoadProgress } from "./audio/AudioEngine";
 import {
   SerializedComposition,
@@ -224,6 +224,7 @@ interface StoreState {
   setTrackMinVolume: (id: string, minVolume: number) => void;
   setTrackPosition: (id: string, position: [number, number, number]) => void;
   setTrackFalloff: (id: string, falloff: Partial<Falloff>) => void;
+  setTrackDirectivity: (id: string, directivity: StemDirectivity | undefined) => void;
   renameTrack: (id: string, name: string) => void;
   setTrackColor: (id: string, color: string) => void;
   deleteTrack: (id: string) => void;
@@ -1442,6 +1443,14 @@ export const useStore = create<StoreState>((set, get) => ({
   setTrackFalloff: (id, falloff) => {
     set((s) => ({ ...withHistory(s, `track:${id}:falloff`), composition: patchTrack(s.composition, id, falloff) }));
     get().engine?.setFalloff(id, falloff);
+  },
+
+  setTrackDirectivity: (id, directivity) => {
+    set((s) => ({
+      ...withHistory(s, `track:${id}:directivity`),
+      composition: patchTrack(s.composition, id, { directivity }),
+    }));
+    get().engine?.setDirectivity(id, directivity);
   },
 
   // Name and color are presentation-only — no audio side effects.

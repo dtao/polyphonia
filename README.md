@@ -44,7 +44,9 @@ these spatial compositions.
   wall thickness controls, so thin barriers lightly darken sound while thick
   barriers heavily damp it.
 - **Edit** — an overhead edit mode to place tracks in space (drag gizmo), and a
-  properties panel to rename, recolor, set volume, and tune distance falloff.
+  properties panel to rename, recolor, set volume, tune distance falloff, or
+  point a stem like a directional speaker with configurable beam width and
+  dispersion.
 - **Build from scratch** — create a new composition (title / BPM, plus an
   artist name for local-only use) and add stems by file picker or
   drag-and-drop; uploads drop into the running loop in time.
@@ -100,7 +102,8 @@ Audio quality can be A/B tested with `audioQuality=full` or
   ground; the pillar size reflects volume. The Loop panel can audition the seam,
   trim loop start/end, adjust crossfade, or disable looping. The Environment
   panel selects optional detail packs, imports materials/models, assigns map
-  surfaces, and places landmarks. Selected walls use the same three-axis move
+  surfaces, and places landmarks. Directional stems show their heading and outer
+  cone on the ground while selected. Selected walls use the same three-axis move
   gizmo as stems, with endpoint handles for reshaping. Selected path points use
   that three-axis gizmo too, moving connected branches in X/Z and setting ramp
   elevation on Y.

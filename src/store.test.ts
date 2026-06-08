@@ -47,6 +47,7 @@ describe("store edit contracts", () => {
       setVolume: vi.fn(),
       setPosition: vi.fn(),
       setFalloff: vi.fn(),
+      setDirectivity: vi.fn(),
       replaceComposition: vi.fn().mockResolvedValue(undefined),
     };
     useStore.setState({ engine: engine as any });
@@ -55,24 +56,42 @@ describe("store edit contracts", () => {
     store.setTrackVolume("bass", 0.4);
     store.setTrackPosition("bass", [3, 2, -4]);
     store.setTrackFalloff("bass", { rolloff: 2 });
+    store.setTrackDirectivity("bass", {
+      direction: [1, 0],
+      width: 90,
+      dispersion: 60,
+      outsideGain: 0.15,
+    });
 
     expect(useStore.getState().composition.tracks[0]).toMatchObject({
       volume: 0.4,
       position: [3, 2, -4],
       rolloff: 2,
+      directivity: {
+        direction: [1, 0],
+        width: 90,
+        dispersion: 60,
+        outsideGain: 0.15,
+      },
     });
     expect(engine.setVolume).toHaveBeenCalledWith("bass", 0.4);
     expect(engine.setPosition).toHaveBeenCalledWith("bass", [3, 2, -4]);
     expect(engine.setFalloff).toHaveBeenCalledWith("bass", { rolloff: 2 });
-    expect(useStore.getState().undoStack).toHaveLength(3);
+    expect(engine.setDirectivity).toHaveBeenCalledWith("bass", {
+      direction: [1, 0],
+      width: 90,
+      dispersion: 60,
+      outsideGain: 0.15,
+    });
+    expect(useStore.getState().undoStack).toHaveLength(4);
 
     await useStore.getState().undo();
-    expect(useStore.getState().composition.tracks[0].rolloff).toBeUndefined();
+    expect(useStore.getState().composition.tracks[0].directivity).toBeUndefined();
     expect(useStore.getState().redoStack).toHaveLength(1);
     expect(engine.replaceComposition).toHaveBeenCalledTimes(1);
 
     await useStore.getState().redo();
-    expect(useStore.getState().composition.tracks[0].rolloff).toBe(2);
+    expect(useStore.getState().composition.tracks[0].directivity?.width).toBe(90);
     expect(engine.replaceComposition).toHaveBeenCalledTimes(2);
   });
 

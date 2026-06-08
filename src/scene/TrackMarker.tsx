@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useFrame, ThreeEvent } from "@react-three/fiber";
-import { Billboard, Text } from "@react-three/drei";
+import { Billboard, Line, Text } from "@react-three/drei";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
 import { isPointInsideMap, surfaceHeightAt } from "../map";
@@ -153,6 +153,7 @@ export function TrackMarker({
       {mode === "edit" && selected && (
         <group position={[0, floorY - stemY, 0]}>
           <FalloffMap track={track} />
+          {track.directivity && <DirectivityGuide track={track} />}
         </group>
       )}
       <mesh ref={footprint} position={[0, footprintHeight, 0]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -223,6 +224,34 @@ export function TrackMarker({
             {track.name}
           </Text>
         </Billboard>
+      )}
+    </group>
+  );
+}
+
+function DirectivityGuide({ track }: { track: TrackDef }) {
+  const directivity = track.directivity;
+  if (!directivity) return null;
+  const outerAngle = Math.min(360, directivity.width + directivity.dispersion);
+  const halfAngle = outerAngle * Math.PI / 360;
+  const [x, z] = directivity.direction;
+  const rotate = (angle: number): [number, number] => {
+    const c = Math.cos(angle);
+    const s = Math.sin(angle);
+    return [x * c + z * s, -x * s + z * c];
+  };
+  const left = rotate(-halfAngle);
+  const right = rotate(halfAngle);
+  const length = Math.min(track.maxDistance ?? 40, 8);
+  const y = 0.14;
+  return (
+    <group>
+      <Line points={[[0, y, 0], [x * length, y, z * length]]} color={track.color} lineWidth={2.4} transparent opacity={0.95} />
+      {outerAngle < 359 && (
+        <>
+          <Line points={[[0, y, 0], [left[0] * length, y, left[1] * length]]} color={track.color} lineWidth={1.4} transparent opacity={0.58} />
+          <Line points={[[0, y, 0], [right[0] * length, y, right[1] * length]]} color={track.color} lineWidth={1.4} transparent opacity={0.58} />
+        </>
       )}
     </group>
   );
