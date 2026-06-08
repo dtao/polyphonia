@@ -1541,6 +1541,7 @@ export const useStore = create<StoreState>((set, get) => ({
   newComposition: (meta) => {
     const { composition, library } = get();
     const now = new Date().toISOString();
+    const { landmarks: _landmarks, ...environment } = composition.environment;
     revokeBlobUrls(composition);
     const comp: Composition = {
       id: newId(),
@@ -1551,7 +1552,7 @@ export const useStore = create<StoreState>((set, get) => ({
       artistAvatarUrl: get().accountArtist?.artistAvatarUrl,
       artistAvatarEmailHash: get().accountArtist?.artistAvatarEmailHash,
       bpm: meta.bpm || 120,
-      environment: get().composition.environment,
+      environment,
       map: normalizeMap(MAP_PRESETS.line),
       tracks: [],
       createdAt: now,
@@ -1560,7 +1561,14 @@ export const useStore = create<StoreState>((set, get) => ({
     const next = upsert(upsert(library, serializeComposition(composition)), serializeComposition(comp));
     moveViewToMapStart(comp.map);
     clearHistoryMarkers();
-    set({ composition: comp, selectedId: null, library: next, undoStack: [], redoStack: [] });
+    set({
+      composition: comp,
+      selectedId: null,
+      selectedLandmarkId: null,
+      library: next,
+      undoStack: [],
+      redoStack: [],
+    });
     persistLibrary(next, comp.id);
   },
 

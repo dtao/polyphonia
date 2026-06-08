@@ -225,6 +225,35 @@ describe("store edit contracts", () => {
     expect(useStore.getState().composition.environment.landmarks).toEqual([landmark]);
   });
 
+  it("starts new compositions without placed landmarks", () => {
+    useStore.setState((state) => ({
+      composition: normalizeComposition({
+        ...state.composition,
+        environment: {
+          pack: { id: "verdant-grove", variant: "temperate", quality: "high" },
+          surfaces: { floor: "moss", wall: "stone" },
+          landmarks: [{
+            id: "landmark-a",
+            assetId: "evergreen",
+            packId: "verdant-grove",
+            position: [2, 0, 3],
+            rotation: [0, 0, 0],
+            scale: [1, 1, 1],
+          }],
+        },
+      }),
+      selectedLandmarkId: "landmark-a",
+    }));
+
+    useStore.getState().newComposition({ title: "Empty", bpm: 100 });
+
+    expect(useStore.getState().composition.environment).toEqual({
+      pack: { id: "verdant-grove", variant: "temperate", quality: "high" },
+      surfaces: { floor: "moss", wall: "stone" },
+    });
+    expect(useStore.getState().selectedLandmarkId).toBeNull();
+  });
+
   it("persists vertical wall movement and keeps it when cloning", () => {
     Object.assign(viewState, { x: 0, y: 0, z: 0, fx: 0, fz: -1 });
     useStore.getState().addWall();
