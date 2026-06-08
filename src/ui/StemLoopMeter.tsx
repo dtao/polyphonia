@@ -112,7 +112,7 @@ export function StemLoopMeter({ track }: { track: TrackDef }) {
     <div style={{ marginBottom: 10 }}>
       <div style={headRow}>
         <span>Stem loop</span>
-        <span>{formatTime(regionLen)} region</span>
+        <span>{formatBeats(regionLen / beatLength)} beats</span>
       </div>
       <div ref={trackRef} style={meterTrack}>
         <canvas ref={canvasRef} style={canvasStyle} />
@@ -191,8 +191,11 @@ function clamp(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v));
 }
 
-function formatTime(seconds: number): string {
-  return `${seconds.toFixed(2)}s`;
+// Whole beats render cleanly; partial regions (from free handle drags) keep one
+// decimal so the readout still reflects the dragged length.
+function formatBeats(beats: number): string {
+  const rounded = Math.round(beats * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
 const headRow: React.CSSProperties = {

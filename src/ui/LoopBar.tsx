@@ -31,6 +31,7 @@ export function LoopBar() {
 
   const beats = Math.max(1, Math.round(duration / beatLength));
   const playFrac = progress ? Math.min(1, Math.max(0, progress.position / duration)) : 0;
+  const currentBeat = Math.min(beats, Math.floor((progress?.position ?? 0) / beatLength) + 1);
 
   return (
     <div style={wrap} data-loop-bar>
@@ -38,7 +39,7 @@ export function LoopBar() {
         <span>{bars ? `${bars} bars` : "loop"} · {Math.round(bpm)} BPM</span>
         <span>
           {progress?.mode === "audition" ? "seam · " : ""}
-          {formatTime(progress?.position ?? 0)} / {formatTime(duration)}
+          beat {currentBeat}/{beats}
         </span>
       </div>
       <div style={{ ...track, opacity: loopEnabled ? 1 : 0.4 }}>
@@ -63,10 +64,6 @@ export function LoopBar() {
       </div>
     </div>
   );
-}
-
-function formatTime(seconds: number): string {
-  return `${seconds.toFixed(2)}s`;
 }
 
 const wrap: React.CSSProperties = {
