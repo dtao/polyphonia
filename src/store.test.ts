@@ -95,6 +95,29 @@ describe("store edit contracts", () => {
     expect(engine.replaceComposition).toHaveBeenCalledTimes(2);
   });
 
+  it("clones an uploaded track without copying its audio blob", async () => {
+    const source = {
+      ...defaultComposition.tracks[0],
+      id: "uploaded",
+      source: { kind: "file" as const, url: "blob:http://localhost/uploaded" },
+    };
+    const engine = { duplicateLiveTrack: vi.fn() };
+    useStore.setState((state) => ({
+      composition: { ...state.composition, tracks: [source] },
+      engine: engine as any,
+    }));
+
+    await useStore.getState().duplicateTrack(source.id);
+
+    const tracks = useStore.getState().composition.tracks;
+    expect(tracks).toHaveLength(2);
+    expect(tracks[1]).toMatchObject({
+      audioAssetId: source.id,
+      source: source.source,
+    });
+    expect(engine.duplicateLiveTrack).toHaveBeenCalledWith(source.id, tracks[1]);
+  });
+
   it("keeps editor object selections mutually exclusive", () => {
     const store = useStore.getState();
 

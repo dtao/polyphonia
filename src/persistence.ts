@@ -1,4 +1,10 @@
-import { Composition, TrackDef, defaultComposition, normalizeComposition } from "./composition";
+import {
+  Composition,
+  TrackDef,
+  audioAssetKey,
+  defaultComposition,
+  normalizeComposition,
+} from "./composition";
 import {
   detailPackBundleForId,
   importDetailPackPayload,
@@ -15,9 +21,9 @@ import {
 
 // Local-first persistence. A *library* of composition manifests (small JSON)
 // lives in localStorage; uploaded stem audio (large binary) lives in IndexedDB,
-// keyed by track id. An uploaded stem's source serializes to a {kind:"stored"}
-// marker and rehydrates to an object URL on load, so the rest of the app only
-// ever sees normal "file" sources.
+// keyed by audio asset id. An uploaded stem's source serializes to a
+// {kind:"stored"} marker and rehydrates to an object URL on load, so the rest
+// of the app only ever sees normal "file" sources.
 
 // ===== IndexedDB blob store (tiny, dependency-free) =====
 
@@ -42,18 +48,26 @@ export function serializeComposition(comp: Composition): SerializedComposition {
   const normalized = normalizeComposition(comp);
   return {
     ...normalized,
-    tracks: normalized.tracks.map((t) => (isUploaded(t) ? { ...t, source: { kind: "stored", key: t.id } } : t)),
+    tracks: normalized.tracks.map((t) =>
+      isUploaded(t) ? { ...t, audioAssetId: audioAssetKey(t), source: { kind: "stored", key: audioAssetKey(t) } } : t,
+    ),
   };
 }
 
 // Manifest -> runtime composition, reading stored stems back into object URLs.
 export async function resolveComposition(saved: SerializedComposition): Promise<Composition> {
   const tracks: TrackDef[] = [];
+  const urls = new Map<string, string>();
   for (const t of saved.tracks) {
     if (t.source.kind === "stored") {
       const blob = await stemGet(t.source.key);
       if (!blob) continue; // stem audio missing — drop the track
-      tracks.push({ ...t, source: { kind: "file", url: URL.createObjectURL(blob) } });
+      let url = urls.get(t.source.key);
+      if (!url) {
+        url = URL.createObjectURL(blob);
+        urls.set(t.source.key, url);
+      }
+      tracks.push({ ...t, audioAssetId: t.audioAssetId ?? t.source.key, source: { kind: "file", url } });
     } else {
       tracks.push({ ...t, source: t.source });
     }
@@ -108,12 +122,18 @@ export async function copyComposition(s: SerializedComposition): Promise<Seriali
   const source: SerializedComposition = { ...s, map: normalizeMap(s.map) };
   const now = new Date().toISOString();
   const tracks: SerializedTrack[] = [];
+  const copiedAssets = new Map<string, string>();
   for (const t of source.tracks) {
     const id = newId();
     if (t.source.kind === "stored") {
-      const blob = await stemGet(t.source.key);
-      if (blob) await stemPut(id, blob);
-      tracks.push({ ...t, id, source: { kind: "stored", key: id } });
+      let assetId = copiedAssets.get(t.source.key);
+      if (!assetId) {
+        assetId = newId();
+        const blob = await stemGet(t.source.key);
+        if (blob) await stemPut(assetId, blob);
+        copiedAssets.set(t.source.key, assetId);
+      }
+      tracks.push({ ...t, id, audioAssetId: assetId, source: { kind: "stored", key: assetId } });
     } else {
       tracks.push({ ...t, id });
     }
@@ -133,7 +153,7 @@ export async function copyComposition(s: SerializedComposition): Promise<Seriali
 
 // ===== Export / import: one self-contained composition + media bundle =====
 
-const BUNDLE_VERSION = 3;
+const BUNDLE_VERSION = 4;
 
 function toBase64(buf: ArrayBuffer): string {
   const bytes = new Uint8Array(buf);
@@ -153,34 +173,56 @@ function base64ToBlob(b64: string, type: string): Blob {
 }
 
 type StemEntry = { name: string; type: string; data: string };
+export interface CompositionBundle {
+  version: number;
+  composition: SerializedComposition;
+  stems: Record<string, StemEntry>;
+  detailPack?: DetailPackBundle;
+  creatorAssets?: CreatorAssetBundle;
+}
 
-// Download the composition with uploaded stems and any local custom detail pack
-// embedded, so the map remains fully portable.
-export async function exportComposition(comp: Composition): Promise<void> {
+export async function buildCompositionBundle(comp: Composition): Promise<CompositionBundle> {
   const normalized = normalizeComposition(comp);
   const stems: Record<string, StemEntry> = {};
   const tracks: SerializedTrack[] = [];
+  const sourceKeys = new Map<string, string>();
   for (const t of normalized.tracks) {
     if (t.source.kind === "file") {
-      const blob = await (await fetch(t.source.url)).blob();
-      stems[t.id] = { name: t.name, type: blob.type || "audio/mpeg", data: toBase64(await blob.arrayBuffer()) };
-      tracks.push({ ...t, source: { kind: "stored", key: t.id } });
+      const identity = isUploaded(t) ? audioAssetKey(t) : t.source.url;
+      let key = sourceKeys.get(identity);
+      if (!key) {
+        key = isUploaded(t) ? audioAssetKey(t) : t.id;
+        sourceKeys.set(identity, key);
+        const blob = await (await fetch(t.source.url)).blob();
+        stems[key] = { name: t.name, type: blob.type || "audio/mpeg", data: toBase64(await blob.arrayBuffer()) };
+      }
+      tracks.push({ ...t, audioAssetId: key, source: { kind: "stored", key } });
     } else {
-      tracks.push(t); // synth: nothing to embed
+      tracks.push(t);
     }
   }
 
   const detailPack = normalized.environment.pack?.id
     ? await detailPackBundleForId(normalized.environment.pack.id)
     : undefined;
-  const creatorAssets = await creatorAssetBundleForIds(environmentCreatorAssetIds(normalized));
-  const payload = {
+  const creatorAssetIds = environmentCreatorAssetIds(normalized);
+  const creatorAssets = creatorAssetIds.length
+    ? await creatorAssetBundleForIds(creatorAssetIds)
+    : undefined;
+  return {
     version: BUNDLE_VERSION,
     composition: { ...normalized, tracks },
     stems,
     ...(detailPack ? { detailPack } : {}),
     ...(creatorAssets ? { creatorAssets } : {}),
   };
+}
+
+// Download the composition with uploaded stems and any local custom detail pack
+// embedded, so the map remains fully portable.
+export async function exportComposition(comp: Composition): Promise<void> {
+  const normalized = normalizeComposition(comp);
+  const payload = await buildCompositionBundle(normalized);
   const url = URL.createObjectURL(new Blob([JSON.stringify(payload)], { type: "application/json" }));
   const a = document.createElement("a");
   a.href = url;
@@ -193,7 +235,7 @@ export async function exportComposition(comp: Composition): Promise<void> {
 // in-memory composition (with object URLs) ready to become the current one.
 export async function importComposition(file: File): Promise<Composition> {
   const payload = JSON.parse(await file.text());
-  if (payload?.version !== 1 && payload?.version !== 2 && payload?.version !== BUNDLE_VERSION) {
+  if (payload?.version !== 1 && payload?.version !== 2 && payload?.version !== 3 && payload?.version !== BUNDLE_VERSION) {
     throw new Error("Unrecognized or unsupported Polyphonia file.");
   }
   if (payload.detailPack) {
@@ -206,14 +248,21 @@ export async function importComposition(file: File): Promise<Composition> {
   const stems: Record<string, StemEntry> = payload.stems ?? {};
 
   const tracks: TrackDef[] = [];
+  const importedAssets = new Map<string, { id: string; url: string }>();
   for (const t of saved.tracks) {
     if (t.source.kind === "stored") {
       const entry = stems[t.source.key];
       if (!entry) continue;
+      let asset = importedAssets.get(t.source.key);
+      if (!asset) {
+        const id = newId();
+        const blob = base64ToBlob(entry.data, entry.type);
+        await stemPut(id, blob);
+        asset = { id, url: URL.createObjectURL(blob) };
+        importedAssets.set(t.source.key, asset);
+      }
       const id = newId();
-      const blob = base64ToBlob(entry.data, entry.type);
-      await stemPut(id, blob);
-      tracks.push({ ...t, id, source: { kind: "file", url: URL.createObjectURL(blob) } });
+      tracks.push({ ...t, id, audioAssetId: asset.id, source: { kind: "file", url: asset.url } });
     } else {
       tracks.push({ ...t, source: t.source });
     }

@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
-import { Composition, normalizeComposition } from "./composition";
+import { Composition, TrackDef, audioAssetKey, normalizeComposition } from "./composition";
 import { newId } from "./id";
 import { ArtistIdentity, slugifyArtist } from "./artist";
 import {
@@ -46,6 +46,7 @@ const CREATOR_ASSETS_TABLE = "creator_assets";
 const DETAIL_PACK_ASSET_BUCKET = "environment-assets";
 const isUploaded = (url: string) => url.startsWith("blob:");
 export const normalizePublishedTitle = (title: string) => title.trim().replace(/\s+/g, " ").toLowerCase() || "untitled";
+export const publishedStemAssetKey = (track: Pick<TrackDef, "id" | "audioAssetId">): string => audioAssetKey(track);
 
 // SHA-256 of a blob's bytes, as hex — used to detect when a stem's audio changed.
 async function sha256(blob: Blob): Promise<string> {
@@ -235,7 +236,7 @@ export async function publishComposition(
   // Prior published manifest, to skip re-uploading stems whose audio is unchanged.
   const prev = comp.publishedId ? await fetchPublishedComposition(id) : null;
   const prevHash: Record<string, string | undefined> = {};
-  for (const t of prev?.tracks ?? []) prevHash[t.id] = t.hash;
+  for (const t of prev?.tracks ?? []) prevHash[publishedStemAssetKey(t)] = t.hash;
 
   const total = comp.tracks.length + 3;
   let completed = 0;
@@ -245,22 +246,34 @@ export async function publishComposition(
   };
 
   const tracks = [];
+  const publishedAssets = new Map<string, { url: string; hash: string }>();
   for (const t of comp.tracks) {
     report(`Preparing ${t.name}`);
     if (t.source.kind === "file" && isUploaded(t.source.url)) {
-      const blob = await (await fetch(t.source.url)).blob();
-      const hash = await sha256(blob);
-      const path = `${id}/${t.id}`;
-      const url = sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl; // deterministic from the path
+      const assetId = publishedStemAssetKey(t);
+      let published = publishedAssets.get(assetId);
+      if (!published) {
+        const blob = await (await fetch(t.source.url)).blob();
+        const hash = await sha256(blob);
+        const path = `${id}/${assetId}`;
+        const url = sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
 
-      // Only upload if new or the audio changed since last publish.
-      if (prevHash[t.id] !== hash) {
-        const { error } = await sb.storage
-          .from(BUCKET)
-          .upload(path, blob, { contentType: blob.type || "audio/mpeg", upsert: true });
-        if (error) throw error;
+        // Only upload if new or the audio changed since last publish.
+        if (prevHash[assetId] !== hash) {
+          const { error } = await sb.storage
+            .from(BUCKET)
+            .upload(path, blob, { contentType: blob.type || "audio/mpeg", upsert: true });
+          if (error) throw error;
+        }
+        published = { url, hash };
+        publishedAssets.set(assetId, published);
       }
-      tracks.push({ ...t, source: { kind: "file" as const, url }, hash });
+      tracks.push({
+        ...t,
+        audioAssetId: assetId,
+        source: { kind: "file" as const, url: published.url },
+        hash: published.hash,
+      });
     } else {
       tracks.push(t); // built-in /stems URL or synth — leave as-is
     }

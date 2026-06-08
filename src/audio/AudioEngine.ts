@@ -155,15 +155,23 @@ export class AudioEngine {
     const stems = needsSynth ? createPlaceholderStems(this.ctx, comp.bpm, comp.bars ?? 4) : null;
 
     const loaded: Array<{ def: TrackDef; buffer: AudioBuffer }> = [];
+    const fileBuffers = new Map<string, Promise<AudioBuffer>>();
     const total = comp.tracks.length;
     for (const [index, def] of comp.tracks.entries()) {
       let buffer: AudioBuffer;
       if (def.source.kind === "file") {
         onProgress?.({ loaded: index, total, trackName: def.name, phase: "fetching" });
-        const res = await fetch(def.source.url);
-        const data = await res.arrayBuffer();
-        onProgress?.({ loaded: index, total, trackName: def.name, phase: "decoding" });
-        buffer = await this.ctx.decodeAudioData(data);
+        let pending = fileBuffers.get(def.source.url);
+        if (!pending) {
+          pending = fetch(def.source.url)
+            .then((res) => res.arrayBuffer())
+            .then((data) => {
+              onProgress?.({ loaded: index, total, trackName: def.name, phase: "decoding" });
+              return this.ctx.decodeAudioData(data);
+            });
+          fileBuffers.set(def.source.url, pending);
+        }
+        buffer = await pending;
       } else {
         onProgress?.({ loaded: index, total, trackName: def.name, phase: "preparing" });
         buffer = stems![def.source.preset];
@@ -178,8 +186,8 @@ export class AudioEngine {
     // musical length are copied into clean loop buffers with a tiny end->start
     // crossfade, which masks residual padding/clicks at the wrap point.
     this.setLoopFields(comp);
-    const fileBuffers = loaded.filter((t) => t.def.source.kind === "file").map((t) => t.buffer);
-    const detectedOffsets = fileBuffers.map((b) => this.leadingSilence(b)).filter((s) => s > 0.001);
+    const decodedFileBuffers = [...new Set(loaded.filter((t) => t.def.source.kind === "file").map((t) => t.buffer))];
+    const detectedOffsets = decodedFileBuffers.map((b) => this.leadingSilence(b)).filter((s) => s > 0.001);
     this.loopOffset = detectedOffsets.length ? Math.min(0.1, Math.min(...detectedOffsets)) : 0;
     if (this.loopEnabled && !this.loopLength) this.loopLength = this.inferLoopLength(loaded);
 

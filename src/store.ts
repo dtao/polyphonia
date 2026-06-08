@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import * as THREE from "three";
-import { Composition, StemDirectivity, TrackDef, compositionRevision, defaultComposition, normalizeComposition, touchComposition } from "./composition";
+import { Composition, StemDirectivity, TrackDef, audioAssetKey, compositionRevision, defaultComposition, normalizeComposition, touchComposition } from "./composition";
 import { AudioEngine, AudioLoadProgress } from "./audio/AudioEngine";
 import {
   SerializedComposition,
@@ -255,9 +255,11 @@ interface StoreState {
 // Free the object URLs of a composition's uploaded stems (memory cleanup); the
 // audio itself stays in IndexedDB, so the composition can be re-resolved later.
 function revokeBlobUrls(comp: Composition): void {
+  const urls = new Set<string>();
   for (const t of comp.tracks) {
-    if (t.source.kind === "file" && t.source.url.startsWith("blob:")) URL.revokeObjectURL(t.source.url);
+    if (t.source.kind === "file" && t.source.url.startsWith("blob:")) urls.add(t.source.url);
   }
+  for (const url of urls) URL.revokeObjectURL(url);
 }
 
 // Replace (or append) a composition's manifest in the library array.
@@ -1490,20 +1492,15 @@ export const useStore = create<StoreState>((set, get) => ({
     if (!source) return;
 
     const copyId = newId();
-    let copiedSource = source.source;
-    if (source.source.kind === "file" && source.source.url.startsWith("blob:")) {
-      const blob = await (await fetch(source.source.url)).blob();
-      await stemPut(copyId, blob);
-      copiedSource = { kind: "file", url: URL.createObjectURL(blob) };
-    }
-
     const { hash: _hash, ...copyable } = source;
     const def: TrackDef = {
       ...copyable,
       id: copyId,
+      audioAssetId: source.source.kind === "file" && source.source.url.startsWith("blob:")
+        ? audioAssetKey(source)
+        : source.audioAssetId,
       name: copyName(source.name, composition.tracks),
       position: offsetCopyPosition(source.position, composition.tracks.length),
-      source: copiedSource,
     };
 
     engine?.duplicateLiveTrack(source.id, def);
@@ -1535,6 +1532,7 @@ export const useStore = create<StoreState>((set, get) => ({
     const spawnZ = viewState.z + (Math.random() * 2 - 1) * 0.8;
     const def: TrackDef = {
       id,
+      audioAssetId: id,
       name: stripExt(file.name),
       color: randomColor(),
       position: [spawnX, surfaceHeightAt(get().composition.map, [spawnX, spawnZ]) + 1.5, spawnZ],
@@ -1747,7 +1745,8 @@ export const useStore = create<StoreState>((set, get) => ({
     const { composition, library } = get();
     const target = library.find((c) => c.id === id);
     if (target) {
-      for (const t of target.tracks) if (t.source.kind === "stored") stemDelete(t.source.key);
+      const stemKeys = new Set(target.tracks.flatMap((t) => t.source.kind === "stored" ? [t.source.key] : []));
+      for (const key of stemKeys) stemDelete(key);
       // Best-effort: also remove the published copy (needs sign-in; ignore errors).
       if (target.publishedId) cloudUnpublish(target.publishedId).catch(() => {});
     }

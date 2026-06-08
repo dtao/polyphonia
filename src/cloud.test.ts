@@ -1,11 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { defaultComposition } from "./composition";
-import { buildPublishedCompositionRow, normalizePublishedTitle } from "./cloud";
+import {
+  buildPublishedCompositionRow,
+  normalizePublishedTitle,
+  publishedStemAssetKey,
+} from "./cloud";
 
 describe("published composition payloads", () => {
   it("normalizes title keys for per-artist uniqueness checks", () => {
     expect(normalizePublishedTitle("  My   New    Space  ")).toBe("my new space");
     expect(normalizePublishedTitle("   ")).toBe("untitled");
+  });
+
+  it("uses shared audio identity rather than spatial track identity for uploads", () => {
+    expect(publishedStemAssetKey({ id: "copy-20", audioAssetId: "asset-a" })).toBe("asset-a");
+    expect(publishedStemAssetKey({ id: "legacy-track" })).toBe("legacy-track");
   });
 
   it("builds the denormalized Supabase row and canonical manifest together", () => {
