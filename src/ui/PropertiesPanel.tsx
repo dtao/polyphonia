@@ -1,5 +1,8 @@
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
 import { shortcutKeys } from "../shortcuts";
+
+const TRACK_COLORS = ["#5b8cff", "#ff7a6b", "#ffd166", "#b96bff", "#56e0c0", "#f78fb3", "#7ee081", "#ffa057"];
 
 // Edit-mode inspector for the selected track. Every control applies live —
 // volume and falloff flow straight to the audio engine as you drag.
@@ -18,11 +21,9 @@ export function PropertiesPanel() {
   return (
     <div style={panel} data-stem-panel>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-        <input
-          type="color"
+        <TrackColorChooser
           value={track.color}
-          onChange={(e) => setTrackColor(track.id, e.target.value)}
-          style={{ width: 28, height: 28, border: "none", background: "none", padding: 0, cursor: "pointer" }}
+          onChange={(color) => setTrackColor(track.id, color)}
         />
         <input
           value={track.name}
@@ -96,6 +97,70 @@ export function PropertiesPanel() {
   );
 }
 
+function TrackColorChooser({ value, onChange }: { value: string; onChange: (color: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const dismiss = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("pointerdown", dismiss, true);
+    window.addEventListener("keydown", escape);
+    return () => {
+      window.removeEventListener("pointerdown", dismiss, true);
+      window.removeEventListener("keydown", escape);
+    };
+  }, [open]);
+
+  return (
+    <div ref={root} style={colorChooser}>
+      <button
+        type="button"
+        aria-label="Choose track color"
+        aria-expanded={open}
+        style={{ ...colorButton, background: value }}
+        onClick={() => setOpen((current) => !current)}
+      />
+      {open && (
+        <div style={colorPopover}>
+          <div style={colorGrid}>
+            {TRACK_COLORS.map((color) => (
+              <button
+                key={color}
+                type="button"
+                aria-label={`Set color ${color}`}
+                style={{
+                  ...colorSwatch,
+                  background: color,
+                  outline: color.toLowerCase() === value.toLowerCase() ? "2px solid white" : "none",
+                }}
+                onClick={() => {
+                  onChange(color);
+                  setOpen(false);
+                }}
+              />
+            ))}
+          </div>
+          <label style={customColorLabel}>
+            Custom
+            <input
+              type="color"
+              value={value}
+              onChange={(event) => onChange(event.target.value)}
+              style={customColorInput}
+            />
+          </label>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Slider({
   label,
   help,
@@ -158,6 +223,70 @@ const nameInput: React.CSSProperties = {
   color: "white",
   padding: "6px 8px",
   fontSize: 15,
+};
+
+const colorChooser: React.CSSProperties = {
+  position: "relative",
+  flex: "0 0 auto",
+};
+
+const colorButton: React.CSSProperties = {
+  width: 28,
+  height: 28,
+  padding: 0,
+  borderRadius: 7,
+  border: "2px solid rgba(255,255,255,0.72)",
+  boxShadow: "0 0 0 1px rgba(0,0,0,0.45)",
+  cursor: "pointer",
+};
+
+const colorPopover: React.CSSProperties = {
+  position: "absolute",
+  bottom: 36,
+  left: 0,
+  zIndex: 20,
+  width: 152,
+  padding: 10,
+  borderRadius: 9,
+  border: "1px solid rgba(255,255,255,0.16)",
+  background: "#151a29",
+  boxShadow: "0 12px 32px rgba(0,0,0,0.42)",
+};
+
+const colorGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(4, 26px)",
+  gap: 8,
+};
+
+const colorSwatch: React.CSSProperties = {
+  width: 26,
+  height: 26,
+  padding: 0,
+  borderRadius: 6,
+  border: "1px solid rgba(255,255,255,0.35)",
+  outlineOffset: 2,
+  cursor: "pointer",
+};
+
+const customColorLabel: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 10,
+  marginTop: 10,
+  fontSize: 11,
+  color: "rgba(255,255,255,0.68)",
+};
+
+const customColorInput: React.CSSProperties = {
+  width: 50,
+  height: 24,
+  padding: 0,
+  border: "1px solid rgba(255,255,255,0.2)",
+  borderRadius: 5,
+  background: "transparent",
+  cursor: "pointer",
 };
 
 const actionRow: React.CSSProperties = {
