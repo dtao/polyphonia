@@ -56,8 +56,8 @@ these spatial compositions.
   `.polyphonia.json` (audio, custom packs, and every referenced creator asset
   embedded) and re-import it anywhere.
 - **Share** — publish a composition to the cloud and get a stable read-only link
-  (`/c/:id`) anyone can open, with visible audio-loading progress for first
-  plays. *(Requires Supabase config — see below.)*
+  (`/c/:id`) anyone can open, with visible progress while publishing or loading
+  audio for first plays. *(Requires Supabase config — see below.)*
 - **Account artist identity** — signed-in accounts keep a primary artist
   profile; new compositions and publishing use that artist automatically.
 - **Discover artists** — browse the public gallery or an artist page

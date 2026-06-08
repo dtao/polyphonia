@@ -24,6 +24,7 @@ import { attachmentForPoint, canAddBranchAtPoint, canAddPlatformAtPoint, canAddR
 import { ArtistIdentity } from "./artist";
 import {
   AuthUser,
+  PublishProgress,
   signInWithEmail,
   signOut as cloudSignOut,
   onAuthChange,
@@ -124,6 +125,7 @@ interface StoreState {
   library: SerializedComposition[];
   engine: AudioEngine | null;
   audioLoading: AudioLoadingState;
+  publishProgress: PublishProgress | null;
   undoStack: Composition[];
   redoStack: Composition[];
   customDetailPacks: EnvironmentPackDefinition[];
@@ -610,6 +612,7 @@ export const useStore = create<StoreState>((set, get) => ({
   library: [],
   engine: null,
   audioLoading: { status: "idle" },
+  publishProgress: null,
   undoStack: [],
   redoStack: [],
   customDetailPacks: [],
@@ -740,22 +743,36 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   publishCurrent: async () => {
-    const published = await publishComposition(get().composition);
-    const publishedAt = new Date().toISOString();
-    const composition = {
-      ...get().composition,
-      artist: published.artist,
-      artistId: published.artistId,
-      artistSlug: published.artistSlug,
-      artistAvatarUrl: published.artistAvatarUrl,
-      artistAvatarEmailHash: published.artistAvatarEmailHash,
-      publishedId: published.id,
-    };
-    composition.publishedRevision = compositionRevision(composition);
-    composition.publishedAt = publishedAt;
-    const library = upsert(get().library, serializeComposition(composition));
-    set({ composition, library });
-    persistLibrary(library, composition.id);
+    set({
+      publishProgress: {
+        completed: 0,
+        total: get().composition.tracks.length + 3,
+        label: "Preparing publish",
+      },
+    });
+    try {
+      const published = await publishComposition(
+        get().composition,
+        (publishProgress) => set({ publishProgress }),
+      );
+      const publishedAt = new Date().toISOString();
+      const composition = {
+        ...get().composition,
+        artist: published.artist,
+        artistId: published.artistId,
+        artistSlug: published.artistSlug,
+        artistAvatarUrl: published.artistAvatarUrl,
+        artistAvatarEmailHash: published.artistAvatarEmailHash,
+        publishedId: published.id,
+      };
+      composition.publishedRevision = compositionRevision(composition);
+      composition.publishedAt = publishedAt;
+      const library = upsert(get().library, serializeComposition(composition));
+      set({ composition, library });
+      persistLibrary(library, composition.id);
+    } finally {
+      set({ publishProgress: null });
+    }
   },
 
   unpublishComposition: async (compId) => {

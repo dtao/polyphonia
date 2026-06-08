@@ -19,6 +19,7 @@ beforeEach(() => {
     }),
     library: [],
     engine: null,
+    publishProgress: null,
     viewer: true,
     undoStack: [],
     redoStack: [],
