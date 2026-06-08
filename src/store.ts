@@ -145,6 +145,7 @@ interface StoreState {
   viewer: boolean; // read-only shared-link view (no autosave, no editing)
   user: AuthUser | null; // signed-in account (for publishing); null = anonymous
   accountArtist: ArtistIdentity | null; // primary artist identity for signed-in publishing
+  authReady: boolean; // initial session lookup has completed
 
   setEngine: (e: AudioEngine | null) => void;
   setAudioLoading: (audioLoading: AudioLoadingState) => void;
@@ -630,6 +631,7 @@ export const useStore = create<StoreState>((set, get) => ({
   viewer: false,
   user: null,
   accountArtist: null,
+  authReady: false,
 
   setEngine: (engine) => set({ engine }),
   setAudioLoading: (audioLoading) => set({ audioLoading }),
@@ -722,11 +724,29 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   initAuth: () => {
-    getCurrentUser().then(async (user) => {
-      set({ user, accountArtist: user ? await getAccountArtist() : null });
-    });
+    getCurrentUser()
+      .then(async (user) => {
+        set({
+          user,
+          accountArtist: user ? await getAccountArtist() : null,
+          authReady: true,
+        });
+      })
+      .catch((error) => {
+        console.error("Failed to initialize authentication", error);
+        set({ user: null, accountArtist: null, authReady: true });
+      });
     onAuthChange(async (user) => {
-      set({ user, accountArtist: user ? await getAccountArtist() : null });
+      try {
+        set({
+          user,
+          accountArtist: user ? await getAccountArtist() : null,
+          authReady: true,
+        });
+      } catch (error) {
+        console.error("Failed to load account artist", error);
+        set({ user, accountArtist: null, authReady: true });
+      }
     });
   },
   signIn: (email) => signInWithEmail(email),

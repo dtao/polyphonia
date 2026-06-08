@@ -21,6 +21,7 @@ export function Viewer() {
   const entered = useStore((s) => s.entered);
   const engine = useStore((s) => s.engine);
   const audioLoading = useStore((s) => s.audioLoading);
+  const user = useStore((s) => s.user);
   const [status, setStatus] = useState<Status>("loading");
   const touch = isTouchDevice();
 
@@ -80,10 +81,17 @@ export function Viewer() {
       {status === "ready" && !entered && (
         <div style={overlay}>
           <h1 style={{ fontSize: 36, margin: 0, letterSpacing: 1 }}>{comp.title}</h1>
-          <Link to={artistPath(comp.artist, comp.artistSlug)} style={artistLink}>
-            <ArtistAvatar artist={comp} size={24} />
-            {comp.artist}
-          </Link>
+          {user ? (
+            <Link to={artistPath(comp.artist, comp.artistSlug)} style={artistLink}>
+              <ArtistAvatar artist={comp} size={24} />
+              {comp.artist}
+            </Link>
+          ) : (
+            <div style={artistLink}>
+              <ArtistAvatar artist={comp} size={24} />
+              {comp.artist}
+            </div>
+          )}
           <button id="enter-btn" style={button} onClick={enter}>
             ▶ Enter
           </button>
@@ -96,13 +104,19 @@ export function Viewer() {
       {status === "ready" && entered && engine && (
         <div style={hud}>
           <strong>{comp.title}</strong> —{" "}
-          <Link to={artistPath(comp.artist, comp.artistSlug)} style={hudArtistLink}>
-            {comp.artist}
-          </Link>{" "}
+          {user ? (
+            <Link to={artistPath(comp.artist, comp.artistSlug)} style={hudArtistLink}>
+              {comp.artist}
+            </Link>
+          ) : (
+            comp.artist
+          )}{" "}
           · shared
-          <Link style={makeLink} to="/">
-            Make your own ↗
-          </Link>
+          {user && (
+            <Link style={makeLink} to="/">
+              Open editor
+            </Link>
+          )}
         </div>
       )}
 

@@ -70,9 +70,11 @@ npm install
 npm run dev
 ```
 
-Open the printed URL, pick a composition (the built-in **Journey** demo is
-seeded on first run), and click **Enter**. The app is fully usable offline; only
-publishing/sharing needs the optional Supabase setup.
+Open the printed URL and sign in with a creator account to reach the editor,
+pick a composition (the built-in **Journey** demo is seeded on first run), and
+click **Enter**. Anonymous visitors see a public landing page and can open the
+published demo configured with `VITE_PUBLIC_DEMO_URL`. Shared composition links
+at `/c/:id` remain public.
 
 The start screen shows the short Git commit hash that was present when the app
 bundle was built, so deployed builds can be identified without manually updating
@@ -183,9 +185,10 @@ custom server. In a Supabase project:
    (the anon key is safe to expose in frontend code), then restart the dev
    server.
 
-When deploying, set the same two env vars in your host's dashboard, and add an
-SPA fallback so routes like `/c/:id`, `/gallery`, and `/artist/:slug` serve
-`index.html`.
+When deploying, set the same two env vars plus `VITE_PUBLIC_DEMO_URL` in your
+host's dashboard. The demo value may be a local route such as `/c/<id>` or a
+full URL. Add an SPA fallback so routes like `/c/:id`, `/gallery`, and
+`/artist/:slug` serve `index.html`.
 
 ## How it works
 
