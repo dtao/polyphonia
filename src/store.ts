@@ -66,7 +66,11 @@ export const markerObjects = new Map<string, THREE.Object3D>();
 // unit facing direction on the plane. New stems spawn at the anchor. Kept
 // outside React to avoid per-frame re-renders.
 // y is the walkable-surface height at (x, z); the player rides at y + eye height.
-export const viewState = { x: 0, y: 0, z: 0, fx: 0, fz: -1 };
+// focusY is the actual elevation the edit camera is looking at (the orbit pivot
+// height), which can differ from the surface height when paths overlap in XZ or
+// after Q/E elevation changes. New stems use it so they land where you're
+// looking, not snapped onto a surface above/below the camera's focus.
+export const viewState = { x: 0, y: 0, z: 0, focusY: 0, fx: 0, fz: -1 };
 
 // Set by MapScene when the user double-clicks a path/room/platform in edit mode.
 // EditControls consumes this in useFrame to shift the orbit pivot there.
@@ -702,6 +706,8 @@ export function moveViewToMapStart(map: CompositionMap): void {
   viewState.x = map.start.position[0];
   viewState.z = map.start.position[1];
   viewState.y = surfaceHeightAt(map, map.start.position);
+  // Match EditControls' orbit pivot, which sits 1.5 above the surface.
+  viewState.focusY = viewState.y + 1.5;
   viewState.fx = map.start.direction[0];
   viewState.fz = map.start.direction[1];
 }
@@ -1555,7 +1561,10 @@ export const useStore = create<StoreState>((set, get) => ({
     // Persist the raw audio so the composition survives a reload.
     stemPut(id, file).catch((err) => console.error("Failed to store stem", err));
     // Spawn at the center of the view (with a little jitter so repeated adds
-    // don't stack exactly on top of each other), floating above the surface.
+    // don't stack exactly on top of each other). Use the camera's focus
+    // elevation so the stem lands where you're looking, rather than snapping to
+    // whatever surface `surfaceHeightAt` happens to find at that XZ (which can
+    // be a path floating above or below the camera's focus — see P25).
     const spawnX = viewState.x + (Math.random() * 2 - 1) * 0.8;
     const spawnZ = viewState.z + (Math.random() * 2 - 1) * 0.8;
     const def: TrackDef = {
@@ -1563,7 +1572,7 @@ export const useStore = create<StoreState>((set, get) => ({
       audioAssetId: id,
       name: stripExt(file.name),
       color: randomColor(),
-      position: [spawnX, surfaceHeightAt(get().composition.map, [spawnX, spawnZ]) + 1.5, spawnZ],
+      position: [spawnX, viewState.focusY, spawnZ],
       volume: 1,
       source: { kind: "file", url: URL.createObjectURL(file) },
     };

@@ -167,7 +167,11 @@ export function TrackMarker({
       onPointerOut={() => setCursor("auto")}
     >
       {mode === "edit" && selected && (
-        <group position={[0, floorY - stemY, 0]}>
+        // Near/Far rings and the directivity guide ride at the orb's elevation
+        // (offset 0 from this group, which already sits at stemY) so they stay
+        // visible where those properties are actually adjusted — not stranded on
+        // the floor below an elevated stem.
+        <group position={[0, 0, 0]}>
           <FalloffMap track={track} />
           {track.directivity && <DirectivityGuide track={track} />}
         </group>
