@@ -1328,9 +1328,17 @@ function transitionSupport(map: CompositionMap, support: MapSupport, previous: [
 
   // Platforms are open hubs: step onto any platform whose area you enter (from
   // any support), and off a platform onto any segment/room you enter.
+  // Guard against teleporting to a platform whose 2D footprint overlaps the
+  // current path at a very different elevation (same root cause as the
+  // segment-above/below-segment fix that introduced nearSharedEndpoint).
   for (const platform of map.platforms) {
     if (support.kind === "platform" && support.platformId === platform.id) continue;
-    if (platformContains(platform, attempted)) return { position: attempted, support: { kind: "platform", platformId: platform.id } };
+    if (platformContains(platform, attempted)) {
+      const currentHeight = surfaceHeightOnSupport(map, previous, support);
+      const platformHeight = platformElevation(map, platform);
+      if (Math.abs(platformHeight - currentHeight) > 1.5) continue;
+      return { position: attempted, support: { kind: "platform", platformId: platform.id } };
+    }
   }
   if (support.kind === "platform") {
     const segment = nearestSegmentContaining(map, attempted);
