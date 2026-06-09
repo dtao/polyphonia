@@ -1,5 +1,6 @@
 import { Grid } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
+import { useEffect } from "react";
 import * as THREE from "three";
 import type { EnvironmentSettings } from "../environment";
 import type { CompositionMap } from "../map";
@@ -12,25 +13,32 @@ import {
 import { useStore } from "../store";
 import { CreatorLandmarks } from "./CreatorLandmarks";
 import { SurfaceMapDressing } from "./DetailMapDressing";
-import { RADIAL_FADE_OUTER, effectiveFadeOuter } from "./fade";
+import { RADIAL_FADE_INNER, RADIAL_FADE_OUTER, effectiveFadeInner, effectiveFadeOuter } from "./fade";
 
-// Fog `far` is a frame-sensitive value once the debug radius slider can drive it
-// live, so we write it imperatively each frame rather than through a React prop
-// (R3F prop reactivity on <fog> proved unreliable; this also matches how the
-// codebase drives other frame-sensitive state — see AGENTS.md). The fog band
-// keeps its shape by scaling `near` proportionally to the default 38/130 ratio,
-// so pulling the radius in closes the whole scene in smoothly. The MapScene path
-// shaders read scene.fog every frame, so they track the same value for free.
-const FOG_NEAR_RATIO = 38 / RADIAL_FADE_OUTER;
-
+// Own scene.fog imperatively. A JSX `<fog attach="fog">` here attaches to the
+// nearest parent Object3D — which is the <ARWorldTransform> group, NOT the scene
+// — so the renderer never saw it and fog effectively did nothing. Setting it on
+// the real scene from useThree is unambiguous, and near/far are frame-sensitive
+// once the debug radius slider drives them live, so we update them each frame
+// (matching how the codebase drives other frame-sensitive state — see AGENTS.md).
+// The fog band is pinned to the SAME inner→outer circle as the per-object radial
+// fade (rings, orbs, path shader), so all fog-respecting geometry vanishes at the
+// outer ring exactly like everything else.
 function FogSync() {
   const scene = useThree((s) => s.scene);
+  useEffect(() => {
+    const previous = scene.fog;
+    scene.fog = new THREE.Fog(environmentBackgroundColor, RADIAL_FADE_INNER, RADIAL_FADE_OUTER);
+    return () => {
+      scene.fog = previous;
+    };
+  }, [scene]);
   useFrame(() => {
     const fog = scene.fog;
     if (!(fog instanceof THREE.Fog)) return;
     const far = effectiveFadeOuter();
     fog.far = far;
-    fog.near = Math.min(far - 1, far * FOG_NEAR_RATIO);
+    fog.near = Math.min(effectiveFadeInner(), far - 1);
   });
   return null;
 }
@@ -62,11 +70,10 @@ export function EnvironmentScene({
   return (
     <>
       <color attach="background" args={[environmentBackgroundColor]} />
-      {/* Fog far aligns with RADIAL_FADE_OUTER (see fade.ts) so fog-respecting
-          opaque geometry and manually faded objects vanish at the same circle.
-          The static args seed the Fog object; <FogSync> then drives near/far
-          imperatively each frame (see note above). */}
-      <fog attach="fog" args={[environmentBackgroundColor, 38, RADIAL_FADE_OUTER]} />
+      {/* Fog is owned imperatively by <FogSync> (scene.fog), not a JSX
+          attach="fog" — which would bind to the parent group, not the scene.
+          Its far aligns with RADIAL_FADE_OUTER so fog-respecting geometry and
+          the manually-faded path/orbs vanish at the same circle. */}
       <FogSync />
       <ambientLight intensity={0.16} />
       <hemisphereLight args={["#8992a5", "#08090d", 0.24]} />

@@ -109,7 +109,55 @@ Also confirm base orbs now fade with the inner/outer band (Bug A). If they do
 but you want the same in tiled maps / non-debug builds, that's a product
 decision, not a bug.
 
+### Attempt 4 — path floor fades by planar radial band, not eye-space fog
+
+User confirmed orbs now fade correctly (committed). The path floor still did
+not. Root cause of the path miss: the shader fog from attempt 2 faded by
+**eye-space depth** (`-mvPosition.z`) against a fog band scaled by `38/130`,
+which is neither the same metric nor the same band as the rings/orbs (planar XZ
+distance, `effectiveFadeInner → effectiveFadeOuter`). So even when it faded, it
+didn't fade *at the outer ring*.
+
+Fix: `PathMaterial` and `ReflectiveUnderfloorMaterial` now fade by **planar XZ
+distance from the built-in `cameraPosition`** across `fadeInner → fadeOuter`
+uniforms set from `effectiveFade*()` each frame — identical metric and band to
+`radialFade`. The opaque path mixes its color to the void color (stays opaque,
+no depth change); the transparent underfloor also drops alpha by `1 - radial`.
+The `vFogDepth`/`fogNear`/`fogFar` plumbing from attempt 2 was removed.
+
+This also makes edit mode and tiled preview copies fade the path consistently
+with the already-fogged walls/rooms.
+
+### Attempt 5 — the real root cause: fog was never on the scene
+
+User confirmed the path surface now darkens at the boundary, but the map still
+extended into the distance — non-surface map elements (e.g. `BorderRail`, and
+other fog-respecting walls/rooms/rails) did not fade.
+
+**Root cause (the one that explains every earlier failure):** `EnvironmentScene`
+renders inside `<ARWorldTransform>`, which is a `<group>`. R3F's
+`<fog attach="fog">` attaches to the nearest parent Object3D — the group — so it
+set `group.fog`, which the renderer ignores. **Scene fog was never applied at
+all.** Every attempt to "update fog far" was updating an object the renderer
+never read. Only the path/orbs faded because they had explicit per-object fades
+independent of fog.
+
+Fix: `FogSync` now sets `scene.fog` imperatively via `useThree` (unambiguously
+the real scene) in a mount effect, and updates near/far each frame from
+`effectiveFadeInner/Outer()`. The broken JSX `<fog>` was removed. Fog near is
+pinned to the radial **inner** and far to the radial **outer**, so all
+fog-respecting geometry (standard-material walls/rooms, additive basic-material
+rails like `BorderRail`) fades across the exact same circle as the rings, orbs,
+and path shader.
+
+Note: `<color attach="background">` in the same file has the identical
+group-attach issue, but it is out of scope here (scene reads dark via the
+canvas/CSS fallback, so fogging to the void color still reads as "gone"). Flag
+for later if a perfect fog/background color match is wanted.
+
 ## Status
 
-Open pending user verification of the two fixes and the live-fog readout. Update
-this note with the discriminating-check result.
+Orb fix committed (`3f405df`). Path + fog-on-scene fixes implemented (build +
+tests green), pending user visual confirmation that the **whole** map — surface,
+rails, walls, rooms — now disappears at the outer ring. Once confirmed, commit
+and close.

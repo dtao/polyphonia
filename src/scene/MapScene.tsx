@@ -1,5 +1,6 @@
 import { ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import { environmentBackgroundColor } from "./EnvironmentScene";
+import { RADIAL_FADE_INNER, RADIAL_FADE_OUTER, effectiveFadeInner, effectiveFadeOuter } from "./fade";
 import { Line, TransformControls } from "@react-three/drei";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -1548,9 +1549,9 @@ function PathMaterial({ tracks, editMode, selected, previewFade }: { tracks: Tra
       trackCount: { value: 0 },
       floorStrength: { value: 0.66 },
       opacity: { value: previewFade },
-      fogColor: { value: new THREE.Color(environmentBackgroundColor) },
-      fogNear: { value: 38 },
-      fogFar: { value: 130 },
+      fadeColor: { value: new THREE.Color(environmentBackgroundColor) },
+      fadeInner: { value: RADIAL_FADE_INNER },
+      fadeOuter: { value: RADIAL_FADE_OUTER },
     }),
     [],
   );
@@ -1575,12 +1576,11 @@ function PathMaterial({ tracks, editMode, selected, previewFade }: { tracks: Tra
     u.baseColor.value.set(selected ? "#8fffe8" : "#c8d2df");
     u.floorStrength.value = selected ? 0.92 : editMode ? 0.78 : 0.66;
     u.opacity.value = previewFade;
-    const fog = scene.fog;
-    if (fog instanceof THREE.Fog) {
-      u.fogColor.value.copy(fog.color);
-      u.fogNear.value = fog.near;
-      u.fogFar.value = fog.far;
-    }
+    // Match the camera-centered radial band (rings/orbs) exactly: planar XZ
+    // distance, fully gone at the outer radius. See fade.ts / radialFade.
+    u.fadeInner.value = effectiveFadeInner();
+    u.fadeOuter.value = effectiveFadeOuter();
+    if (scene.fog instanceof THREE.Fog) u.fadeColor.value.copy(scene.fog.color);
   });
 
   return (
@@ -1612,9 +1612,9 @@ function ReflectiveUnderfloorMaterial({ tracks, previewFade }: { tracks: TrackDe
       trackCount: { value: 0 },
       time: { value: 0 },
       opacity: { value: previewFade },
-      fogColor: { value: new THREE.Color(environmentBackgroundColor) },
-      fogNear: { value: 38 },
-      fogFar: { value: 130 },
+      fadeColor: { value: new THREE.Color(environmentBackgroundColor) },
+      fadeInner: { value: RADIAL_FADE_INNER },
+      fadeOuter: { value: RADIAL_FADE_OUTER },
     }),
     [],
   );
@@ -1638,12 +1638,9 @@ function ReflectiveUnderfloorMaterial({ tracks, previewFade }: { tracks: TrackDe
       smoothedLevels.current[i] = THREE.MathUtils.damp(smoothedLevels.current[i], target, 9, dt);
       u.trackLevels.value[i] = smoothedLevels.current[i];
     }
-    const fog = scene.fog;
-    if (fog instanceof THREE.Fog) {
-      u.fogColor.value.copy(fog.color);
-      u.fogNear.value = fog.near;
-      u.fogFar.value = fog.far;
-    }
+    u.fadeInner.value = effectiveFadeInner();
+    u.fadeOuter.value = effectiveFadeOuter();
+    if (scene.fog instanceof THREE.Fog) u.fadeColor.value.copy(scene.fog.color);
   });
 
   return (
@@ -1832,14 +1829,11 @@ function findPoint(map: CompositionMap, key: string): [number, number] | null {
 
 const pathVertexShader = `
   varying vec2 vWorld;
-  varying float vFogDepth;
 
   void main() {
     vec4 worldPosition = modelMatrix * vec4(position, 1.0);
     vWorld = worldPosition.xz;
-    vec4 mvPosition = viewMatrix * worldPosition;
-    gl_Position = projectionMatrix * mvPosition;
-    vFogDepth = -mvPosition.z;
+    gl_Position = projectionMatrix * viewMatrix * worldPosition;
   }
 `;
 
@@ -1853,11 +1847,10 @@ const pathFragmentShader = `
   uniform int trackCount;
   uniform float floorStrength;
   uniform float opacity;
-  uniform vec3 fogColor;
-  uniform float fogNear;
-  uniform float fogFar;
+  uniform vec3 fadeColor;
+  uniform float fadeInner;
+  uniform float fadeOuter;
   varying vec2 vWorld;
-  varying float vFogDepth;
 
   void main() {
     vec3 color = baseColor * floorStrength;
@@ -1875,23 +1868,21 @@ const pathFragmentShader = `
     }
 
     color += baseColor * min(lightTotal, 1.0) * 0.08;
-    float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);
-    gl_FragColor = vec4(mix(color, fogColor, fogFactor), opacity);
+    // Camera-centered radial fade to the void color (matches radialFade).
+    float radial = smoothstep(fadeInner, fadeOuter, distance(vWorld, cameraPosition.xz));
+    gl_FragColor = vec4(mix(color, fadeColor, radial), opacity);
   }
 `;
 
 const reflectiveFloorVertexShader = `
   varying vec2 vWorld;
   varying vec2 vUv;
-  varying float vFogDepth;
 
   void main() {
     vUv = uv;
     vec4 worldPosition = modelMatrix * vec4(position, 1.0);
     vWorld = worldPosition.xz;
-    vec4 mvPosition = viewMatrix * worldPosition;
-    gl_Position = projectionMatrix * mvPosition;
-    vFogDepth = -mvPosition.z;
+    gl_Position = projectionMatrix * viewMatrix * worldPosition;
   }
 `;
 
@@ -1904,12 +1895,11 @@ const reflectiveFloorFragmentShader = `
   uniform int trackCount;
   uniform float time;
   uniform float opacity;
-  uniform vec3 fogColor;
-  uniform float fogNear;
-  uniform float fogFar;
+  uniform vec3 fadeColor;
+  uniform float fadeInner;
+  uniform float fadeOuter;
   varying vec2 vWorld;
   varying vec2 vUv;
-  varying float vFogDepth;
 
   float hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -1949,7 +1939,8 @@ const reflectiveFloorFragmentShader = `
     vec3 sheen = vec3(0.12, 0.16, 0.19) * (0.08 + brushed * 0.18 + min(glowTotal, 1.0) * 0.15);
     color += sheen;
     float alpha = edgeFade * (0.72 + min(glowTotal, 1.0) * 0.22);
-    float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);
-    gl_FragColor = vec4(mix(color, fogColor, fogFactor), alpha * opacity * (1.0 - fogFactor));
+    // Camera-centered radial fade to the void color (matches radialFade).
+    float radial = smoothstep(fadeInner, fadeOuter, distance(vWorld, cameraPosition.xz));
+    gl_FragColor = vec4(mix(color, fadeColor, radial), alpha * opacity * (1.0 - radial));
   }
 `;
