@@ -1,4 +1,5 @@
 import { ThreeEvent, useFrame, useThree } from "@react-three/fiber";
+import { environmentBackgroundColor } from "./EnvironmentScene";
 import { Line, TransformControls } from "@react-three/drei";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -1547,11 +1548,14 @@ function PathMaterial({ tracks, editMode, selected, previewFade }: { tracks: Tra
       trackCount: { value: 0 },
       floorStrength: { value: 0.66 },
       opacity: { value: previewFade },
+      fogColor: { value: new THREE.Color(environmentBackgroundColor) },
+      fogNear: { value: 38 },
+      fogFar: { value: 130 },
     }),
     [],
   );
 
-  useFrame((_, dt) => {
+  useFrame(({ scene }, dt) => {
     if (!material.current) return;
     const u = material.current.uniforms;
     u.trackCount.value = Math.min(tracks.length, MAX_TRACK_LIGHTS);
@@ -1571,6 +1575,12 @@ function PathMaterial({ tracks, editMode, selected, previewFade }: { tracks: Tra
     u.baseColor.value.set(selected ? "#8fffe8" : "#c8d2df");
     u.floorStrength.value = selected ? 0.92 : editMode ? 0.78 : 0.66;
     u.opacity.value = previewFade;
+    const fog = scene.fog;
+    if (fog instanceof THREE.Fog) {
+      u.fogColor.value.copy(fog.color);
+      u.fogNear.value = fog.near;
+      u.fogFar.value = fog.far;
+    }
   });
 
   return (
@@ -1602,11 +1612,14 @@ function ReflectiveUnderfloorMaterial({ tracks, previewFade }: { tracks: TrackDe
       trackCount: { value: 0 },
       time: { value: 0 },
       opacity: { value: previewFade },
+      fogColor: { value: new THREE.Color(environmentBackgroundColor) },
+      fogNear: { value: 38 },
+      fogFar: { value: 130 },
     }),
     [],
   );
 
-  useFrame(({ clock }, dt) => {
+  useFrame(({ clock, scene }, dt) => {
     if (!material.current) return;
     const u = material.current.uniforms;
     u.time.value = clock.elapsedTime;
@@ -1624,6 +1637,12 @@ function ReflectiveUnderfloorMaterial({ tracks, previewFade }: { tracks: TrackDe
       const target = track ? engine?.level(track.id) ?? 0 : 0;
       smoothedLevels.current[i] = THREE.MathUtils.damp(smoothedLevels.current[i], target, 9, dt);
       u.trackLevels.value[i] = smoothedLevels.current[i];
+    }
+    const fog = scene.fog;
+    if (fog instanceof THREE.Fog) {
+      u.fogColor.value.copy(fog.color);
+      u.fogNear.value = fog.near;
+      u.fogFar.value = fog.far;
     }
   });
 
@@ -1813,11 +1832,14 @@ function findPoint(map: CompositionMap, key: string): [number, number] | null {
 
 const pathVertexShader = `
   varying vec2 vWorld;
+  varying float vFogDepth;
 
   void main() {
     vec4 worldPosition = modelMatrix * vec4(position, 1.0);
     vWorld = worldPosition.xz;
-    gl_Position = projectionMatrix * viewMatrix * worldPosition;
+    vec4 mvPosition = viewMatrix * worldPosition;
+    gl_Position = projectionMatrix * mvPosition;
+    vFogDepth = -mvPosition.z;
   }
 `;
 
@@ -1831,7 +1853,11 @@ const pathFragmentShader = `
   uniform int trackCount;
   uniform float floorStrength;
   uniform float opacity;
+  uniform vec3 fogColor;
+  uniform float fogNear;
+  uniform float fogFar;
   varying vec2 vWorld;
+  varying float vFogDepth;
 
   void main() {
     vec3 color = baseColor * floorStrength;
@@ -1849,19 +1875,23 @@ const pathFragmentShader = `
     }
 
     color += baseColor * min(lightTotal, 1.0) * 0.08;
-    gl_FragColor = vec4(color, opacity);
+    float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);
+    gl_FragColor = vec4(mix(color, fogColor, fogFactor), opacity);
   }
 `;
 
 const reflectiveFloorVertexShader = `
   varying vec2 vWorld;
   varying vec2 vUv;
+  varying float vFogDepth;
 
   void main() {
     vUv = uv;
     vec4 worldPosition = modelMatrix * vec4(position, 1.0);
     vWorld = worldPosition.xz;
-    gl_Position = projectionMatrix * viewMatrix * worldPosition;
+    vec4 mvPosition = viewMatrix * worldPosition;
+    gl_Position = projectionMatrix * mvPosition;
+    vFogDepth = -mvPosition.z;
   }
 `;
 
@@ -1874,8 +1904,12 @@ const reflectiveFloorFragmentShader = `
   uniform int trackCount;
   uniform float time;
   uniform float opacity;
+  uniform vec3 fogColor;
+  uniform float fogNear;
+  uniform float fogFar;
   varying vec2 vWorld;
   varying vec2 vUv;
+  varying float vFogDepth;
 
   float hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -1915,6 +1949,7 @@ const reflectiveFloorFragmentShader = `
     vec3 sheen = vec3(0.12, 0.16, 0.19) * (0.08 + brushed * 0.18 + min(glowTotal, 1.0) * 0.15);
     color += sheen;
     float alpha = edgeFade * (0.72 + min(glowTotal, 1.0) * 0.22);
-    gl_FragColor = vec4(color, alpha * opacity);
+    float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);
+    gl_FragColor = vec4(mix(color, fogColor, fogFactor), alpha * opacity * (1.0 - fogFactor));
   }
 `;

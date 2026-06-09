@@ -1,5 +1,5 @@
 import { useFrame, useThree } from "@react-three/fiber";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import * as THREE from "three";
 import { arWalk, loopPreviewGroups, loopWrap, useStore, viewState } from "../store";
@@ -14,9 +14,9 @@ import { DebugSampler } from "./DebugSampler";
 import { ARWalkSession } from "./ARWalkSession";
 import { CompositionMap, LoopPreviewTransform, loopPreviewElevationOffset, tiledMapTransforms, transformLoopPoint } from "../map";
 import { TrackDef } from "../composition";
-import { debugFlag, debugValue } from "../debug";
+import { debugEnabled, debugFlag, debugValue } from "../debug";
 import { EnvironmentEffects } from "./EnvironmentEffects";
-import { radialFade } from "./fade";
+import { effectiveFadeInner, effectiveFadeOuter, isDebugFadeOverridden, radialFade, subscribeDebugFade } from "./fade";
 
 const VIEWER_SAMPLE_DISTANCE = 0.75;
 const TILE_PREVIEW_RADIUS = 180;
@@ -45,13 +45,19 @@ export function Scene() {
     const next: [number, number] = arWalk.active ? [viewState.x, viewState.z] : [camera.position.x, camera.position.z];
     setViewer((current) => (Math.hypot(current[0] - next[0], current[1] - next[1]) > VIEWER_SAMPLE_DISTANCE ? next : current));
   });
+  // Dragging the debug radius slider doesn't move the viewer, so without this
+  // the memo below (base-marker fades) wouldn't recompute while standing still.
+  const [, bumpFadeVersion] = useState(0);
+  useEffect(() => subscribeDebugFade(() => bumpFadeVersion((v) => v + 1)), []);
   const loopPreviewsEnabled = !debugFlag("debugNoLoopPreview");
   const tileLights = loopPreviewsEnabled ? tileLightTracks(map, tracks, viewer) : tracks;
   // On tiled/looped maps the canonical "base" stems are just one copy of the
   // repeated space, so in explore mode they distance-fade like preview copies
   // instead of sitting at full opacity on the horizon. Edit mode and untiled
-  // maps keep base stems fully visible.
-  const fadeBaseMarkers = mode === "explore" && loopPreviewsEnabled && map.tiling.type !== "none";
+  // maps keep base stems fully visible — UNLESS the debug radius slider is in
+  // use, in which case base orbs fade too so the radius applies to everything.
+  const fadeBaseMarkers =
+    mode === "explore" && loopPreviewsEnabled && (map.tiling.type !== "none" || isDebugFadeOverridden());
   // Base stems carry their own point light, but preview copies don't (a light
   // per copy would thrash the renderer's light count). Instead, on tiled maps a
   // fixed pool of echo lights — one per track — follows each stem's nearest
@@ -108,6 +114,7 @@ export function Scene() {
       <ARWalkSession />
       <ARBackdrop />
       <DebugSampler />
+      {debugEnabled() && <FadeRadiusDebug />}
     </>
   );
 }
@@ -146,6 +153,40 @@ function ARBackdrop() {
         toneMapped={false}
       />
     </mesh>
+  );
+}
+
+// Two ground-plane rings showing the inner/outer radial fade radii.
+// Only mounted in debug mode (?debug=1). Follows the camera each frame so the
+// circles stay centred on the viewer as you walk.
+function FadeRadiusDebug() {
+  const camera = useThree((s) => s.camera);
+  const innerRef = useRef<THREE.Mesh>(null);
+  const outerRef = useRef<THREE.Mesh>(null);
+  const [radii, setRadii] = useState(() => ({ inner: effectiveFadeInner(), outer: effectiveFadeOuter() }));
+
+  useEffect(() => subscribeDebugFade(() => {
+    setRadii({ inner: effectiveFadeInner(), outer: effectiveFadeOuter() });
+  }), []);
+
+  useFrame(() => {
+    const x = camera.position.x;
+    const z = camera.position.z;
+    if (innerRef.current) innerRef.current.position.set(x, 0.05, z);
+    if (outerRef.current) outerRef.current.position.set(x, 0.05, z);
+  });
+
+  return (
+    <>
+      <mesh ref={innerRef} rotation={[-Math.PI / 2, 0, 0]} renderOrder={4}>
+        <ringGeometry args={[radii.inner - 0.3, radii.inner + 0.3, 96]} />
+        <meshBasicMaterial color="#00ffaa" transparent opacity={0.55} depthWrite={false} toneMapped={false} />
+      </mesh>
+      <mesh ref={outerRef} rotation={[-Math.PI / 2, 0, 0]} renderOrder={4}>
+        <ringGeometry args={[radii.outer - 0.3, radii.outer + 0.3, 128]} />
+        <meshBasicMaterial color="#ff6600" transparent opacity={0.55} depthWrite={false} toneMapped={false} />
+      </mesh>
+    </>
   );
 }
 

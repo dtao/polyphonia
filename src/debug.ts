@@ -42,6 +42,8 @@ export interface DebugSample {
     pointLights: number;
     visiblePointLights: number;
     meshes: number;
+    fogNear?: number;
+    fogFar?: number;
   };
   tracks: {
     count: number;

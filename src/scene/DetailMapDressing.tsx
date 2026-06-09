@@ -28,7 +28,7 @@ import {
 } from "./fadedInstances";
 import type { FadedInstancedMesh } from "./fadedInstances";
 import { pathJointPatches } from "./MapScene";
-import { radialFade, RADIAL_FADE_OUTER } from "./fade";
+import { effectiveFadeOuter, radialFade, subscribeDebugFade } from "./fade";
 import { environmentGenerationRadius, environmentPreviewTransforms } from "./environmentVisibility";
 import { debugFlag } from "../debug";
 import {
@@ -69,7 +69,8 @@ const DETAIL_FLOOR_TILE_RADIUS = 92;
 // instances still cull at the shared radial-fade outer radius; preview copies
 // are generated farther out based on their objects' offsets so every instance
 // exists before it enters the fade band.
-const DETAIL_OBJECT_CULL = RADIAL_FADE_OUTER;
+// Dynamic: reads effectiveFadeOuter() per-call so debug overrides take effect.
+const detailObjectCull = () => effectiveFadeOuter();
 
 export function DetailMapDressing({
   map,
@@ -570,7 +571,7 @@ function DetailInstances({
       const fade = radialFade(distance);
       const lod = environmentLodFade(distance, quality, noLod);
       const state =
-        distance > DETAIL_OBJECT_CULL || fade <= 0.002
+        distance > detailObjectCull() || fade <= 0.002
           ? "hidden"
           : lod.near > 0.002 && lod.far > 0.002
             ? "blend"
@@ -625,6 +626,10 @@ function DetailInstances({
   useLayoutEffect(() => {
     refill();
   }, [refill]);
+
+  useEffect(() => subscribeDebugFade(() => {
+    lastUpdate.current = -Infinity;
+  }), []);
 
   useFrame(({ clock }) => {
     const wrapped = seenWrap.current !== loopWrap.generation;

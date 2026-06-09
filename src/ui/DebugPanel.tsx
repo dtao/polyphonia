@@ -1,9 +1,28 @@
 import { useEffect, useState } from "react";
 import { clearDebugSamples, debugEnabled, exportDebugSamples, latestDebugSample, DebugSample } from "../debug";
+import {
+  RADIAL_FADE_INNER,
+  RADIAL_FADE_OUTER,
+  effectiveFadeInner,
+  effectiveFadeOuter,
+  setDebugFadeRadii,
+  subscribeDebugFade,
+} from "../scene/fade";
+
+function useFadeControls() {
+  const [inner, setInner] = useState(effectiveFadeInner);
+  const [outer, setOuter] = useState(effectiveFadeOuter);
+  useEffect(() => subscribeDebugFade(() => {
+    setInner(effectiveFadeInner());
+    setOuter(effectiveFadeOuter());
+  }), []);
+  return { inner, outer };
+}
 
 export function DebugPanel() {
   const [enabled] = useState(debugEnabled);
   const [sample, setSample] = useState<DebugSample | null>(() => latestDebugSample());
+  const fade = useFadeControls();
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
@@ -117,6 +136,41 @@ export function DebugPanel() {
               ? `${fmt(audio.activeRoom.decay)}s decay · ${fmt(audio.activeRoom.impulseDuration)}s IR · send ${fmt(audio.activeRoom.reverbSend)}`
               : "off"}
           </div>
+          <div style={sliderSection}>
+            <div style={resetHint}>
+              Live fog near {fmt(sample?.render?.fogNear)} · far {fmt(sample?.render?.fogFar)}
+            </div>
+            <div style={sliderLabel}>
+              Fade inner {Math.round(fade.inner)}
+              {fade.inner !== RADIAL_FADE_INNER && (
+                <span style={resetHint}> (default {RADIAL_FADE_INNER})</span>
+              )}
+            </div>
+            <input
+              type="range" min={20} max={200} step={1}
+              value={fade.inner}
+              style={slider}
+              onChange={(e) => setDebugFadeRadii(Number(e.target.value), fade.outer)}
+            />
+            <div style={sliderLabel}>
+              Fade outer {Math.round(fade.outer)}
+              {fade.outer !== RADIAL_FADE_OUTER && (
+                <span style={resetHint}> (default {RADIAL_FADE_OUTER})</span>
+              )}
+            </div>
+            <input
+              type="range" min={30} max={250} step={1}
+              value={fade.outer}
+              style={slider}
+              onChange={(e) => setDebugFadeRadii(fade.inner, Number(e.target.value))}
+            />
+            <button
+              style={miniBtn}
+              onClick={() => setDebugFadeRadii(RADIAL_FADE_INNER, RADIAL_FADE_OUTER)}
+            >
+              Reset radius
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -154,3 +208,14 @@ const miniBtn: React.CSSProperties = {
   fontSize: 11,
   cursor: "pointer",
 };
+const sliderSection: React.CSSProperties = {
+  marginTop: 6,
+  paddingTop: 6,
+  borderTop: "1px solid rgba(255,255,255,0.12)",
+  display: "flex",
+  flexDirection: "column",
+  gap: 4,
+};
+const sliderLabel: React.CSSProperties = { fontSize: 11 };
+const resetHint: React.CSSProperties = { opacity: 0.55 };
+const slider: React.CSSProperties = { width: "100%", cursor: "pointer" };

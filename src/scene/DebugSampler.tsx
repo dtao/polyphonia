@@ -60,6 +60,7 @@ function renderDebugSnapshot(gl: THREE.WebGLRenderer, scene: THREE.Scene) {
     }
     if ((object as THREE.Mesh).isMesh) meshes++;
   });
+  const fog = scene.fog instanceof THREE.Fog ? scene.fog : null;
   return {
     calls: gl.info.render.calls,
     triangles: gl.info.render.triangles,
@@ -68,5 +69,7 @@ function renderDebugSnapshot(gl: THREE.WebGLRenderer, scene: THREE.Scene) {
     pointLights,
     visiblePointLights,
     meshes,
+    fogNear: fog?.near,
+    fogFar: fog?.far,
   };
 }

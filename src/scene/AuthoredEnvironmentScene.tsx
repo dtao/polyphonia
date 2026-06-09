@@ -20,7 +20,7 @@ import {
   finishInstanceFadeUpdate,
   setInstanceFade,
 } from "./fadedInstances";
-import { radialFade, RADIAL_FADE_OUTER } from "./fade";
+import { effectiveFadeOuter, radialFade, subscribeDebugFade } from "./fade";
 import { environmentGenerationRadius, environmentPreviewTransforms } from "./environmentVisibility";
 import { PlacedLandmarkPreviews } from "./PlacedLandmarkPreviews";
 
@@ -445,10 +445,11 @@ function AuthoredInstanceBatch({
 
   const refill = useCallback(() => {
     let count = 0;
+    const cullAt = effectiveFadeOuter();
     for (const matrix of matrices) {
       position.setFromMatrixPosition(matrix);
       const distance = position.distanceTo(camera.position);
-      if (distance > RADIAL_FADE_OUTER) continue;
+      if (distance > cullAt) continue;
       const fade = radialFade(distance);
       if (fade <= 0.002) continue;
       mesh.setMatrixAt(count, matrix);
@@ -468,6 +469,9 @@ function AuthoredInstanceBatch({
   useLayoutEffect(() => {
     refill();
   }, [refill]);
+  useEffect(() => subscribeDebugFade(() => {
+    lastUpdate.current = -Infinity;
+  }), []);
   useFrame(({ clock }) => {
     const wrapped = seenWrap.current !== loopWrap.generation;
     seenWrap.current = loopWrap.generation;
