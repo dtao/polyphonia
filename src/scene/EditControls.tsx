@@ -59,13 +59,18 @@ export function EditControls() {
     if (pendingTeleport.value !== null) {
       const { x: newX, z: newZ } = pendingTeleport.value;
       pendingTeleport.value = null;
-      const oldGroundY = surfaceHeightAt(map, [c.target.x, c.target.z]);
       const newGroundY = surfaceHeightAt(map, [newX, newZ]);
+      // Snap the pivot to just above the new surface (matching initial setup),
+      // rather than computing a delta from the old ground. The old orbit pivot
+      // Y can be far off from the actual surface below (e.g. after WASD-ing
+      // to a higher/lower area without pressing Q/E), which would
+      // overcorrect dy and send the camera below the destination path.
+      const newTargetY = newGroundY + 1.5;
+      const cameraAboveTarget = camera.position.y - c.target.y;
       const dx = newX - c.target.x;
-      const dy = newGroundY - oldGroundY;
       const dz = newZ - c.target.z;
-      c.target.set(newX, c.target.y + dy, newZ);
-      camera.position.set(camera.position.x + dx, camera.position.y + dy, camera.position.z + dz);
+      c.target.set(newX, newTargetY, newZ);
+      camera.position.set(camera.position.x + dx, newTargetY + cameraAboveTarget, camera.position.z + dz);
       c.update();
     }
 
