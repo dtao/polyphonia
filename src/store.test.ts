@@ -291,7 +291,7 @@ describe("store edit contracts", () => {
       selectedMapPointKey: "5.000,0.000",
     }));
 
-    useStore.getState().moveMapPoint("5.000,0.000", [10.4, 5], 9);
+    useStore.getState().moveMapPoint("5.000,0.000", [10.4, 5], 5);
 
     const state = useStore.getState();
     const joined = state.composition.map.segments.filter((segment) =>

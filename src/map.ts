@@ -295,7 +295,19 @@ function endpointConnection(map: CompositionMap, segment: WalkableSegment, end: 
   // reverse connection here would re-drive the endpoint from a center-relative
   // local point, dragging it as the platform resizes — so leave it untracked.
   if (isPlatformAttachmentAnchor(map, segment.id, end)) return undefined;
-  return validConnection(map, segment.connections?.[end]) ?? inferEndpointConnection(map, segment, end);
+  const existing = validConnection(map, segment.connections?.[end]);
+  // A stored platform connection is re-validated against the current elevation so
+  // that saving a composition at one height and later changing the endpoint's
+  // elevation (or loading onto a platform that moved) doesn't permanently lock
+  // the connection. Re-infer so the normal elevation guard in
+  // inferEndpointConnection decides whether to keep or drop it.
+  if (existing?.kind === "platform") {
+    const platform = map.platforms.find((p) => p.id === existing.platformId)!;
+    if (Math.abs(platformElevation(map, platform) - segmentEndElevation(map, segment, end)) > 1.5) {
+      return inferEndpointConnection(map, segment, end);
+    }
+  }
+  return existing ?? inferEndpointConnection(map, segment, end);
 }
 
 function isPlatformAttachmentAnchor(map: Pick<CompositionMap, "platforms">, segmentId: string, end: SegmentEnd): boolean {
