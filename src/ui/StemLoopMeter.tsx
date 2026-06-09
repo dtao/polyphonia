@@ -11,7 +11,8 @@ const HEIGHT = 64;
 export function StemLoopMeter({ track }: { track: TrackDef }) {
   const engine = useStore((s) => s.engine);
   const bpm = useStore((s) => s.composition.bpm);
-  const bars = useStore((s) => s.composition.bars);
+  const beats = useStore((s) => s.composition.beats);
+  const beatsPerBar = useStore((s) => s.composition.beatsPerBar ?? 4);
   const trackPeaks = useStore((s) => s.trackPeaks);
   const setTrackLoop = useStore((s) => s.setTrackLoop);
   const loopProgress = useStore((s) => s.loopProgress);
@@ -45,12 +46,15 @@ export function StemLoopMeter({ track }: { track: TrackDef }) {
 
   const duration = data?.duration ?? 0;
   const beatLength = bpm > 0 ? 60 / bpm : 0.5;
-  const musicalLength = bars ? bars * 4 * beatLength : duration;
+  const musicalLength = beats ? beats * beatLength : duration;
   const inSec = clamp(track.loopStart ?? 0, 0, duration);
   const outSec = clamp(track.loopEnd ?? Math.min(duration, inSec + musicalLength), inSec, duration);
   const regionLen = Math.max(0.0001, outSec - inSec);
   const repeat = track.loopRepeat ?? false;
   const custom = track.loopStart != null || track.loopEnd != null;
+  // The stem's timing offset shifts its content later (positive) within the
+  // loop, so the playhead maps back by subtracting it from the loop position.
+  const offsetSec = (track.offsetBeats ?? 0) * beatLength;
 
   // Live playhead, mapped from the composition loop position back into source
   // time for this stem.
@@ -60,7 +64,7 @@ export function StemLoopMeter({ track }: { track: TrackDef }) {
     const tick = () => {
       const p = loopProgress();
       if (p && p.duration > 0) {
-        const pos = p.position % p.duration;
+        const pos = (((p.position - offsetSec) % p.duration) + p.duration) % p.duration;
         let src: number | null;
         if (repeat) src = inSec + (pos % regionLen);
         else src = pos < regionLen ? inSec + pos : null;
@@ -72,13 +76,13 @@ export function StemLoopMeter({ track }: { track: TrackDef }) {
     };
     tick();
     return () => cancelAnimationFrame(frame);
-  }, [loopProgress, duration, inSec, regionLen, repeat]);
+  }, [loopProgress, duration, inSec, regionLen, repeat, offsetSec]);
 
   if (!data || duration <= 0) {
     return <div style={unavailable}>Waveform appears once audio is playing.</div>;
   }
 
-  const beats = Math.min(256, Math.max(1, Math.round(duration / beatLength)));
+  const beatCount = Math.min(256, Math.max(1, Math.round(duration / beatLength)));
 
   const secFromPointer = (clientX: number): number => {
     const rect = trackRef.current?.getBoundingClientRect();
@@ -120,10 +124,10 @@ export function StemLoopMeter({ track }: { track: TrackDef }) {
         <div style={{ ...mask, left: 0, width: `${(inSec / duration) * 100}%` }} />
         <div style={{ ...mask, right: 0, width: `${((duration - outSec) / duration) * 100}%` }} />
         {/* Beat / bar markers. */}
-        {Array.from({ length: beats + 1 }, (_, i) => {
+        {Array.from({ length: beatCount + 1 }, (_, i) => {
           const t = i * beatLength;
           if (t > duration) return null;
-          const isBar = i % 4 === 0;
+          const isBar = i % beatsPerBar === 0;
           return (
             <div
               key={i}

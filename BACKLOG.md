@@ -101,3 +101,5 @@ earlier ones.
 - [x] P20 Color chooser should dismiss (like other UI elements) when user clicks away.
 - [x] P21 There should be no landmark objects when creating a new composition.
 - [x] P22 Publishing (and updating) should have a progress bar, just like loading.
+- [ ] P23 Loop bar should allow setting number of *beats*, not bars (e.g.
+  supporting non-standard time signatures).

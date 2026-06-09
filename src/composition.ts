@@ -60,6 +60,12 @@ export interface TrackDef {
    * fill the loop instead of padding with silence. Off by default (trim).
    */
   loopRepeat?: boolean;
+  /**
+   * Shift this stem earlier (negative) or later (positive) within the loop, in
+   * beats. Note fractions map to beats: 1/16 = 0.25, 1/8 = 0.5, 1/4 = 1, 1/2 =
+   * 2. Applied as a phase shift against the shared clock, so stems stay in sync.
+   */
+  offsetBeats?: number;
   /** Optional speaker-like directional output; absent means omnidirectional. */
   directivity?: StemDirectivity;
   /** Content hash of the stem audio, set in published manifests for change detection. */
@@ -80,12 +86,19 @@ export interface Composition {
   artistAvatarEmailHash?: string;
   bpm: number;
   /**
-   * Loop length in bars (4 beats each). When set, stems are trimmed to this
-   * musical length for seamless looping. When omitted, the engine infers a
-   * shared BPM-aligned loop length from uploaded stems and pads/trims prepared
-   * loop buffers to keep every stem restarting together.
+   * Loop length in beats. When set, stems are trimmed to this musical length for
+   * seamless looping. When omitted, the engine infers a shared BPM-aligned loop
+   * length from uploaded stems and pads/trims prepared loop buffers to keep
+   * every stem restarting together. (Legacy manifests stored this as `bars`;
+   * `normalizeComposition` migrates `bars` to `beats` as `bars * 4`.)
    */
-  bars?: number;
+  beats?: number;
+  /**
+   * Beats per bar — the time-signature numerator, used for visual bar grouping
+   * in the loop/stem meters. Defaults to 4. Lets non-standard signatures (5/4,
+   * 7/8, …) place bar lines correctly without constraining the loop length.
+   */
+  beatsPerBar?: number;
   /** Whether playback loops. Defaults to true for existing compositions. */
   loopEnabled?: boolean;
   /** Seconds to trim from the start of each stem's loop region. */
@@ -126,7 +139,7 @@ export const defaultComposition: Composition = {
   title: "Journey",
   artist: "Polyphonia",
   bpm: 120,
-  bars: 16,
+  beats: 64,
   environment: defaultEnvironment,
   map: defaultMap,
   tracks: [
@@ -179,14 +192,20 @@ export const defaultComposition: Composition = {
 
 export function normalizeComposition(comp: Composition): Composition {
   const now = new Date().toISOString();
-  return {
+  // Legacy manifests stored loop length in bars (4 beats each); migrate to beats.
+  const legacyBars = (comp as { bars?: number }).bars;
+  const beats = comp.beats ?? (legacyBars != null ? legacyBars * 4 : undefined);
+  const normalized: Composition = {
     ...comp,
+    beats,
     createdAt: comp.createdAt ?? comp.updatedAt ?? now,
     updatedAt: comp.updatedAt ?? comp.createdAt ?? now,
     environment: normalizeEnvironment(comp.environment),
     map: normalizeMap(comp.map),
     tracks: comp.tracks.map(normalizeTrack),
   };
+  delete (normalized as { bars?: number }).bars;
+  return normalized;
 }
 
 function normalizeTrack(track: TrackDef): TrackDef {
@@ -227,7 +246,8 @@ export function compositionRevision(comp: RevisionComposition): string {
       artistId: comp.artistId,
       artistSlug: comp.artistSlug,
       bpm: comp.bpm,
-      bars: comp.bars,
+      beats: comp.beats,
+      beatsPerBar: comp.beatsPerBar,
       loopEnabled: comp.loopEnabled,
       loopStart: comp.loopStart,
       loopEndTrim: comp.loopEndTrim,
@@ -249,6 +269,7 @@ export function compositionRevision(comp: RevisionComposition): string {
         loopStart: track.loopStart,
         loopEnd: track.loopEnd,
         loopRepeat: track.loopRepeat,
+        offsetBeats: track.offsetBeats,
         directivity: track.directivity,
       })),
     }),

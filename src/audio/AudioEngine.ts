@@ -44,9 +44,9 @@ const REDUCED_LISTENER_UPDATE_INTERVAL = 1 / 30;
 const REDUCED_ACOUSTICS_UPDATE_INTERVAL = 1 / 20;
 const REDUCED_ROOM_UPDATE_INTERVAL = 1 / 8;
 // How much overrun past the musical loop length we treat as a tail to fold
-// back across the seam. Capped so a genuinely longer stem (e.g. a 16-bar clip
-// against an 8-bar loop) is not folded onto its own first half.
-const LOOP_TAIL_MAX_BARS = 2;
+// back across the seam, in beats. Capped so a genuinely longer stem (e.g. a
+// 32-beat clip against a 16-beat loop) is not folded onto its own first half.
+const LOOP_TAIL_MAX_BEATS = 8;
 // Short fade applied to the very end of a folded tail so a capped (still
 // ringing) tail does not click where it stops.
 const LOOP_TAIL_FADE = 0.03;
@@ -152,7 +152,8 @@ export class AudioEngine {
   async load(comp: Composition, onProgress?: (progress: AudioLoadProgress) => void): Promise<void> {
     // Only synthesize placeholders if some track actually needs them.
     const needsSynth = comp.tracks.some((t) => t.source.kind === "synth");
-    const stems = needsSynth ? createPlaceholderStems(this.ctx, comp.bpm, comp.bars ?? 4) : null;
+    const synthBars = comp.beats != null ? Math.max(1, Math.round(comp.beats / 4)) : 4;
+    const stems = needsSynth ? createPlaceholderStems(this.ctx, comp.bpm, synthBars) : null;
 
     const loaded: Array<{ def: TrackDef; buffer: AudioBuffer }> = [];
     const fileBuffers = new Map<string, Promise<AudioBuffer>>();
@@ -196,10 +197,10 @@ export class AudioEngine {
     }
   }
 
-  private setLoopFields(comp: Pick<Composition, "bpm" | "bars" | "loopEnabled" | "loopStart" | "loopEndTrim" | "loopCrossfade" | "loopTail">): void {
+  private setLoopFields(comp: Pick<Composition, "bpm" | "beats" | "loopEnabled" | "loopStart" | "loopEndTrim" | "loopCrossfade" | "loopTail">): void {
     this.bpm = Math.max(1, comp.bpm || 120);
     this.loopEnabled = comp.loopEnabled ?? true;
-    this.loopLength = comp.bars ? comp.bars * 4 * (60 / this.bpm) : 0;
+    this.loopLength = comp.beats ? comp.beats * (60 / this.bpm) : 0;
     this.loopStartOverride = comp.loopStart;
     this.loopEndTrim = comp.loopEndTrim ?? 0;
     this.loopCrossfade = comp.loopCrossfade ?? 0.035;
@@ -303,7 +304,7 @@ export class AudioEngine {
   private tailFoldFrames(overrun: number, loopFrames: number, sampleRate: number): number {
     if (!this.loopTail || !this.loopLength) return 0;
     if (overrun <= 0) return 0;
-    const maxTail = Math.round(LOOP_TAIL_MAX_BARS * 4 * (60 / this.bpm) * sampleRate);
+    const maxTail = Math.round(LOOP_TAIL_MAX_BEATS * (60 / this.bpm) * sampleRate);
     return Math.min(overrun, maxTail, loopFrames);
   }
 
@@ -364,11 +365,29 @@ export class AudioEngine {
     return buffer.duration;
   }
 
+  // A stem's timing offset in seconds (M7.1): positive plays later, negative
+  // earlier. Stored in beats so it tracks tempo.
+  private offsetSeconds(def: TrackDef): number {
+    return (def.offsetBeats ?? 0) * (60 / this.bpm);
+  }
+
+  // Where in a track's buffer to begin so it lands at the right point of the
+  // running loop, accounting for its timing offset. When looping, a later
+  // offset means starting that much *behind* the global phase so the content is
+  // heard later; the whole thing wraps within the loop. When not looping, the
+  // offset is ignored and playback simply tracks elapsed time.
+  private loopPhase(t: LiveTrack, when: number): number {
+    const len = this.regionLength(t.buffer);
+    if (!this.loopEnabled) return Math.min(Math.max(0, when - this.loopStartTime), len - 0.001);
+    const elapsed = when - this.loopStartTime - this.offsetSeconds(t.def);
+    return (((elapsed % len) + len) % len);
+  }
+
   // Start every stem in lockstep, looped.
   start(): void {
     if (this.started) return;
     this.loopStartTime = this.ctx.currentTime + 0.1;
-    for (const t of this.tracks) this.startSource(t, this.loopStartTime, 0);
+    for (const t of this.tracks) this.startSource(t, this.loopStartTime, this.loopPhase(t, this.loopStartTime));
     this.started = true;
   }
 
@@ -386,9 +405,7 @@ export class AudioEngine {
     this.tracks.push(t);
     if (this.started) {
       const when = this.ctx.currentTime + 0.06;
-      const len = this.regionLength(t.buffer);
-      const phase = ((((when - this.loopStartTime) % len) + len) % len);
-      this.startSource(t, when, phase);
+      this.startSource(t, when, this.loopPhase(t, when));
     }
   }
 
@@ -402,13 +419,11 @@ export class AudioEngine {
     this.tracks.push(t);
     if (this.started) {
       const when = this.ctx.currentTime + 0.06;
-      const len = this.regionLength(t.buffer);
-      const phase = ((((when - this.loopStartTime) % len) + len) % len);
-      this.startSource(t, when, phase);
+      this.startSource(t, when, this.loopPhase(t, when));
     }
   }
 
-  updateLoopSettings(comp: Pick<Composition, "bpm" | "bars" | "loopEnabled" | "loopStart" | "loopEndTrim" | "loopCrossfade" | "loopTail">): void {
+  updateLoopSettings(comp: Pick<Composition, "bpm" | "beats" | "loopEnabled" | "loopStart" | "loopEndTrim" | "loopCrossfade" | "loopTail">): void {
     clearTimeout(this.auditionTimer);
     this.auditionStartTime = null;
     const wasStarted = this.started;
@@ -432,9 +447,7 @@ export class AudioEngine {
     const when = now + 0.04;
     this.loopStartTime = oldStart;
     for (const t of this.tracks) {
-      const len = this.regionLength(t.buffer);
-      const phase = this.loopEnabled ? ((((when - this.loopStartTime) % len) + len) % len) : Math.min(Math.max(0, when - this.loopStartTime), len - 0.001);
-      this.startSource(t, when, phase);
+      this.startSource(t, when, this.loopPhase(t, when));
     }
   }
 
@@ -481,9 +494,7 @@ export class AudioEngine {
       this.auditionStartTime = null;
       const when = this.ctx.currentTime + 0.03;
       for (const t of this.tracks) {
-        const len = this.regionLength(t.buffer);
-        const phase = ((((when - this.loopStartTime) % len) + len) % len);
-        this.startSource(t, when, phase);
+        this.startSource(t, when, this.loopPhase(t, when));
       }
     }, (duration + 0.08) * 1000);
   }
@@ -688,11 +699,26 @@ export class AudioEngine {
     t.source?.disconnect();
     t.source = undefined;
     const when = this.ctx.currentTime + 0.04;
-    const len = this.regionLength(t.buffer);
-    const phase = this.loopEnabled
-      ? ((((when - this.loopStartTime) % len) + len) % len)
-      : Math.min(Math.max(0, when - this.loopStartTime), len - 0.001);
-    this.startSource(t, when, phase);
+    this.startSource(t, when, this.loopPhase(t, when));
+  }
+
+  // Shift a stem earlier/later within the loop (M7.1). The offset is a start
+  // phase, not a buffer edit, so we just restart this one source aligned to the
+  // running loop — no buffer rebuild and no effect on the other stems.
+  setTrackOffset(id: string, offsetBeats: number): void {
+    const t = this.find(id);
+    if (!t) return;
+    t.def = { ...t.def, offsetBeats };
+    if (!this.started) return;
+    try {
+      t.source?.stop();
+    } catch {
+      /* already stopped */
+    }
+    t.source?.disconnect();
+    t.source = undefined;
+    const when = this.ctx.currentTime + 0.04;
+    this.startSource(t, when, this.loopPhase(t, when));
   }
 
   // Downsampled peak envelope of a stem's decoded source audio plus its

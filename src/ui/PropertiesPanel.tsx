@@ -17,6 +17,7 @@ export function PropertiesPanel() {
     setTrackMinVolume,
     setTrackFalloff,
     setTrackDirectivity,
+    setTrackOffset,
     deleteTrack,
     duplicateTrack,
   } = useStore.getState();
@@ -47,6 +48,8 @@ export function PropertiesPanel() {
       </div>
 
       <StemLoopMeter track={track} />
+
+      <TimingOffset value={track.offsetBeats ?? 0} onChange={(v) => setTrackOffset(track.id, v)} />
 
       <Slider
         label="Max volume"
@@ -255,6 +258,54 @@ function TrackColorChooser({ value, onChange }: { value: string; onChange: (colo
   );
 }
 
+// M7.1 — shift this stem earlier or later within the loop. Offsets are stored
+// in beats; the buttons expose the common note-fraction nudges in each
+// direction (a quarter note = one beat).
+const OFFSET_OPTIONS: Array<{ label: string; beats: number }> = [
+  { label: "−½", beats: -2 },
+  { label: "−¼", beats: -1 },
+  { label: "−⅛", beats: -0.5 },
+  { label: "−1/16", beats: -0.25 },
+  { label: "0", beats: 0 },
+  { label: "+1/16", beats: 0.25 },
+  { label: "+⅛", beats: 0.5 },
+  { label: "+¼", beats: 1 },
+  { label: "+½", beats: 2 },
+];
+
+function TimingOffset({ value, onChange }: { value: number; onChange: (beats: number) => void }) {
+  const active = OFFSET_OPTIONS.find((o) => Math.abs(o.beats - value) < 1e-6);
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, opacity: 0.75, marginBottom: 4 }}>
+        <span>Timing offset</span>
+        <span>{active ? (active.beats === 0 ? "none" : `${active.label} note`) : `${value} beats`}</span>
+      </div>
+      <div style={offsetRow}>
+        {OFFSET_OPTIONS.map((o) => {
+          const selected = active?.beats === o.beats;
+          return (
+            <button
+              key={o.label}
+              type="button"
+              onClick={() => onChange(o.beats)}
+              title={o.beats === 0 ? "No offset" : `Shift ${o.beats < 0 ? "earlier" : "later"} by a ${o.label.replace(/[−+]/, "")} note`}
+              style={{
+                ...offsetBtn,
+                ...(selected ? offsetBtnActive : null),
+                ...(o.beats === 0 ? { flex: "0 0 28px" } : null),
+              }}
+            >
+              {o.label}
+            </button>
+          );
+        })}
+      </div>
+      <div style={helpText}>Nudge this stem ahead of or behind the beat; it stays locked to the shared loop.</div>
+    </div>
+  );
+}
+
 function Slider({
   label,
   help,
@@ -431,4 +482,27 @@ const helpText: React.CSSProperties = {
   color: "rgba(255,255,255,0.52)",
   fontSize: 11,
   lineHeight: 1.35,
+};
+
+const offsetRow: React.CSSProperties = {
+  display: "flex",
+  gap: 3,
+};
+
+const offsetBtn: React.CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  padding: "5px 2px",
+  borderRadius: 5,
+  border: "1px solid rgba(255,255,255,0.16)",
+  background: "rgba(255,255,255,0.05)",
+  color: "rgba(255,255,255,0.78)",
+  cursor: "pointer",
+  fontSize: 11,
+};
+
+const offsetBtnActive: React.CSSProperties = {
+  border: "1px solid rgba(91,140,255,0.7)",
+  background: "rgba(91,140,255,0.28)",
+  color: "white",
 };
