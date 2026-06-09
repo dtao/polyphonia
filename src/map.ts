@@ -191,6 +191,12 @@ export function normalizeMap(value: Partial<CompositionMap> | undefined): Compos
   const startDirection = normalizeDirection(isPoint(value?.start?.direction) ? value.start.direction : fallback.start.direction);
   const legacyLoop = isMapLoop(value?.loop) ? value.loop : undefined;
   const tiling = normalizeMapTiling(value?.tiling, legacyLoop, fallback.tiling);
+  // Elevations are needed during connection inference (to avoid connecting
+  // endpoints to platforms at a very different height). Normalize them now
+  // against the pre-aligned segments; normalizeElevations runs again at the
+  // end against the final segment set to drop any stale keys introduced by
+  // alignment.
+  const preliminaryElevations = normalizeElevations(value?.elevations, segments);
   const map = alignConnectedSegmentEndpoints(inferSegmentEndpointConnections(alignAttachedRooms({
     preset,
     segments,
@@ -204,6 +210,7 @@ export function normalizeMap(value: Partial<CompositionMap> | undefined): Compos
       position: startPosition,
       direction: startDirection,
     },
+    ...(Object.keys(preliminaryElevations).length ? { elevations: preliminaryElevations } : {}),
   })));
   map.loop = normalizeMapLoop(map);
   map.tiling = normalizeMapTiling({ ...tiling, pathLoop: map.loop }, undefined, fallback.tiling);
@@ -318,6 +325,7 @@ function validConnection(map: CompositionMap, connection: SegmentEndpointConnect
 
 function inferEndpointConnection(map: CompositionMap, segment: WalkableSegment, end: SegmentEnd): SegmentEndpointConnection | undefined {
   const point = end === "start" ? segment.start : segment.end;
+  const endpointElevation = segmentEndElevation(map, segment, end);
   for (const room of map.rooms) {
     const localPoint = toRoomLocal(room, point);
     const entranceIndex = room.entrances.findIndex((entrance) => pointInRect(localPoint, doorwayRect(room, entrance)));
@@ -326,7 +334,9 @@ function inferEndpointConnection(map: CompositionMap, segment: WalkableSegment, 
     }
   }
   for (const platform of map.platforms) {
-    if (platformContains(platform, point)) return { kind: "platform", platformId: platform.id, localPoint: toPlatformLocal(platform, point) };
+    if (!platformContains(platform, point)) continue;
+    if (Math.abs(platformElevation(map, platform) - endpointElevation) > 1.5) continue;
+    return { kind: "platform", platformId: platform.id, localPoint: toPlatformLocal(platform, point) };
   }
   return undefined;
 }

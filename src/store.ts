@@ -355,9 +355,12 @@ function connectMapPoint(
     const t = Math.max(0, Math.min(1, ((attempted[0] - segment.start[0]) * dx + (attempted[1] - segment.start[1]) * dz) / lengthSq));
     const point: [number, number] = [segment.start[0] + dx * t, segment.start[1] + dz * t];
     const distance = Math.hypot(attempted[0] - point[0], attempted[1] - point[1]);
-    if (distance <= MAP_POINT_CONNECT_DISTANCE && (!best || distance < best.distance)) {
-      best = { segment, point, t, distance };
-    }
+    if (distance > MAP_POINT_CONNECT_DISTANCE || (best && distance >= best.distance)) continue;
+    const startElevation = pointElevation(map, mapPointKey(segment.start));
+    const endElevation = pointElevation(map, mapPointKey(segment.end));
+    const snapElevation = startElevation + (endElevation - startElevation) * t;
+    if (Math.abs(snapElevation - attemptedElevation) > MAP_POINT_CONNECT_DISTANCE) continue;
+    best = { segment, point, t, distance };
   }
   if (!best) return { map, point: attempted, elevation: attemptedElevation };
 
