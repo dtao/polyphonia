@@ -1,4 +1,5 @@
-import { canSetLoopEndpoint, clampToMap, CompositionMap, endpointKey, isPointInsideMap, MAP_PRESETS, MapPreset, MapTilingType, WalkableSegment } from "../map";
+import { canSetLoopEndpoint, clampToMap, CompositionMap, endpointKey, isPointInsideMap, MAP_PRESETS, MAX_VISIBLE_RADIUS, MIN_VISIBLE_RADIUS, MapPreset, MapTilingType, WalkableSegment } from "../map";
+import { RADIAL_FADE_INNER, RADIAL_FADE_OUTER } from "../scene/fade";
 import { useStore } from "../store";
 
 const LABELS: Record<MapPreset, string> = {
@@ -51,6 +52,20 @@ export function MapPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () 
     const origin: [number, number] = [...map.tiling.origin];
     origin[axis] = value;
     setMap({ preset: "custom", tiling: { ...map.tiling, origin } });
+  }
+
+  function customizeVisibleRadius() {
+    setMap({ visibleRadius: { inner: RADIAL_FADE_INNER, outer: RADIAL_FADE_OUTER } });
+  }
+
+  function setVisibleRadius(field: "inner" | "outer", value: number) {
+    if (!Number.isFinite(value)) return;
+    const current = map.visibleRadius ?? { inner: RADIAL_FADE_INNER, outer: RADIAL_FADE_OUTER };
+    setMap({ visibleRadius: { ...current, [field]: value } });
+  }
+
+  function resetVisibleRadius() {
+    setMap({ visibleRadius: undefined });
   }
 
   if (!open) {
@@ -120,6 +135,57 @@ export function MapPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () 
               <input style={numberInput} type="number" step={1} value={map.tiling.origin[1]} onChange={(e) => setTilingOrigin(1, e.currentTarget.valueAsNumber)} />
             </label>
           </div>
+        )}
+      </div>
+
+      <div style={editorGroup}>
+        <div style={sectionTitle}>Visible radius</div>
+        {map.visibleRadius ? (
+          <>
+            <div style={{ ...numericGrid, gridTemplateColumns: "1fr 1fr" }}>
+              <label style={fieldLabel}>
+                Full
+                <input
+                  style={numberInput}
+                  type="number"
+                  min={MIN_VISIBLE_RADIUS}
+                  max={MAX_VISIBLE_RADIUS}
+                  step={1}
+                  value={map.visibleRadius.inner}
+                  onChange={(e) => setVisibleRadius("inner", e.currentTarget.valueAsNumber)}
+                />
+              </label>
+              <label style={fieldLabel}>
+                Gone
+                <input
+                  style={numberInput}
+                  type="number"
+                  min={MIN_VISIBLE_RADIUS}
+                  max={MAX_VISIBLE_RADIUS}
+                  step={1}
+                  value={map.visibleRadius.outer}
+                  onChange={(e) => setVisibleRadius("outer", e.currentTarget.valueAsNumber)}
+                />
+              </label>
+            </div>
+            <div style={tilingHint}>
+              Objects stay fully visible within “Full” and fade to nothing by
+              “Gone”.
+            </div>
+            <button style={{ ...actionBtn, width: "100%", marginTop: 8 }} onClick={resetVisibleRadius}>
+              Reset to default
+            </button>
+          </>
+        ) : (
+          <>
+            <div style={tilingHint}>
+              Inheriting the default ({RADIAL_FADE_INNER} / {RADIAL_FADE_OUTER}).
+              Customize how far the world stays visible around the listener.
+            </div>
+            <button style={{ ...actionBtn, width: "100%", marginTop: 8 }} onClick={customizeVisibleRadius}>
+              Customize
+            </button>
+          </>
         )}
       </div>
 
