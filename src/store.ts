@@ -68,6 +68,10 @@ export const markerObjects = new Map<string, THREE.Object3D>();
 // y is the walkable-surface height at (x, z); the player rides at y + eye height.
 export const viewState = { x: 0, y: 0, z: 0, fx: 0, fz: -1 };
 
+// Set by MapScene when the user double-clicks a path/room/platform in edit mode.
+// EditControls consumes this in useFrame to shift the orbit pivot there.
+export const pendingTeleport = { value: null as { x: number; z: number } | null };
+
 // Bumped each time <Player> wraps the listener across a path-loop seam (a
 // teleport). Tiled map previews are derived from React state that lags the
 // camera by a frame, so on the wrap frame a copy can be drawn for the old

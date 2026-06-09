@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { TrackDef } from "../composition";
 import { newId } from "../id";
 import { canAddBranchAtPoint, clampToMap, CompositionMap, doorVisualOpenAmount, DOOR_DEPTH, entranceLocalCenter, isTunnelSegment, loopRoleForPoint, MapPlatform, MapRoom, MapWall, platformElevation, platformLocalPolygon, pointHasAttachment, RoomEntrance, roomElevation, roomLocalPoint, roomWorldPoint, RoomSide, solidWallSpans, surfaceHeightAt, tunnelHeight, tunnelSideWalls, wallOpenings, wallThickness, WalkableSegment } from "../map";
-import { useStore, viewState } from "../store";
+import { useStore, viewState, pendingTeleport } from "../store";
 import { DEFAULT_ENCLOSURE_HEIGHT } from "../spatialConstants";
 import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 
@@ -867,6 +867,11 @@ function Segment({
           if (!editMode) return;
           e.stopPropagation();
           selectMapSegment(segment.id);
+        }}
+        onDoubleClick={(e) => {
+          if (!editMode) return;
+          e.stopPropagation();
+          pendingTeleport.value = { x: e.point.x, z: e.point.z };
         }}
       >
         <planeGeometry args={[length, segment.width]} />

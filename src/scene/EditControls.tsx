@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
-import { useStore, viewState } from "../store";
+import { useStore, viewState, pendingTeleport } from "../store";
 import { surfaceHeightAt } from "../map";
 
 // Edit-mode camera: drag to orbit, scroll to zoom, WASD to glide across
@@ -53,6 +53,22 @@ export function EditControls() {
   useFrame((_, dt) => {
     const c = controls.current;
     if (!c) return;
+
+    // Teleport: shift orbit pivot (and camera by the same delta) to the
+    // double-clicked position, preserving zoom/angle.
+    if (pendingTeleport.value !== null) {
+      const { x: newX, z: newZ } = pendingTeleport.value;
+      pendingTeleport.value = null;
+      const oldGroundY = surfaceHeightAt(map, [c.target.x, c.target.z]);
+      const newGroundY = surfaceHeightAt(map, [newX, newZ]);
+      const dx = newX - c.target.x;
+      const dy = newGroundY - oldGroundY;
+      const dz = newZ - c.target.z;
+      c.target.set(newX, c.target.y + dy, newZ);
+      camera.position.set(camera.position.x + dx, camera.position.y + dy, camera.position.z + dz);
+      c.update();
+    }
+
     const speed = 14 * dt;
 
     // Ground-plane forward/right from the camera heading.
