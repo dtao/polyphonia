@@ -119,7 +119,6 @@ export function EditControls() {
       makeDefault
       enableDamping
       enablePan
-      maxPolarAngle={Math.PI / 2.05} // don't dip below the floor
       minDistance={3}
       maxDistance={120}
     />
