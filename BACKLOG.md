@@ -104,3 +104,4 @@ earlier ones.
 - [x] P23 Loop bar should allow setting number of *beats*, not bars (e.g. supporting non-standard time signatures).
 - [x] P24 Rings visualizing Near and Far properties only appear at 0 elevation - should be aligned with elevation of stems (so they're visible where these attributes are being adjusted).
 - [x] P25 Adding stem should always locate stem where camera is looking - including elevation. Currently it can place the stem on a different surface e.g. if there is a path "above" the camera at a higher elevation.
+- [ ] P26 Adding room to another room should always match elevation. Currently when adding a room to another room, it is possible the new room will appear at a different elevation.
