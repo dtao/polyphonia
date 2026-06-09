@@ -128,6 +128,24 @@ both paths and compare. The earlier synthetic repros did NOT include a room
 attached to a path **plus** additional connected segments, which is likely the
 geometry that triggers this — build that exact topology when reproducing.
 
+## Confirmed via the readout (2026-06-09)
+
+With the elevation readout in place, the user confirmed a **hard cap at −20**:
+dragging a room's gizmo below −20 keeps moving the mesh visually, but the
+readout value stops changing at −20. This is the `normalizeRoom` clamp
+(`clamp(room.elevation, -20, 40)` in `src/map.ts`) — expected, and a genuine
+lower bound, but note it is *deeper* than the shallower floor originally
+reported. So there appear to be (at least) two distinct effects:
+
+1. The hard `[-20, 40]` normalize clamp (now confirmed at −20).
+2. The shallower "won't go below ~−2" floor + connecting-paths-jump behavior
+   (still unexplained; see above). This is the one to chase — it is not the
+   −20 clamp.
+
+The visual-vs-readout divergence below −20 is itself a minor bug: the gizmo's
+mesh keeps following the pointer past the clamped value instead of staying
+pinned at −20. Low priority, but worth a note.
+
 ## Current hypotheses (still open)
 
 1. **Something resets/clamps elevation at render or on a later pass** that only
