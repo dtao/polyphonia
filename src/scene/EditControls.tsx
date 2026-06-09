@@ -106,6 +106,10 @@ export function EditControls() {
     viewState.x = c.target.x;
     viewState.z = c.target.z;
     viewState.y = surfaceHeightAt(map, [c.target.x, c.target.z]);
+    // The orbit pivot's actual height = where the camera is looking. New stems
+    // use this (not the snapped surface height) so they land at the focused
+    // elevation even when a path floats above/below the same XZ.
+    viewState.focusY = c.target.y;
     const len = Math.hypot(fwd.current.x, fwd.current.z);
     if (len > 0) {
       viewState.fx = fwd.current.x / len;
