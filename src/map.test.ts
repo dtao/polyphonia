@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_WALL_THICKNESS,
   MAP_PRESETS,
+  MAX_VISIBLE_RADIUS,
+  MIN_VISIBLE_RADIUS,
+  MIN_VISIBLE_RADIUS_GAP,
   canAddBranchAtPoint,
   canAddRoomAtPoint,
   canSetLoopEndpoint,
@@ -106,6 +109,31 @@ describe("map normalization", () => {
       entrances: [{ side: "east", width: 7.4, offset: 0 }],
     });
     expect(map.start.direction).toEqual([0, -1]);
+  });
+
+  it("omits visible radius when uncustomized so the shape stays stable", () => {
+    expect(normalizeMap({ preset: "open" })).not.toHaveProperty("visibleRadius");
+    expect(normalizeMap({ preset: "open", visibleRadius: undefined as any })).not.toHaveProperty("visibleRadius");
+  });
+
+  it("keeps a valid custom visible radius", () => {
+    const map = normalizeMap({ preset: "open", visibleRadius: { inner: 60, outer: 100 } });
+    expect(map.visibleRadius).toEqual({ inner: 60, outer: 100 });
+  });
+
+  it("clamps the visible radius into range and keeps outer above inner", () => {
+    const tooBig = normalizeMap({ preset: "open", visibleRadius: { inner: 999, outer: 999 } });
+    expect(tooBig.visibleRadius).toEqual({ inner: MAX_VISIBLE_RADIUS - MIN_VISIBLE_RADIUS_GAP, outer: MAX_VISIBLE_RADIUS });
+
+    const inverted = normalizeMap({ preset: "open", visibleRadius: { inner: 120, outer: 40 } });
+    expect(inverted.visibleRadius).toEqual({ inner: 120, outer: 120 + MIN_VISIBLE_RADIUS_GAP });
+
+    const tooSmall = normalizeMap({ preset: "open", visibleRadius: { inner: 1, outer: 2 } });
+    expect(tooSmall.visibleRadius).toEqual({ inner: MIN_VISIBLE_RADIUS, outer: MIN_VISIBLE_RADIUS + MIN_VISIBLE_RADIUS_GAP });
+  });
+
+  it("ignores a non-finite visible radius", () => {
+    expect(normalizeMap({ preset: "open", visibleRadius: { inner: NaN, outer: 100 } as any })).not.toHaveProperty("visibleRadius");
   });
 
   it("keeps default enclosure height above listener eye height", () => {

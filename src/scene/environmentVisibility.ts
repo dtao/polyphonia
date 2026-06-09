@@ -14,7 +14,7 @@ const ENVIRONMENT_GENERATION_BUFFER = 4;
 // the visible circle that even an object on the near edge of a newly admitted
 // copy already exists outside the fade band.
 export function environmentGenerationRadius(
-  map: Pick<CompositionMap, "segments" | "tiling">,
+  map: Pick<CompositionMap, "segments" | "tiling" | "visibleRadius">,
   positions: ArrayLike<readonly [number, number]>,
 ): number {
   const sources = previewSources(map);
@@ -25,7 +25,12 @@ export function environmentGenerationRadius(
       maxOffset = Math.max(maxOffset, Math.hypot(position[0] - source[0], position[1] - source[1]));
     }
   }
-  return RADIAL_FADE_OUTER + maxOffset + ENVIRONMENT_GENERATION_BUFFER;
+  // Track the composition's own visible radius (not just the constant) so a
+  // larger authored radius generates enough tiled copies and doesn't pop in.
+  // Read from the map rather than the live fade module: map identity changes
+  // when the radius is edited, so the caller's memo recomputes deterministically.
+  const outer = map.visibleRadius?.outer ?? RADIAL_FADE_OUTER;
+  return outer + maxOffset + ENVIRONMENT_GENERATION_BUFFER;
 }
 
 export function environmentPreviewTransforms(

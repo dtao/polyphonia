@@ -42,7 +42,9 @@ these spatial compositions.
   **walls** can be placed
   anywhere to shape occlusion deliberately. Rooms, tunnels, and walls expose
   wall thickness controls, so thin barriers lightly darken sound while thick
-  barriers heavily damp it.
+  barriers heavily damp it. Each composition can also set its own **visible
+  radius** in the Map panel — how far the world stays fully visible around the
+  listener before fading out — or inherit the default.
 - **Edit** — an overhead edit mode to place tracks in space (drag gizmo), and a
   properties panel to rename, recolor, set volume, tune distance falloff, or
   point a stem like a directional speaker with configurable beam width and

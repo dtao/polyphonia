@@ -129,7 +129,25 @@ export interface CompositionMap {
     position: [number, number];
     direction: [number, number];
   };
+  /**
+   * Per-composition override of the camera-centered radial visibility band
+   * (`src/scene/fade.ts`): objects are fully visible within `inner`, gone beyond
+   * `outer`, and fade across the band. Absent = inherit the engine defaults
+   * (`RADIAL_FADE_INNER`/`RADIAL_FADE_OUTER`). Composers set this from the Map
+   * panel to dial in how far the world stays visible around them.
+   */
+  visibleRadius?: {
+    inner: number;
+    outer: number;
+  };
 }
+
+// Bounds for a composition's custom visible radius. Mirror the debug sliders'
+// ranges (DebugPanel) so authored and tuned values agree; `MIN_VISIBLE_RADIUS_GAP`
+// keeps the fade band from collapsing (or inverting) into a hard edge.
+export const MIN_VISIBLE_RADIUS = 20;
+export const MAX_VISIBLE_RADIUS = 250;
+export const MIN_VISIBLE_RADIUS_GAP = 5;
 
 export type MapSupport =
   | { kind: "open" }
@@ -216,16 +234,32 @@ export function normalizeMap(value: Partial<CompositionMap> | undefined): Compos
   map.tiling = normalizeMapTiling({ ...tiling, pathLoop: map.loop }, undefined, fallback.tiling);
   map.loop = map.tiling.type === "path-loop" ? map.tiling.pathLoop : undefined;
   const elevations = normalizeElevations(value?.elevations, map.segments);
+  const visibleRadius = normalizeVisibleRadius(value?.visibleRadius);
   return {
     ...map,
     // Omit when flat so untiled/older compositions keep an identical shape (and
     // an identical publish revision hash).
     ...(Object.keys(elevations).length ? { elevations } : {}),
+    // Omit when uncustomized for the same reason: compositions that inherit the
+    // default radius keep an identical shape and publish hash.
+    ...(visibleRadius ? { visibleRadius } : {}),
     start: {
       ...map.start,
       position: clampToMap(map, map.start.position),
     },
   };
+}
+
+// Clamp a custom visible radius into range and keep `outer` a band's width above
+// `inner`. Returns undefined for absent/invalid input so the composition inherits
+// the engine defaults.
+function normalizeVisibleRadius(value: unknown): { inner: number; outer: number } | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = value as { inner?: unknown; outer?: unknown };
+  if (!Number.isFinite(raw.inner) || !Number.isFinite(raw.outer)) return undefined;
+  const inner = clamp(raw.inner as number, MIN_VISIBLE_RADIUS, MAX_VISIBLE_RADIUS - MIN_VISIBLE_RADIUS_GAP);
+  const outer = clamp(raw.outer as number, inner + MIN_VISIBLE_RADIUS_GAP, MAX_VISIBLE_RADIUS);
+  return { inner, outer };
 }
 
 // Keep only finite, non-zero heights whose key still matches a segment endpoint,

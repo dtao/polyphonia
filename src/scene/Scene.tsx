@@ -16,7 +16,7 @@ import { CompositionMap, LoopPreviewTransform, loopPreviewElevationOffset, tiled
 import { TrackDef } from "../composition";
 import { debugEnabled, debugFlag, debugValue } from "../debug";
 import { EnvironmentEffects } from "./EnvironmentEffects";
-import { effectiveFadeInner, effectiveFadeOuter, isDebugFadeOverridden, radialFade, subscribeDebugFade } from "./fade";
+import { effectiveFadeInner, effectiveFadeOuter, isFadeRadiusOverridden, radialFade, setCompositionFadeRadii, subscribeDebugFade } from "./fade";
 
 const VIEWER_SAMPLE_DISTANCE = 0.75;
 const TILE_PREVIEW_RADIUS = 180;
@@ -49,6 +49,14 @@ export function Scene() {
   // the memo below (base-marker fades) wouldn't recompute while standing still.
   const [, bumpFadeVersion] = useState(0);
   useEffect(() => subscribeDebugFade(() => bumpFadeVersion((v) => v + 1)), []);
+  // Feed the active composition's authored radius into the shared fade module so
+  // every radial-fade consumer (orbs, instances, fog, shaders) picks it up.
+  // Clearing it on unmount returns to the engine defaults.
+  const visibleRadius = map.visibleRadius;
+  useEffect(() => {
+    setCompositionFadeRadii(visibleRadius?.inner ?? null, visibleRadius?.outer ?? null);
+    return () => setCompositionFadeRadii(null, null);
+  }, [visibleRadius?.inner, visibleRadius?.outer]);
   const loopPreviewsEnabled = !debugFlag("debugNoLoopPreview");
   const tileLights = loopPreviewsEnabled ? tileLightTracks(map, tracks, viewer) : tracks;
   // On tiled/looped maps the canonical "base" stems are just one copy of the
@@ -57,7 +65,7 @@ export function Scene() {
   // maps keep base stems fully visible — UNLESS the debug radius slider is in
   // use, in which case base orbs fade too so the radius applies to everything.
   const fadeBaseMarkers =
-    mode === "explore" && loopPreviewsEnabled && (map.tiling.type !== "none" || isDebugFadeOverridden());
+    mode === "explore" && loopPreviewsEnabled && (map.tiling.type !== "none" || isFadeRadiusOverridden());
   // Base stems carry their own point light, but preview copies don't (a light
   // per copy would thrash the renderer's light count). Instead, on tiled maps a
   // fixed pool of echo lights — one per track — follows each stem's nearest

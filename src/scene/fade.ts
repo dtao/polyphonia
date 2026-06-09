@@ -14,10 +14,14 @@ import * as THREE from "three";
 export const RADIAL_FADE_INNER = 90;
 export const RADIAL_FADE_OUTER = 130;
 
-// Debug-mode runtime overrides. null = use the constants above.
-// Call setDebugFadeRadii to adjust live; subscribeDebugFade to react to changes.
+// Runtime overrides of the band, in priority order: debug sliders win over the
+// per-composition radius (map.visibleRadius), which wins over the constants. null
+// at a layer = defer to the next. Call the setters to adjust; subscribeDebugFade
+// to react to changes (both layers share the one listener set).
 let _debugInner: number | null = null;
 let _debugOuter: number | null = null;
+let _compInner: number | null = null;
+let _compOuter: number | null = null;
 const _fadeListeners = new Set<() => void>();
 
 export function setDebugFadeRadii(inner: number | null, outer: number | null): void {
@@ -26,19 +30,30 @@ export function setDebugFadeRadii(inner: number | null, outer: number | null): v
   _fadeListeners.forEach((fn) => fn());
 }
 
+// Apply a composition's authored visible radius (or null to clear, inheriting the
+// defaults). The active composition's map drives this from Scene; the debug
+// sliders still take precedence so live tuning isn't fought by the saved value.
+export function setCompositionFadeRadii(inner: number | null, outer: number | null): void {
+  if (_compInner === inner && _compOuter === outer) return;
+  _compInner = inner;
+  _compOuter = outer;
+  _fadeListeners.forEach((fn) => fn());
+}
+
 export function subscribeDebugFade(fn: () => void): () => void {
   _fadeListeners.add(fn);
   return () => { _fadeListeners.delete(fn); };
 }
 
-export function effectiveFadeInner(): number { return _debugInner ?? RADIAL_FADE_INNER; }
-export function effectiveFadeOuter(): number { return _debugOuter ?? RADIAL_FADE_OUTER; }
+export function effectiveFadeInner(): number { return _debugInner ?? _compInner ?? RADIAL_FADE_INNER; }
+export function effectiveFadeOuter(): number { return _debugOuter ?? _compOuter ?? RADIAL_FADE_OUTER; }
 
-// True once the debug sliders have moved off the defaults. Used to extend the
-// per-object radial fade to renderables that normally don't distance-fade (base
-// stem orbs on non-tiled maps), so the debug radius applies to *everything*.
-export function isDebugFadeOverridden(): boolean {
-  return _debugInner !== null || _debugOuter !== null;
+// True once the band has been overridden away from the constants — by the debug
+// sliders or by a composition's authored radius. Used to extend the per-object
+// radial fade to renderables that normally don't distance-fade (base stem orbs on
+// non-tiled maps), so the active radius applies to *everything*.
+export function isFadeRadiusOverridden(): boolean {
+  return _debugInner !== null || _debugOuter !== null || _compInner !== null || _compOuter !== null;
 }
 
 // 1 (fully visible) .. 0 (invisible) for a distance from the viewer. Defaults to
