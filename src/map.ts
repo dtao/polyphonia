@@ -272,14 +272,27 @@ function inferSegmentEndpointConnections(map: CompositionMap): CompositionMap {
   return {
     ...map,
     segments: map.segments.map((segment) => {
-      const start = validConnection(map, segment.connections?.start) ?? inferEndpointConnection(map, segment, "start");
-      const end = validConnection(map, segment.connections?.end) ?? inferEndpointConnection(map, segment, "end");
+      const start = endpointConnection(map, segment, "start");
+      const end = endpointConnection(map, segment, "end");
       return {
         ...segment,
         ...(start || end ? { connections: { ...(start ? { start } : {}), ...(end ? { end } : {}) } } : { connections: undefined }),
       };
     }),
   };
+}
+
+function endpointConnection(map: CompositionMap, segment: WalkableSegment, end: SegmentEnd): SegmentEndpointConnection | undefined {
+  // An endpoint that anchors a platform's attachment is driven by the platform
+  // (attachedPlatformPlacement pins the platform's near edge to it). Recording a
+  // reverse connection here would re-drive the endpoint from a center-relative
+  // local point, dragging it as the platform resizes — so leave it untracked.
+  if (isPlatformAttachmentAnchor(map, segment.id, end)) return undefined;
+  return validConnection(map, segment.connections?.[end]) ?? inferEndpointConnection(map, segment, end);
+}
+
+function isPlatformAttachmentAnchor(map: Pick<CompositionMap, "platforms">, segmentId: string, end: SegmentEnd): boolean {
+  return map.platforms.some((platform) => platform.attachment?.segmentId === segmentId && platform.attachment.end === end);
 }
 
 function alignConnectedSegmentEndpoints(map: CompositionMap): CompositionMap {
