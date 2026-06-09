@@ -1,5 +1,6 @@
 import { DEFAULT_WALL_THICKNESS, MAX_WALL_THICKNESS, MIN_WALL_THICKNESS } from "../map";
 import { useStore } from "../store";
+import { ElevationReadout } from "./ElevationReadout";
 
 // Bottom-left inspector for the selected standalone wall (a sound occluder).
 export function WallPanel() {
@@ -14,6 +15,8 @@ export function WallPanel() {
   return (
     <div style={panel} data-inspector>
       <div style={title}>Wall</div>
+
+      <ElevationReadout value={wall.elevation ?? 0} />
 
       <label style={{ display: "block", marginBottom: 8 }}>
         <div style={sliderHead}>

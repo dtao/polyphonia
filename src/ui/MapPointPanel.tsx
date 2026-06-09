@@ -1,5 +1,6 @@
-import { attachmentForPoint, canAddBranchAtPoint, canAddPlatformAtPoint, canAddRoomAtPoint, canSetLoopEndpoint, endpointCount, loopRoleForPoint, pathLoopForMap, platformAttachedToPoint, roomAttachedToPoint } from "../map";
+import { attachmentForPoint, canAddBranchAtPoint, canAddPlatformAtPoint, canAddRoomAtPoint, canSetLoopEndpoint, endpointCount, loopRoleForPoint, pathLoopForMap, platformAttachedToPoint, pointElevation, roomAttachedToPoint } from "../map";
 import { useStore } from "../store";
+import { ElevationReadout } from "./ElevationReadout";
 
 // Bottom-left panel shown when a path point is selected in edit mode. Grow the
 // path (a new branch segment you can then drag) or attach a room whose doorway
@@ -49,6 +50,7 @@ export function MapPointPanel() {
   return (
     <div style={panel} data-inspector>
       <div style={title}>Path point · {state}</div>
+      <ElevationReadout value={pointElevation(map, pointKey)} />
       <button
         style={{ ...btn, ...(!canAddBranch ? disabledBtn : null) }}
         onClick={() => canAddBranch && addBranchAtPoint(pointKey)}

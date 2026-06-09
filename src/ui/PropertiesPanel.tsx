@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
 import { shortcutKeys } from "../shortcuts";
 import { StemLoopMeter } from "./StemLoopMeter";
+import { ElevationReadout } from "./ElevationReadout";
 
 const TRACK_COLORS = ["#5b8cff", "#ff7a6b", "#ffd166", "#b96bff", "#56e0c0", "#f78fb3", "#7ee081", "#ffa057"];
 
@@ -46,6 +47,8 @@ export function PropertiesPanel() {
           style={nameInput}
         />
       </div>
+
+      <ElevationReadout value={track.position[1]} />
 
       <StemLoopMeter track={track} />
 

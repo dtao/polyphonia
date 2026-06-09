@@ -1,11 +1,13 @@
-import { DEFAULT_WALL_THICKNESS, MAX_WALL_THICKNESS, MIN_WALL_THICKNESS } from "../map";
+import { DEFAULT_WALL_THICKNESS, MAX_WALL_THICKNESS, MIN_WALL_THICKNESS, roomElevation } from "../map";
 import { useStore } from "../store";
+import { ElevationReadout } from "./ElevationReadout";
 
 // Bottom-left inspector for the selected room. Entrances are edited in the 3D
 // view (a "+" on each wall adds one; drag a doorway to move it) and via the
 // EntrancePanel when a doorway is selected, so this panel stays room-level.
 export function RoomPanel() {
   const mode = useStore((s) => s.mode);
+  const map = useStore((s) => s.composition.map);
   const room = useStore((s) => s.composition.map.rooms.find((r) => r.id === s.selectedRoomId));
   const selectedEntranceIndex = useStore((s) => s.selectedEntranceIndex);
   const { updateRoom, deleteRoom } = useStore.getState();
@@ -17,6 +19,8 @@ export function RoomPanel() {
   return (
     <div style={panel} data-inspector>
       <div style={title}>Room</div>
+
+      <ElevationReadout value={roomElevation(map, room)} />
 
       <Slider label="Width" value={room.width} min={3} max={40} step={0.5} onChange={(v) => updateRoom(room.id, { width: v })} />
       <Slider label="Depth" value={room.depth} min={3} max={40} step={0.5} onChange={(v) => updateRoom(room.id, { depth: v })} />

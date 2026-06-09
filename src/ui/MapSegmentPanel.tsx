@@ -1,5 +1,6 @@
-import { DEFAULT_WALL_THICKNESS, MAX_WALL_THICKNESS, MIN_WALL_THICKNESS } from "../map";
+import { DEFAULT_WALL_THICKNESS, MAX_WALL_THICKNESS, MIN_WALL_THICKNESS, mapPointKey, pointElevation } from "../map";
 import { useStore } from "../store";
+import { ElevationReadout } from "./ElevationReadout";
 
 // Bottom-left inspector shown when a corridor segment is selected in edit mode.
 export function MapSegmentPanel() {
@@ -12,6 +13,9 @@ export function MapSegmentPanel() {
   if (mode !== "edit" || !segment) return null;
 
   const segmentId = segment.id;
+  const startElev = pointElevation(map, mapPointKey(segment.start));
+  const endElev = pointElevation(map, mapPointKey(segment.end));
+  const elevationLabel = Math.abs(startElev - endElev) < 0.005 ? startElev.toFixed(2) : `${startElev.toFixed(2)} → ${endElev.toFixed(2)}`;
 
   function setWidth(width: number) {
     setMap({
@@ -39,6 +43,8 @@ export function MapSegmentPanel() {
   return (
     <div style={panel} data-inspector>
       <div style={title}>Path segment</div>
+
+      <ElevationReadout value={elevationLabel} />
       <label style={slider}>
         <div style={sliderHead}>
           <span>Width</span>

@@ -1,10 +1,12 @@
-import { PlatformShape } from "../map";
+import { PlatformShape, platformElevation } from "../map";
 import { useStore } from "../store";
+import { ElevationReadout } from "./ElevationReadout";
 
 // Bottom-left inspector for the selected platform (open walkable area). Shown in
 // edit mode when a platform is selected.
 export function PlatformPanel() {
   const mode = useStore((s) => s.mode);
+  const map = useStore((s) => s.composition.map);
   const platform = useStore((s) => s.composition.map.platforms.find((p) => p.id === s.selectedPlatformId));
   const { updatePlatform, deletePlatform } = useStore.getState();
 
@@ -16,6 +18,8 @@ export function PlatformPanel() {
   return (
     <div style={panel} data-inspector>
       <div style={title}>Platform</div>
+
+      <ElevationReadout value={platformElevation(map, platform)} />
 
       <div style={shapeGrid}>
         {(["rect", "hex", "circle"] as PlatformShape[]).map((shape) => (
