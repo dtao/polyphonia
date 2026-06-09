@@ -106,9 +106,11 @@ Audio quality can be A/B tested with `audioQuality=full` or
   whole composition loop with BPM beat markers and a live playhead. Selecting a
   stem opens its inspector with a waveform meter: drag the in/out handles to set
   a per-stem sub-loop (which plays once and trims to silence by default, or
-  tiles to fill the loop with "Repeat"). The inspector's timing offset nudges a
-  stem ahead of or behind the beat (by 1/16, 1/8, 1/4, or 1/2 note) while it
-  stays locked to the shared loop. The Loop panel can audition the seam,
+  tiles to fill the loop with "Repeat"). Click the stem loop meter to set a
+  coarse timing offset (a gold bar, snapped to the nearest beat) and use the fine
+  slider below it (±1/4 note) to nudge the stem ahead of or behind the beat; the
+  two combine and the stem stays locked to the shared loop. The Loop panel can
+  audition the seam,
   trim loop start/end, adjust crossfade, ring out tails (fold a stem's overrun
   past the loop length back onto the start so reverb decays across the seam),
   set the loop length in beats and the beats-per-bar (time signature) for the

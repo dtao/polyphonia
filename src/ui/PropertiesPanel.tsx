@@ -49,7 +49,7 @@ export function PropertiesPanel() {
 
       <StemLoopMeter track={track} />
 
-      <TimingOffset value={track.offsetBeats ?? 0} onChange={(v) => setTrackOffset(track.id, v)} />
+      <FineOffset value={track.offsetFineBeats ?? 0} onChange={(v) => setTrackOffset(track.id, { offsetFineBeats: v })} />
 
       <Slider
         label="Max volume"
@@ -258,50 +258,43 @@ function TrackColorChooser({ value, onChange }: { value: string; onChange: (colo
   );
 }
 
-// M7.1 — shift this stem earlier or later within the loop. Offsets are stored
-// in beats; the buttons expose the common note-fraction nudges in each
-// direction (a quarter note = one beat).
-const OFFSET_OPTIONS: Array<{ label: string; beats: number }> = [
-  { label: "−½", beats: -2 },
-  { label: "−¼", beats: -1 },
-  { label: "−⅛", beats: -0.5 },
-  { label: "−1/16", beats: -0.25 },
-  { label: "0", beats: 0 },
-  { label: "+1/16", beats: 0.25 },
-  { label: "+⅛", beats: 0.5 },
-  { label: "+¼", beats: 1 },
-  { label: "+½", beats: 2 },
-];
+// M7.1 — fine timing nudge added on top of the coarse, beat-snapped offset set
+// by clicking the stem loop meter. Snaps in 1/16-note steps over ±1/4 note
+// (a quarter note = one beat, so 1/16 note = 0.25 beat).
+const FINE_NOTE_LABELS: Record<string, string> = {
+  "0": "none",
+  "0.25": "1/16",
+  "0.5": "1/8",
+  "0.75": "3/16",
+  "1": "1/4",
+};
 
-function TimingOffset({ value, onChange }: { value: number; onChange: (beats: number) => void }) {
-  const active = OFFSET_OPTIONS.find((o) => Math.abs(o.beats - value) < 1e-6);
+function formatFineOffset(beats: number): string {
+  const label = FINE_NOTE_LABELS[String(Math.abs(beats))] ?? `${Math.abs(beats)} beat`;
+  if (beats === 0) return "none";
+  return `${beats > 0 ? "+" : "−"}${label} note`;
+}
+
+function FineOffset({ value, onChange }: { value: number; onChange: (beats: number) => void }) {
   return (
     <div style={{ marginBottom: 12 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, opacity: 0.75, marginBottom: 4 }}>
-        <span>Timing offset</span>
-        <span>{active ? (active.beats === 0 ? "none" : `${active.label} note`) : `${value} beats`}</span>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, opacity: 0.75, marginBottom: 2 }}>
+        <span>Timing offset (fine)</span>
+        <span>{formatFineOffset(value)}</span>
       </div>
-      <div style={offsetRow}>
-        {OFFSET_OPTIONS.map((o) => {
-          const selected = active?.beats === o.beats;
-          return (
-            <button
-              key={o.label}
-              type="button"
-              onClick={() => onChange(o.beats)}
-              title={o.beats === 0 ? "No offset" : `Shift ${o.beats < 0 ? "earlier" : "later"} by a ${o.label.replace(/[−+]/, "")} note`}
-              style={{
-                ...offsetBtn,
-                ...(selected ? offsetBtnActive : null),
-                ...(o.beats === 0 ? { flex: "0 0 28px" } : null),
-              }}
-            >
-              {o.label}
-            </button>
-          );
-        })}
+      <input
+        type="range"
+        min={-1}
+        max={1}
+        step={0.25}
+        value={value}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        style={{ width: "100%", accentColor: "#ffcc44", cursor: "pointer" }}
+      />
+      <div style={helpText}>
+        Added to the coarse offset you set by clicking the stem loop above. Nudges
+        this stem ahead of or behind the beat while it stays locked to the loop.
       </div>
-      <div style={helpText}>Nudge this stem ahead of or behind the beat; it stays locked to the shared loop.</div>
     </div>
   );
 }
@@ -484,25 +477,3 @@ const helpText: React.CSSProperties = {
   lineHeight: 1.35,
 };
 
-const offsetRow: React.CSSProperties = {
-  display: "flex",
-  gap: 3,
-};
-
-const offsetBtn: React.CSSProperties = {
-  flex: 1,
-  minWidth: 0,
-  padding: "5px 2px",
-  borderRadius: 5,
-  border: "1px solid rgba(255,255,255,0.16)",
-  background: "rgba(255,255,255,0.05)",
-  color: "rgba(255,255,255,0.78)",
-  cursor: "pointer",
-  fontSize: 11,
-};
-
-const offsetBtnActive: React.CSSProperties = {
-  border: "1px solid rgba(91,140,255,0.7)",
-  background: "rgba(91,140,255,0.28)",
-  color: "white",
-};

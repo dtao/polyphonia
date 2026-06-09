@@ -61,11 +61,17 @@ export interface TrackDef {
    */
   loopRepeat?: boolean;
   /**
-   * Shift this stem earlier (negative) or later (positive) within the loop, in
-   * beats. Note fractions map to beats: 1/16 = 0.25, 1/8 = 0.5, 1/4 = 1, 1/2 =
-   * 2. Applied as a phase shift against the shared clock, so stems stay in sync.
+   * Coarse timing offset in whole beats, set by clicking the stem loop meter
+   * (snaps to the nearest beat). Combined with offsetFineBeats and applied as a
+   * phase shift against the shared clock, so stems stay in sync. Positive plays
+   * later in the loop.
    */
   offsetBeats?: number;
+  /**
+   * Fine timing offset in beats, added to offsetBeats. Set by a slider that
+   * snaps in 1/16-note steps over ±1/4 note (±1 beat), for sub-beat nudges.
+   */
+  offsetFineBeats?: number;
   /** Optional speaker-like directional output; absent means omnidirectional. */
   directivity?: StemDirectivity;
   /** Content hash of the stem audio, set in published manifests for change detection. */
@@ -270,6 +276,7 @@ export function compositionRevision(comp: RevisionComposition): string {
         loopEnd: track.loopEnd,
         loopRepeat: track.loopRepeat,
         offsetBeats: track.offsetBeats,
+        offsetFineBeats: track.offsetFineBeats,
         directivity: track.directivity,
       })),
     }),

@@ -112,7 +112,11 @@ describe("composition compatibility and revisions", () => {
     const changedBeatsPerBar = { ...defaultComposition, beatsPerBar: 7 };
     const changedOffset = {
       ...defaultComposition,
-      tracks: [{ ...defaultComposition.tracks[0], offsetBeats: 0.5 }, ...defaultComposition.tracks.slice(1)],
+      tracks: [{ ...defaultComposition.tracks[0], offsetBeats: 3 }, ...defaultComposition.tracks.slice(1)],
+    };
+    const changedOffsetFine = {
+      ...defaultComposition,
+      tracks: [{ ...defaultComposition.tracks[0], offsetFineBeats: 0.25 }, ...defaultComposition.tracks.slice(1)],
     };
 
     expect(compositionRevision(changedVolume)).not.toBe(baseline);
@@ -124,6 +128,7 @@ describe("composition compatibility and revisions", () => {
     expect(compositionRevision(changedBeats)).not.toBe(baseline);
     expect(compositionRevision(changedBeatsPerBar)).not.toBe(baseline);
     expect(compositionRevision(changedOffset)).not.toBe(baseline);
+    expect(compositionRevision(changedOffsetFine)).not.toBe(baseline);
   });
 
   it("migrates a legacy bars loop length to beats", () => {

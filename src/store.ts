@@ -231,8 +231,9 @@ interface StoreState {
   setTrackFalloff: (id: string, falloff: Partial<Falloff>) => void;
   // Per-stem sub-loop in/out points (seconds into the source) and repeat flag.
   setTrackLoop: (id: string, loop: { loopStart?: number | null; loopEnd?: number | null; loopRepeat?: boolean }) => void;
-  // Per-stem timing offset in beats (M7.1): positive plays later, negative earlier.
-  setTrackOffset: (id: string, offsetBeats: number) => void;
+  // Per-stem timing offset in beats (M7.1): coarse (beat-snapped) and fine
+  // offsets sum; positive plays later, negative earlier.
+  setTrackOffset: (id: string, offset: { offsetBeats?: number; offsetFineBeats?: number }) => void;
   // Downsampled waveform peaks + source duration for the selected stem's meter.
   trackPeaks: (id: string, bins: number) => { peaks: Float32Array; duration: number } | null;
   setTrackDirectivity: (id: string, directivity: StemDirectivity | undefined) => void;
@@ -1489,10 +1490,12 @@ export const useStore = create<StoreState>((set, get) => ({
     set((s) => ({ ...withHistory(s, `track:${id}:loop`), composition: patchTrack(s.composition, id, patch) }));
     get().engine?.setTrackLoop(id, loop);
   },
-  setTrackOffset: (id, offsetBeats) => {
-    const value = offsetBeats === 0 ? undefined : offsetBeats;
-    set((s) => ({ ...withHistory(s, `track:${id}:offset`), composition: patchTrack(s.composition, id, { offsetBeats: value }) }));
-    get().engine?.setTrackOffset(id, offsetBeats);
+  setTrackOffset: (id, offset) => {
+    const patch: Partial<TrackDef> = {};
+    if ("offsetBeats" in offset) patch.offsetBeats = offset.offsetBeats || undefined;
+    if ("offsetFineBeats" in offset) patch.offsetFineBeats = offset.offsetFineBeats || undefined;
+    set((s) => ({ ...withHistory(s, `track:${id}:offset`), composition: patchTrack(s.composition, id, patch) }));
+    get().engine?.setTrackOffset(id, offset);
   },
   trackPeaks: (id, bins) => get().engine?.trackPeaks(id, bins) ?? null,
   setTrackDirectivity: (id, directivity) => {

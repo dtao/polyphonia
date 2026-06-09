@@ -4,6 +4,9 @@ import { TrackDef } from "../composition";
 
 const BINS = 480;
 const HEIGHT = 64;
+// Timing-offset marker color — gold, to read as distinct from the white loop
+// in/out handles and playhead.
+const OFFSET_COLOR = "#ffcc44";
 
 // M7.5 — waveform meter for the selected stem with draggable in/out handles
 // defining a per-stem sub-loop. Trim by default (region plays once, then
@@ -15,6 +18,7 @@ export function StemLoopMeter({ track }: { track: TrackDef }) {
   const beatsPerBar = useStore((s) => s.composition.beatsPerBar ?? 4);
   const trackPeaks = useStore((s) => s.trackPeaks);
   const setTrackLoop = useStore((s) => s.setTrackLoop);
+  const setTrackOffset = useStore((s) => s.setTrackOffset);
   const loopProgress = useStore((s) => s.loopProgress);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -52,9 +56,11 @@ export function StemLoopMeter({ track }: { track: TrackDef }) {
   const regionLen = Math.max(0.0001, outSec - inSec);
   const repeat = track.loopRepeat ?? false;
   const custom = track.loopStart != null || track.loopEnd != null;
-  // The stem's timing offset shifts its content later (positive) within the
-  // loop, so the playhead maps back by subtracting it from the loop position.
-  const offsetSec = (track.offsetBeats ?? 0) * beatLength;
+  // Coarse (beat-snapped) timing offset, set by clicking the meter, drawn as a
+  // distinct bar. The fine offset (slider) adds to it for the audio phase and
+  // the playhead mapping, which subtracts the total from the loop position.
+  const offsetBeatsCoarse = track.offsetBeats ?? 0;
+  const offsetSec = (offsetBeatsCoarse + (track.offsetFineBeats ?? 0)) * beatLength;
 
   // Live playhead, mapped from the composition loop position back into source
   // time for this stem.
@@ -112,13 +118,44 @@ export function StemLoopMeter({ track }: { track: TrackDef }) {
     window.addEventListener("pointerup", onUp);
   };
 
+  // Press or drag anywhere on the meter (outside the in/out handles, which stop
+  // propagation) to set the coarse timing offset, snapped to the nearest beat.
+  const startOffsetDrag = (e: React.PointerEvent) => {
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    const apply = (clientX: number) => {
+      const snapped = clamp(Math.round(secFromPointer(clientX) / beatLength), 0, beatCount);
+      setTrackOffset(track.id, { offsetBeats: snapped });
+    };
+    apply(e.clientX);
+    const onMove = (ev: PointerEvent) => apply(ev.clientX);
+    const onUp = (ev: PointerEvent) => {
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(ev.pointerId);
+      } catch {
+        /* pointer already released */
+      }
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  const totalOffsetBeats = offsetBeatsCoarse + (track.offsetFineBeats ?? 0);
+
   return (
     <div style={{ marginBottom: 10 }}>
       <div style={headRow}>
         <span>Stem loop</span>
-        <span>{formatBeats(regionLen / beatLength)} beats</span>
+        <span>
+          {formatBeats(regionLen / beatLength)} beats
+          {totalOffsetBeats !== 0 && (
+            <span style={{ color: OFFSET_COLOR }}> · {totalOffsetBeats > 0 ? "+" : ""}{formatBeats(totalOffsetBeats)} beat offset</span>
+          )}
+        </span>
       </div>
-      <div ref={trackRef} style={meterTrack}>
+      <div ref={trackRef} style={meterTrack} onPointerDown={startOffsetDrag}>
         <canvas ref={canvasRef} style={canvasStyle} />
         {/* Dimmed area outside the loop region. */}
         <div style={{ ...mask, left: 0, width: `${(inSec / duration) * 100}%` }} />
@@ -143,6 +180,10 @@ export function StemLoopMeter({ track }: { track: TrackDef }) {
           );
         })}
         {playFrac != null && <div style={{ ...playhead, left: `${playFrac * 100}%` }} />}
+        {/* Coarse timing-offset marker (distinct from the white in/out handles). */}
+        <div style={{ ...offsetBar, left: `${((offsetBeatsCoarse * beatLength) / duration) * 100}%` }}>
+          <div style={offsetFlag} />
+        </div>
         <Handle side="in" left={`${(inSec / duration) * 100}%`} onPointerDown={startDrag("in")} />
         <Handle side="out" left={`${(outSec / duration) * 100}%`} onPointerDown={startDrag("out")} />
       </div>
@@ -243,6 +284,29 @@ const playhead: React.CSSProperties = {
   background: "white",
   boxShadow: "0 0 8px rgba(255,255,255,0.9)",
   pointerEvents: "none",
+};
+
+const offsetBar: React.CSSProperties = {
+  position: "absolute",
+  top: -2,
+  bottom: -2,
+  width: 2,
+  transform: "translateX(-1px)",
+  background: OFFSET_COLOR,
+  boxShadow: `0 0 6px ${OFFSET_COLOR}`,
+  pointerEvents: "none",
+};
+
+const offsetFlag: React.CSSProperties = {
+  position: "absolute",
+  top: -1,
+  left: "50%",
+  transform: "translateX(-50%)",
+  width: 0,
+  height: 0,
+  borderLeft: "4px solid transparent",
+  borderRight: "4px solid transparent",
+  borderTop: `5px solid ${OFFSET_COLOR}`,
 };
 
 const controlRow: React.CSSProperties = {

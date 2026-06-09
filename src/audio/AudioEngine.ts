@@ -366,9 +366,10 @@ export class AudioEngine {
   }
 
   // A stem's timing offset in seconds (M7.1): positive plays later, negative
-  // earlier. Stored in beats so it tracks tempo.
+  // earlier. The coarse (beat-snapped) and fine offsets sum, both in beats so
+  // they track tempo.
   private offsetSeconds(def: TrackDef): number {
-    return (def.offsetBeats ?? 0) * (60 / this.bpm);
+    return ((def.offsetBeats ?? 0) + (def.offsetFineBeats ?? 0)) * (60 / this.bpm);
   }
 
   // Where in a track's buffer to begin so it lands at the right point of the
@@ -705,10 +706,13 @@ export class AudioEngine {
   // Shift a stem earlier/later within the loop (M7.1). The offset is a start
   // phase, not a buffer edit, so we just restart this one source aligned to the
   // running loop — no buffer rebuild and no effect on the other stems.
-  setTrackOffset(id: string, offsetBeats: number): void {
+  setTrackOffset(id: string, offset: { offsetBeats?: number; offsetFineBeats?: number }): void {
     const t = this.find(id);
     if (!t) return;
-    t.def = { ...t.def, offsetBeats };
+    const next = { ...t.def };
+    if ("offsetBeats" in offset) next.offsetBeats = offset.offsetBeats || undefined;
+    if ("offsetFineBeats" in offset) next.offsetFineBeats = offset.offsetFineBeats || undefined;
+    t.def = next;
     if (!this.started) return;
     try {
       t.source?.stop();
