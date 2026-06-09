@@ -19,6 +19,7 @@ import {
   wallObstructionCount,
   wrapLoopPosition,
   type CompositionMap,
+  type MapPlatform,
   type MapRoom,
 } from "./map";
 import { DEFAULT_ENCLOSURE_HEIGHT, EYE_HEIGHT } from "./spatialConstants";
@@ -204,6 +205,47 @@ describe("map topology and elevation", () => {
 
     expect(surfaceHeightAt(map, [0, 5])).toBeCloseTo(5);
     expect(roomElevation(map, map.rooms[0])).toBe(8);
+  });
+
+  it("grows an attached platform's depth away from its path without dragging the endpoint", () => {
+    const platform: MapPlatform = {
+      id: "plat",
+      center: [0, 0],
+      rotation: 0,
+      shape: "rect",
+      width: 18,
+      depth: 18,
+      elevation: 0,
+      attachment: { segmentId: "approach", end: "start" },
+    };
+    const make = (depth: number): CompositionMap =>
+      normalizeMap({
+        preset: "custom",
+        segments: [{ id: "approach", start: [0, -5], end: [0, -15], width: 3 }],
+        rooms: [],
+        platforms: [{ ...platform, depth }],
+        walls: [],
+        tiling: noTiling,
+        wallHeight: 2,
+        start: { position: [0, -10], direction: [0, 1] },
+      });
+
+    const before = make(18);
+    const nearBefore = before.platforms[0].center[1] - before.platforms[0].depth / 2;
+    // Simulate the editor's depth slider: patch depth on the normalized map and
+    // renormalize (the store's non-move updatePlatform path).
+    const after = normalizeMap({
+      ...before,
+      platforms: before.platforms.map((p) => ({ ...p, depth: 30 })),
+    });
+
+    // The anchoring endpoint must not drift, the near edge stays pinned to it,
+    // and the extra depth extends outward (the far edge moves, not the near).
+    expect(after.segments[0].start).toEqual(before.segments[0].start);
+    expect(after.platforms[0].center[1] - after.platforms[0].depth / 2).toBeCloseTo(nearBefore);
+    expect(after.platforms[0].center[1] + after.platforms[0].depth / 2).toBeGreaterThan(
+      before.platforms[0].center[1] + before.platforms[0].depth / 2,
+    );
   });
 });
 

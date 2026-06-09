@@ -68,6 +68,10 @@ export const markerObjects = new Map<string, THREE.Object3D>();
 // y is the walkable-surface height at (x, z); the player rides at y + eye height.
 export const viewState = { x: 0, y: 0, z: 0, fx: 0, fz: -1 };
 
+// Set by MapScene when the user double-clicks a path/room/platform in edit mode.
+// EditControls consumes this in useFrame to shift the orbit pivot there.
+export const pendingTeleport = { value: null as { x: number; z: number } | null };
+
 // Bumped each time <Player> wraps the listener across a path-loop seam (a
 // teleport). Tiled map previews are derived from React state that lags the
 // camera by a frame, so on the wrap frame a copy can be drawn for the old
@@ -351,9 +355,12 @@ function connectMapPoint(
     const t = Math.max(0, Math.min(1, ((attempted[0] - segment.start[0]) * dx + (attempted[1] - segment.start[1]) * dz) / lengthSq));
     const point: [number, number] = [segment.start[0] + dx * t, segment.start[1] + dz * t];
     const distance = Math.hypot(attempted[0] - point[0], attempted[1] - point[1]);
-    if (distance <= MAP_POINT_CONNECT_DISTANCE && (!best || distance < best.distance)) {
-      best = { segment, point, t, distance };
-    }
+    if (distance > MAP_POINT_CONNECT_DISTANCE || (best && distance >= best.distance)) continue;
+    const startElevation = pointElevation(map, mapPointKey(segment.start));
+    const endElevation = pointElevation(map, mapPointKey(segment.end));
+    const snapElevation = startElevation + (endElevation - startElevation) * t;
+    if (Math.abs(snapElevation - attemptedElevation) > MAP_POINT_CONNECT_DISTANCE) continue;
+    best = { segment, point, t, distance };
   }
   if (!best) return { map, point: attempted, elevation: attemptedElevation };
 

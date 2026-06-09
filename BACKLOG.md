@@ -98,6 +98,6 @@ earlier ones.
 - [x] P17 Default room/wall/tunnel height should be above eye height - maybe 1.5x (it would probably be best to actually make these values explicitly related so future adjustments to eye height will update the other values).
 - [x] P18 Walls should have standard movement control (same control used to move stems) allowing users to drag along 3 dimensions.
 - [x] P19 Crossing loop boundary can make landmark objects suddenly appear/disappear.
-- [ ] P20 Color chooser should dismiss (like other UI elements) when user clicks away.
+- [x] P20 Color chooser should dismiss (like other UI elements) when user clicks away.
 - [x] P21 There should be no landmark objects when creating a new composition.
 - [x] P22 Publishing (and updating) should have a progress bar, just like loading.

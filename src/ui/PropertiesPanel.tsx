@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
 import { shortcutKeys } from "../shortcuts";
 import { StemLoopMeter } from "./StemLoopMeter";
@@ -183,35 +183,48 @@ export function PropertiesPanel() {
 
 function TrackColorChooser({ value, onChange }: { value: string; onChange: (color: string) => void }) {
   const [open, setOpen] = useState(false);
-  const root = useRef<HTMLDivElement>(null);
+  const [popoverPos, setPopoverPos] = useState({ top: 0, left: 0 });
+  const buttonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) return;
     const dismiss = (event: PointerEvent) => {
-      if (!root.current?.contains(event.target as Node)) setOpen(false);
+      const pop = document.getElementById("track-color-popover");
+      if (pop?.contains(event.target as Node)) return;
+      if (buttonRef.current?.contains(event.target as Node)) return;
+      setOpen(false);
     };
     const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") { event.stopPropagation(); setOpen(false); }
     };
     window.addEventListener("pointerdown", dismiss, true);
-    window.addEventListener("keydown", escape);
+    window.addEventListener("keydown", escape, true);
     return () => {
       window.removeEventListener("pointerdown", dismiss, true);
-      window.removeEventListener("keydown", escape);
+      window.removeEventListener("keydown", escape, true);
     };
   }, [open]);
 
+  const handleOpen = () => {
+    if (buttonRef.current) {
+      const r = buttonRef.current.getBoundingClientRect();
+      setPopoverPos({ top: r.top - 8, left: r.left });
+    }
+    setOpen((v) => !v);
+  };
+
   return (
-    <div ref={root} style={colorChooser}>
+    <div style={colorChooser}>
       <button
+        ref={buttonRef}
         type="button"
         aria-label="Choose track color"
         aria-expanded={open}
         style={{ ...colorButton, background: value }}
-        onClick={() => setOpen((current) => !current)}
+        onClick={handleOpen}
       />
       {open && (
-        <div style={colorPopover}>
+        <div id="track-color-popover" style={{ ...colorPopover, top: popoverPos.top, left: popoverPos.left }}>
           <div style={colorGrid}>
             {TRACK_COLORS.map((color) => (
               <button
@@ -223,10 +236,7 @@ function TrackColorChooser({ value, onChange }: { value: string; onChange: (colo
                   background: color,
                   outline: color.toLowerCase() === value.toLowerCase() ? "2px solid white" : "none",
                 }}
-                onClick={() => {
-                  onChange(color);
-                  setOpen(false);
-                }}
+                onClick={() => { onChange(color); setOpen(false); }}
               />
             ))}
           </div>
@@ -328,7 +338,6 @@ const directivityGroup: React.CSSProperties = {
 };
 
 const colorChooser: React.CSSProperties = {
-  position: "relative",
   flex: "0 0 auto",
 };
 
@@ -343,10 +352,9 @@ const colorButton: React.CSSProperties = {
 };
 
 const colorPopover: React.CSSProperties = {
-  position: "absolute",
-  bottom: 36,
-  left: 0,
-  zIndex: 20,
+  position: "fixed",
+  transform: "translateY(-100%) translateY(-8px)",
+  zIndex: 9999,
   width: 152,
   padding: 10,
   borderRadius: 9,

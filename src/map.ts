@@ -191,6 +191,12 @@ export function normalizeMap(value: Partial<CompositionMap> | undefined): Compos
   const startDirection = normalizeDirection(isPoint(value?.start?.direction) ? value.start.direction : fallback.start.direction);
   const legacyLoop = isMapLoop(value?.loop) ? value.loop : undefined;
   const tiling = normalizeMapTiling(value?.tiling, legacyLoop, fallback.tiling);
+  // Elevations are needed during connection inference (to avoid connecting
+  // endpoints to platforms at a very different height). Normalize them now
+  // against the pre-aligned segments; normalizeElevations runs again at the
+  // end against the final segment set to drop any stale keys introduced by
+  // alignment.
+  const preliminaryElevations = normalizeElevations(value?.elevations, segments);
   const map = alignConnectedSegmentEndpoints(inferSegmentEndpointConnections(alignAttachedRooms({
     preset,
     segments,
@@ -204,6 +210,7 @@ export function normalizeMap(value: Partial<CompositionMap> | undefined): Compos
       position: startPosition,
       direction: startDirection,
     },
+    ...(Object.keys(preliminaryElevations).length ? { elevations: preliminaryElevations } : {}),
   })));
   map.loop = normalizeMapLoop(map);
   map.tiling = normalizeMapTiling({ ...tiling, pathLoop: map.loop }, undefined, fallback.tiling);
@@ -272,14 +279,27 @@ function inferSegmentEndpointConnections(map: CompositionMap): CompositionMap {
   return {
     ...map,
     segments: map.segments.map((segment) => {
-      const start = validConnection(map, segment.connections?.start) ?? inferEndpointConnection(map, segment, "start");
-      const end = validConnection(map, segment.connections?.end) ?? inferEndpointConnection(map, segment, "end");
+      const start = endpointConnection(map, segment, "start");
+      const end = endpointConnection(map, segment, "end");
       return {
         ...segment,
         ...(start || end ? { connections: { ...(start ? { start } : {}), ...(end ? { end } : {}) } } : { connections: undefined }),
       };
     }),
   };
+}
+
+function endpointConnection(map: CompositionMap, segment: WalkableSegment, end: SegmentEnd): SegmentEndpointConnection | undefined {
+  // An endpoint that anchors a platform's attachment is driven by the platform
+  // (attachedPlatformPlacement pins the platform's near edge to it). Recording a
+  // reverse connection here would re-drive the endpoint from a center-relative
+  // local point, dragging it as the platform resizes — so leave it untracked.
+  if (isPlatformAttachmentAnchor(map, segment.id, end)) return undefined;
+  return validConnection(map, segment.connections?.[end]) ?? inferEndpointConnection(map, segment, end);
+}
+
+function isPlatformAttachmentAnchor(map: Pick<CompositionMap, "platforms">, segmentId: string, end: SegmentEnd): boolean {
+  return map.platforms.some((platform) => platform.attachment?.segmentId === segmentId && platform.attachment.end === end);
 }
 
 function alignConnectedSegmentEndpoints(map: CompositionMap): CompositionMap {
@@ -305,6 +325,7 @@ function validConnection(map: CompositionMap, connection: SegmentEndpointConnect
 
 function inferEndpointConnection(map: CompositionMap, segment: WalkableSegment, end: SegmentEnd): SegmentEndpointConnection | undefined {
   const point = end === "start" ? segment.start : segment.end;
+  const endpointElevation = segmentEndElevation(map, segment, end);
   for (const room of map.rooms) {
     const localPoint = toRoomLocal(room, point);
     const entranceIndex = room.entrances.findIndex((entrance) => pointInRect(localPoint, doorwayRect(room, entrance)));
@@ -313,7 +334,9 @@ function inferEndpointConnection(map: CompositionMap, segment: WalkableSegment, 
     }
   }
   for (const platform of map.platforms) {
-    if (platformContains(platform, point)) return { kind: "platform", platformId: platform.id, localPoint: toPlatformLocal(platform, point) };
+    if (!platformContains(platform, point)) continue;
+    if (Math.abs(platformElevation(map, platform) - endpointElevation) > 1.5) continue;
+    return { kind: "platform", platformId: platform.id, localPoint: toPlatformLocal(platform, point) };
   }
   return undefined;
 }
@@ -1315,9 +1338,17 @@ function transitionSupport(map: CompositionMap, support: MapSupport, previous: [
 
   // Platforms are open hubs: step onto any platform whose area you enter (from
   // any support), and off a platform onto any segment/room you enter.
+  // Guard against teleporting to a platform whose 2D footprint overlaps the
+  // current path at a very different elevation (same root cause as the
+  // segment-above/below-segment fix that introduced nearSharedEndpoint).
   for (const platform of map.platforms) {
     if (support.kind === "platform" && support.platformId === platform.id) continue;
-    if (platformContains(platform, attempted)) return { position: attempted, support: { kind: "platform", platformId: platform.id } };
+    if (platformContains(platform, attempted)) {
+      const currentHeight = surfaceHeightOnSupport(map, previous, support);
+      const platformHeight = platformElevation(map, platform);
+      if (Math.abs(platformHeight - currentHeight) > 1.5) continue;
+      return { position: attempted, support: { kind: "platform", platformId: platform.id } };
+    }
   }
   if (support.kind === "platform") {
     const segment = nearestSegmentContaining(map, attempted);

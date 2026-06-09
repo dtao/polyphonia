@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
-import { useStore, viewState } from "../store";
+import { useStore, viewState, pendingTeleport } from "../store";
 import { surfaceHeightAt } from "../map";
 
 // Edit-mode camera: drag to orbit, scroll to zoom, WASD to glide across
@@ -53,6 +53,27 @@ export function EditControls() {
   useFrame((_, dt) => {
     const c = controls.current;
     if (!c) return;
+
+    // Teleport: shift orbit pivot (and camera by the same delta) to the
+    // double-clicked position, preserving zoom/angle.
+    if (pendingTeleport.value !== null) {
+      const { x: newX, z: newZ } = pendingTeleport.value;
+      pendingTeleport.value = null;
+      const newGroundY = surfaceHeightAt(map, [newX, newZ]);
+      // Snap the pivot to just above the new surface (matching initial setup),
+      // rather than computing a delta from the old ground. The old orbit pivot
+      // Y can be far off from the actual surface below (e.g. after WASD-ing
+      // to a higher/lower area without pressing Q/E), which would
+      // overcorrect dy and send the camera below the destination path.
+      const newTargetY = newGroundY + 1.5;
+      const cameraAboveTarget = camera.position.y - c.target.y;
+      const dx = newX - c.target.x;
+      const dz = newZ - c.target.z;
+      c.target.set(newX, newTargetY, newZ);
+      camera.position.set(camera.position.x + dx, newTargetY + cameraAboveTarget, camera.position.z + dz);
+      c.update();
+    }
+
     const speed = 14 * dt;
 
     // Ground-plane forward/right from the camera heading.
@@ -98,7 +119,6 @@ export function EditControls() {
       makeDefault
       enableDamping
       enablePan
-      maxPolarAngle={Math.PI / 2.05} // don't dip below the floor
       minDistance={3}
       maxDistance={120}
     />
