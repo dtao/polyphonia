@@ -108,10 +108,15 @@ Audio quality can be A/B tested with `audioQuality=full` or
   whole composition loop with BPM beat markers and a live playhead. Selecting a
   stem opens its inspector with a waveform meter: drag the in/out handles to set
   a per-stem sub-loop (which plays once and trims to silence by default, or
-  tiles to fill the loop with "Repeat"). The Loop panel can audition the seam,
+  tiles to fill the loop with "Repeat"). Click the stem loop meter to set a
+  coarse timing offset (a gold bar, snapped to the nearest beat) and use the fine
+  slider below it (±1/4 note) to nudge the stem ahead of or behind the beat; the
+  two combine and the stem stays locked to the shared loop. The Loop panel can
+  audition the seam,
   trim loop start/end, adjust crossfade, ring out tails (fold a stem's overrun
-  past the loop length back onto the start so reverb decays across the seam), or
-  disable looping. The Environment
+  past the loop length back onto the start so reverb decays across the seam),
+  set the loop length in beats and the beats-per-bar (time signature) for the
+  bar lines, or disable looping. The Environment
   panel selects optional detail packs, imports materials/models, assigns map
   surfaces, and places landmarks. Directional stems show their heading and outer
   cone on the ground while selected. Selected walls use the same three-axis move
@@ -214,8 +219,9 @@ full URL. Add an SPA fallback so routes like `/c/:id`, `/gallery`, and
   restarting playback; loop buffers are padded/trimmed to a shared BPM-aligned
   musical length to hide MP3 encoder padding and keep every stem restarting
   together. With "ring out tails" enabled, a stem running slightly past that
-  length has its overrun (up to ~2 bars) folded back onto the loop start so
-  reverb tails carry across the seam.
+  length has its overrun (up to ~8 beats) folded back onto the loop start so
+  reverb tails carry across the seam. Per-stem timing offsets are applied as a
+  start-phase shift against the shared clock, so a nudged stem stays in sync.
 - **State** ([src/store.ts](src/store.ts)) — a Zustand store is the single source
   of truth: the current composition, the library, mode/selection, and the audio
   engine. The scene renders from it; edits flow back into it and out to the

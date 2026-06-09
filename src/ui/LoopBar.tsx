@@ -7,7 +7,8 @@ import { useStore } from "../store";
 export function LoopBar() {
   const mode = useStore((s) => s.mode);
   const bpm = useStore((s) => s.composition.bpm);
-  const bars = useStore((s) => s.composition.bars);
+  const beats = useStore((s) => s.composition.beats);
+  const beatsPerBar = useStore((s) => s.composition.beatsPerBar ?? 4);
   const loopEnabled = useStore((s) => s.composition.loopEnabled ?? true);
   const loopProgress = useStore((s) => s.loopProgress);
   const [progress, setProgress] = useState<ReturnType<typeof loopProgress>>(null);
@@ -25,26 +26,26 @@ export function LoopBar() {
   if (mode !== "edit") return null;
 
   const beatLength = bpm > 0 ? 60 / bpm : 0.5;
-  const musicalLength = bars ? bars * 4 * beatLength : 0;
+  const musicalLength = beats ? beats * beatLength : 0;
   const duration = progress?.duration ?? musicalLength;
   if (duration <= 0) return null;
 
-  const beats = Math.max(1, Math.round(duration / beatLength));
+  const beatCount = Math.max(1, Math.round(duration / beatLength));
   const playFrac = progress ? Math.min(1, Math.max(0, progress.position / duration)) : 0;
-  const currentBeat = Math.min(beats, Math.floor((progress?.position ?? 0) / beatLength) + 1);
+  const currentBeat = Math.min(beatCount, Math.floor((progress?.position ?? 0) / beatLength) + 1);
 
   return (
     <div style={wrap} data-loop-bar>
       <div style={meta}>
-        <span>{bars ? `${bars} bars` : "loop"} · {Math.round(bpm)} BPM</span>
+        <span>{beats ? `${beats} beats` : "loop"} · {Math.round(bpm)} BPM</span>
         <span>
           {progress?.mode === "audition" ? "seam · " : ""}
-          beat {currentBeat}/{beats}
+          beat {currentBeat}/{beatCount}
         </span>
       </div>
       <div style={{ ...track, opacity: loopEnabled ? 1 : 0.4 }}>
-        {Array.from({ length: beats + 1 }, (_, i) => {
-          const isBar = i % 4 === 0;
+        {Array.from({ length: beatCount + 1 }, (_, i) => {
+          const isBar = i % beatsPerBar === 0;
           return (
             <div
               key={i}
@@ -52,7 +53,7 @@ export function LoopBar() {
                 position: "absolute",
                 top: isBar ? 0 : "30%",
                 bottom: 0,
-                left: `${(i / beats) * 100}%`,
+                left: `${(i / beatCount) * 100}%`,
                 width: 1,
                 transform: "translateX(-0.5px)",
                 background: isBar ? "rgba(255,255,255,0.45)" : "rgba(255,255,255,0.18)",

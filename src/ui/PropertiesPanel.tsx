@@ -17,6 +17,7 @@ export function PropertiesPanel() {
     setTrackMinVolume,
     setTrackFalloff,
     setTrackDirectivity,
+    setTrackOffset,
     deleteTrack,
     duplicateTrack,
   } = useStore.getState();
@@ -47,6 +48,8 @@ export function PropertiesPanel() {
       </div>
 
       <StemLoopMeter track={track} />
+
+      <FineOffset value={track.offsetFineBeats ?? 0} onChange={(v) => setTrackOffset(track.id, { offsetFineBeats: v })} />
 
       <Slider
         label="Max volume"
@@ -255,6 +258,47 @@ function TrackColorChooser({ value, onChange }: { value: string; onChange: (colo
   );
 }
 
+// M7.1 — fine timing nudge added on top of the coarse, beat-snapped offset set
+// by clicking the stem loop meter. Snaps in 1/16-note steps over ±1/4 note
+// (a quarter note = one beat, so 1/16 note = 0.25 beat).
+const FINE_NOTE_LABELS: Record<string, string> = {
+  "0": "none",
+  "0.25": "1/16",
+  "0.5": "1/8",
+  "0.75": "3/16",
+  "1": "1/4",
+};
+
+function formatFineOffset(beats: number): string {
+  const label = FINE_NOTE_LABELS[String(Math.abs(beats))] ?? `${Math.abs(beats)} beat`;
+  if (beats === 0) return "none";
+  return `${beats > 0 ? "+" : "−"}${label} note`;
+}
+
+function FineOffset({ value, onChange }: { value: number; onChange: (beats: number) => void }) {
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, opacity: 0.75, marginBottom: 2 }}>
+        <span>Timing offset (fine)</span>
+        <span>{formatFineOffset(value)}</span>
+      </div>
+      <input
+        type="range"
+        min={-1}
+        max={1}
+        step={0.25}
+        value={value}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        style={{ width: "100%", accentColor: "#ffcc44", cursor: "pointer" }}
+      />
+      <div style={helpText}>
+        Added to the coarse offset you set by clicking the stem loop above. Nudges
+        this stem ahead of or behind the beat while it stays locked to the loop.
+      </div>
+    </div>
+  );
+}
+
 function Slider({
   label,
   help,
@@ -432,3 +476,4 @@ const helpText: React.CSSProperties = {
   fontSize: 11,
   lineHeight: 1.35,
 };
+

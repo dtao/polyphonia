@@ -26,9 +26,10 @@ export function LoopPanel({ open, onOpen, onClose }: { open: boolean; onOpen: ()
   const endTrim = comp.loopEndTrim ?? 0;
   const crossfade = comp.loopCrossfade ?? 0.035;
   const tail = comp.loopTail ?? false;
-  const bars = comp.bars;
+  const beats = comp.beats;
+  const beatsPerBar = comp.beatsPerBar ?? 4;
   const beatLength = 60 / comp.bpm;
-  const loopDuration = bars ? bars * 4 * beatLength : null;
+  const loopDuration = beats ? beats * beatLength : null;
 
   if (!open) {
     return (
@@ -108,23 +109,24 @@ export function LoopPanel({ open, onOpen, onClose }: { open: boolean; onOpen: ()
       <div style={{ marginTop: 10, opacity: enabled ? 1 : 0.45 }}>
         <div style={sliderHead}>
           <span>Loop duration</span>
-          <span>{bars ? `${bars} bars` : "Auto"}</span>
+          <span>{beats ? `${beats} beats` : "Auto"}</span>
         </div>
-        {bars && <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", marginBottom: 6 }}>
+        {beats && <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", marginBottom: 6 }}>
+          {beats % beatsPerBar === 0 ? `${beats / beatsPerBar} bars · ` : ""}
           {loopDuration?.toFixed(2)}s / {(loopDuration! / 60).toFixed(2)}m
         </div>}
         <div style={{ display: "flex", gap: 6 }}>
           <input
             type="number"
             min={1}
-            max={64}
+            max={256}
             step={1}
-            value={bars ?? ""}
+            value={beats ?? ""}
             placeholder="Auto"
             disabled={!enabled}
             onChange={(e) => {
               const val = e.target.value ? parseInt(e.target.value, 10) : undefined;
-              setLoopSettings({ bars: val });
+              setLoopSettings({ beats: val });
             }}
             style={{
               flex: 1,
@@ -137,10 +139,10 @@ export function LoopPanel({ open, onOpen, onClose }: { open: boolean; onOpen: ()
               cursor: !enabled ? "default" : "text",
             }}
           />
-          {bars && (
+          {beats && (
             <button
               disabled={!enabled}
-              onClick={() => setLoopSettings({ bars: undefined })}
+              onClick={() => setLoopSettings({ beats: undefined })}
               style={{
                 padding: "6px 12px",
                 borderRadius: 6,
@@ -158,11 +160,43 @@ export function LoopPanel({ open, onOpen, onClose }: { open: boolean; onOpen: ()
         </div>
       </div>
 
+      <div style={{ marginTop: 10, opacity: enabled ? 1 : 0.45 }}>
+        <div style={sliderHead}>
+          <span>Beats per bar</span>
+          <span>{beatsPerBar}</span>
+        </div>
+        <input
+          type="number"
+          min={1}
+          max={16}
+          step={1}
+          value={beatsPerBar}
+          disabled={!enabled}
+          onChange={(e) => {
+            const val = e.target.value ? parseInt(e.target.value, 10) : 4;
+            setLoopSettings({ beatsPerBar: Math.min(16, Math.max(1, val)) });
+          }}
+          style={{
+            width: "100%",
+            boxSizing: "border-box",
+            marginTop: 4,
+            padding: "6px 8px",
+            borderRadius: 6,
+            border: "1px solid rgba(255,255,255,0.2)",
+            background: "rgba(255,255,255,0.05)",
+            color: "white",
+            fontSize: 13,
+            cursor: !enabled ? "default" : "text",
+          }}
+        />
+      </div>
+
       <div style={help}>
         Audition plays the loop boundary: tail into start. Ring out tails folds a
-        stem's overrun past the loop length (up to ~2 bars) back onto the start,
-        so reverb decays across the seam. Set loop duration to override the
-        auto-detected length from the longest stem.
+        stem's overrun past the loop length (up to ~8 beats) back onto the start,
+        so reverb decays across the seam. Loop duration is in beats — set it to
+        override the auto-detected length from the longest stem. Beats per bar
+        sets the time signature for the bar lines in the loop meters.
       </div>
     </div>
   );

@@ -108,6 +108,16 @@ describe("composition compatibility and revisions", () => {
         },
       }, ...defaultComposition.tracks.slice(1)],
     };
+    const changedBeats = { ...defaultComposition, beats: 32 };
+    const changedBeatsPerBar = { ...defaultComposition, beatsPerBar: 7 };
+    const changedOffset = {
+      ...defaultComposition,
+      tracks: [{ ...defaultComposition.tracks[0], offsetBeats: 3 }, ...defaultComposition.tracks.slice(1)],
+    };
+    const changedOffsetFine = {
+      ...defaultComposition,
+      tracks: [{ ...defaultComposition.tracks[0], offsetFineBeats: 0.25 }, ...defaultComposition.tracks.slice(1)],
+    };
 
     expect(compositionRevision(changedVolume)).not.toBe(baseline);
     expect(compositionRevision(changedEnvironment)).not.toBe(baseline);
@@ -115,6 +125,26 @@ describe("composition compatibility and revisions", () => {
     expect(compositionRevision(changedLoopTail)).not.toBe(baseline);
     expect(compositionRevision(changedStemLoop)).not.toBe(baseline);
     expect(compositionRevision(changedDirectivity)).not.toBe(baseline);
+    expect(compositionRevision(changedBeats)).not.toBe(baseline);
+    expect(compositionRevision(changedBeatsPerBar)).not.toBe(baseline);
+    expect(compositionRevision(changedOffset)).not.toBe(baseline);
+    expect(compositionRevision(changedOffsetFine)).not.toBe(baseline);
+  });
+
+  it("migrates a legacy bars loop length to beats", () => {
+    const legacy = { ...defaultComposition, beats: undefined, bars: 8 } as unknown as Parameters<typeof normalizeComposition>[0];
+    const normalized = normalizeComposition(legacy);
+
+    expect(normalized.beats).toBe(32);
+    expect((normalized as { bars?: number }).bars).toBeUndefined();
+  });
+
+  it("keeps an explicit beats value over a legacy bars value", () => {
+    const both = { ...defaultComposition, beats: 12, bars: 8 } as unknown as Parameters<typeof normalizeComposition>[0];
+    const normalized = normalizeComposition(both);
+
+    expect(normalized.beats).toBe(12);
+    expect((normalized as { bars?: number }).bars).toBeUndefined();
   });
 
   it("normalizes directional speaker settings from saved manifests", () => {

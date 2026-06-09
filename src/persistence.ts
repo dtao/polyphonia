@@ -79,14 +79,14 @@ export async function resolveComposition(saved: SerializedComposition): Promise<
 
 const LIB_KEY = "polyphonia:library";
 const OLD_KEY = "polyphonia:composition"; // pre-library single-slot format
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 export function loadLibrary(): { library: SerializedComposition[]; currentId: string } {
   const raw = localStorage.getItem(LIB_KEY);
   if (raw) {
     try {
       const p = JSON.parse(raw);
-      if ((p?.version === 2 || p?.version === 3 || p?.version === SCHEMA_VERSION) && Array.isArray(p.library) && p.library.length) {
+      if ((p?.version === 2 || p?.version === 3 || p?.version === 4 || p?.version === SCHEMA_VERSION) && Array.isArray(p.library) && p.library.length) {
         return { library: p.library.map(normalizeComposition), currentId: p.currentId ?? p.library[0].id };
       }
     } catch (err) {
@@ -153,7 +153,7 @@ export async function copyComposition(s: SerializedComposition): Promise<Seriali
 
 // ===== Export / import: one self-contained composition + media bundle =====
 
-const BUNDLE_VERSION = 4;
+const BUNDLE_VERSION = 5;
 
 function toBase64(buf: ArrayBuffer): string {
   const bytes = new Uint8Array(buf);
@@ -235,7 +235,7 @@ export async function exportComposition(comp: Composition): Promise<void> {
 // in-memory composition (with object URLs) ready to become the current one.
 export async function importComposition(file: File): Promise<Composition> {
   const payload = JSON.parse(await file.text());
-  if (payload?.version !== 1 && payload?.version !== 2 && payload?.version !== 3 && payload?.version !== BUNDLE_VERSION) {
+  if (payload?.version !== 1 && payload?.version !== 2 && payload?.version !== 3 && payload?.version !== 4 && payload?.version !== BUNDLE_VERSION) {
     throw new Error("Unrecognized or unsupported Polyphonia file.");
   }
   if (payload.detailPack) {
