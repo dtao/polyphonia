@@ -51,7 +51,7 @@ export function MapScene({
         />
       ))}
       <Rooms map={map} editMode={editMode} />
-      <Platforms map={map} editMode={editMode} />
+      <Platforms map={map} editMode={editMode} tracks={lightTracks} previewFade={previewFade} />
       <StandaloneWalls map={map} editMode={editMode} />
       <Tunnels map={map} editMode={editMode} />
       {editMode && <BranchPlacementLayer map={map} />}
@@ -392,19 +392,19 @@ function buildBufferGeometry(vertices: number[], indices: number[]): THREE.Buffe
 // Attached to a terminal path point, so position/elevation follow that point.
 const PLATFORM_FLOOR_Y = 0.06;
 
-function Platforms({ map, editMode }: { map: CompositionMap; editMode: boolean }) {
+function Platforms({ map, editMode, tracks, previewFade }: { map: CompositionMap; editMode: boolean; tracks: TrackDef[]; previewFade: number }) {
   const selectedPlatformId = useStore((s) => s.selectedPlatformId);
   if (!map.platforms.length) return null;
   return (
     <group>
       {map.platforms.map((platform) => (
-        <Platform key={platform.id} platform={platform} map={map} editMode={editMode} selected={editMode && selectedPlatformId === platform.id} />
+        <Platform key={platform.id} platform={platform} map={map} editMode={editMode} selected={editMode && selectedPlatformId === platform.id} tracks={tracks} previewFade={previewFade} />
       ))}
     </group>
   );
 }
 
-function Platform({ platform, map, editMode, selected }: { platform: MapPlatform; map: CompositionMap; editMode: boolean; selected: boolean }) {
+function Platform({ platform, map, editMode, selected, tracks, previewFade }: { platform: MapPlatform; map: CompositionMap; editMode: boolean; selected: boolean; tracks: TrackDef[]; previewFade: number }) {
   const selectPlatform = useStore((s) => s.selectPlatform);
   const updatePlatform = useStore((s) => s.updatePlatform);
   const [obj, setObj] = useState<THREE.Group | null>(null);
@@ -460,7 +460,7 @@ function Platform({ platform, map, editMode, selected }: { platform: MapPlatform
       >
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, PLATFORM_FLOOR_Y, 0]}>
           <PlatformGeometry platform={platform} />
-          <meshStandardMaterial color={selected ? "#16302e" : "#14161e"} roughness={0.9} metalness={0.08} side={THREE.DoubleSide} />
+          <PathMaterial tracks={tracks} editMode={editMode} selected={selected} previewFade={previewFade} />
         </mesh>
         <Line ref={outlineRef as never} points={outline} color={selected ? "#8fffe8" : "#5d6b86"} lineWidth={selected ? 2.4 : 1.4} transparent opacity={selected ? 0.95 : 0.6} />
         {editMode && selected && <PlatformPathEditor platform={platform} map={map} elevationY={elevationY} />}
