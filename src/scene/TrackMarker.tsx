@@ -6,6 +6,7 @@ import { TrackDef } from "../composition";
 import { isPointInsideMap, surfaceHeightAt } from "../map";
 import { markerObjects, useStore } from "../store";
 import { UNDERFLOOR_HEIGHT } from "./mapHeights";
+import { radialFade } from "./fade";
 import { debugFlag } from "../debug";
 import { unregisterMarkerDebug, updateMarkerDebug } from "./markerDebug";
 
@@ -72,13 +73,14 @@ export function TrackMarker({
     // bottom of the fade-in is genuinely invisible; the solid white core stays
     // on the linear fade below.
     const opticalFade = renderedFade * renderedFade;
+    const listenerDist = Math.hypot(camera.position.x - markerDebugPosition[0], camera.position.z - markerDebugPosition[1]);
     updateMarkerDebug({
       id: markerDebugId,
       trackId: track.id,
       kind: preview ? "preview" : "base",
       fade: renderedFade,
       targetFade: fade,
-      distance: Math.hypot(camera.position.x - markerDebugPosition[0], camera.position.z - markerDebugPosition[1]),
+      distance: listenerDist,
       updatedAt: performance.now(),
     });
     if (core.current) {
@@ -115,8 +117,22 @@ export function TrackMarker({
         Math.sin(t * 0.031 + seed * 4.1) * 0.55;
     }
     if (glow.current) {
-      glow.current.intensity = ((selected ? 8 : 4.8) + volume * 3.2 + pulse * 44) * renderedFade;
-      glow.current.distance = 12 + volume * 8 + pulse * 16;
+      // Cull the point light by the radial fade: drop it from the renderer's
+      // active light set once the stem is beyond the fade band. At that range a
+      // light with reach ~18 only illuminates geometry that is itself faded to
+      // the void, so the cull is visually free — but it removes that light's
+      // per-fragment cost. This is what keeps a 50-stem map from shading 50
+      // lights on every lit pixel (the tunnel-walls slowdown); only stems near
+      // the listener stay lit. Editing keeps every light so the author sees the
+      // whole scene. Intensity is faded to ~0 before `visible` flips, so the
+      // cull never pops. Fewer stems within the radius ⇒ fewer active lights ⇒
+      // cheaper, which is why shrinking the fade radius lowers the cost.
+      const lightFade = mode === "edit" ? 1 : radialFade(listenerDist);
+      glow.current.visible = lightFade > 0.002;
+      if (glow.current.visible) {
+        glow.current.intensity = ((selected ? 8 : 4.8) + volume * 3.2 + pulse * 44) * renderedFade * lightFade;
+        glow.current.distance = 12 + volume * 8 + pulse * 16;
+      }
     }
     if (ring.current) ring.current.rotation.z += dt * 1.5;
   });
