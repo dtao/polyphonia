@@ -27,10 +27,18 @@ import { RADIAL_FADE_INNER, RADIAL_FADE_OUTER, effectiveFadeInner, effectiveFade
 function FogSync() {
   const scene = useThree((s) => s.scene);
   useEffect(() => {
-    const previous = scene.fog;
+    const previousFog = scene.fog;
+    const previousBackground = scene.background;
     scene.fog = new THREE.Fog(environmentBackgroundColor, RADIAL_FADE_INNER, RADIAL_FADE_OUTER);
+    // Set scene.background to the SAME color as the fog (the JSX
+    // <color attach="background"> had the same group-attach bug as <fog>, so the
+    // scene background was never set and fog faded toward a non-matching CSS page
+    // color, leaving faint "haze" patches). XR ignores scene.background, so this
+    // is safe in AR (the AR backdrop sphere handles passthrough).
+    scene.background = new THREE.Color(environmentBackgroundColor);
     return () => {
-      scene.fog = previous;
+      scene.fog = previousFog;
+      scene.background = previousBackground;
     };
   }, [scene]);
   useFrame(() => {
@@ -69,11 +77,11 @@ export function EnvironmentScene({
     : undefined;
   return (
     <>
-      <color attach="background" args={[environmentBackgroundColor]} />
-      {/* Fog is owned imperatively by <FogSync> (scene.fog), not a JSX
-          attach="fog" — which would bind to the parent group, not the scene.
-          Its far aligns with RADIAL_FADE_OUTER so fog-respecting geometry and
-          the manually-faded path/orbs vanish at the same circle. */}
+      {/* Scene background AND fog are owned imperatively by <FogSync>, not JSX
+          attach= props — those would bind to the parent <ARWorldTransform> group
+          rather than the scene, so neither was ever applied. Fog far aligns with
+          RADIAL_FADE_OUTER so fog-respecting geometry and the manually-faded
+          path/orbs vanish at the same circle, blending into a matching bg. */}
       <FogSync />
       <ambientLight intensity={0.16} />
       <hemisphereLight args={["#8992a5", "#08090d", 0.24]} />

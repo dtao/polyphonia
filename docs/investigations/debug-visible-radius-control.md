@@ -155,9 +155,33 @@ group-attach issue, but it is out of scope here (scene reads dark via the
 canvas/CSS fallback, so fogging to the void color still reads as "gone"). Flag
 for later if a perfect fog/background color match is wanted.
 
+### Attempt 6 — the last two stragglers: background mismatch + drei lines
+
+With fog on the scene, most geometry faded — but the user still saw a "haze of
+color" (things not *fully* disappearing) and persistent outline lines, plus
+platforms that didn't vanish.
+
+Two distinct causes:
+
+1. **Background never set (same group-attach bug as fog).**
+   `<color attach="background">` also bound to the `<ARWorldTransform>` group, so
+   `scene.background` stayed null. Fog faded geometry toward the fog color
+   `#030407`, but the visible page was the CSS body color `#05060a` — a *near*
+   but non-matching dark, so fogged geometry left faint patches instead of
+   vanishing. Fix: `FogSync` now also sets `scene.background` to the fog color,
+   so fully-fogged geometry blends to an identical backdrop. (XR ignores
+   `scene.background`, so AR passthrough is unaffected.)
+
+2. **Platform outline is a drei `<Line>` (LineMaterial), which ignores fog.**
+   The platform *floor* (standard material) fogged, but its edge ring persisted
+   at any distance — so platforms never disappeared, and the rings read as
+   sporadic dark "outline lines" in the distance. Fix: fade the outline's
+   opacity per frame by the same `radialFade` band in explore mode (edit mode
+   keeps it crisp for authoring). It's the only fog-ignoring `<Line>` in the
+   explore map (the others are edit-only directivity guides).
+
 ## Status
 
-Orb fix committed (`3f405df`). Path + fog-on-scene fixes implemented (build +
-tests green), pending user visual confirmation that the **whole** map — surface,
-rails, walls, rooms — now disappears at the outer ring. Once confirmed, commit
-and close.
+Orbs (`3f405df`) and path + fog-on-scene (`9cecaaf`) committed. Background +
+platform-outline fixes implemented (build + tests green), pending user visual
+confirmation. If confirmed and no further stragglers appear, commit and close.

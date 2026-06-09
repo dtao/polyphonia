@@ -1,6 +1,6 @@
 import { ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import { environmentBackgroundColor } from "./EnvironmentScene";
-import { RADIAL_FADE_INNER, RADIAL_FADE_OUTER, effectiveFadeInner, effectiveFadeOuter } from "./fade";
+import { RADIAL_FADE_INNER, RADIAL_FADE_OUTER, effectiveFadeInner, effectiveFadeOuter, radialFade } from "./fade";
 import { Line, TransformControls } from "@react-three/drei";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -410,6 +410,24 @@ function Platform({ platform, map, editMode, selected }: { platform: MapPlatform
   const [obj, setObj] = useState<THREE.Group | null>(null);
   const outline = useMemo(() => platformOutlinePoints(platform), [platform]);
   const elevationY = platformElevation(map, platform);
+  // The outline is a drei <Line> (LineMaterial), which does not respect scene
+  // fog — so in explore mode we fade its opacity by the same radial band as
+  // everything else, or its edge ring would persist at the horizon. Edit mode
+  // keeps it fully visible for authoring.
+  const outlineRef = useRef<{ material?: { opacity: number; transparent: boolean }; visible: boolean }>(null);
+  useFrame(({ camera }) => {
+    const line = outlineRef.current;
+    if (!line) return;
+    const base = selected ? 0.95 : 0.6;
+    const fade = editMode
+      ? 1
+      : radialFade(Math.hypot(camera.position.x - platform.center[0], camera.position.z - platform.center[1]));
+    if (line.material) {
+      line.material.transparent = true;
+      line.material.opacity = base * fade;
+    }
+    line.visible = fade > 0.002;
+  });
 
   function handleObjectChange() {
     if (!obj) return;
@@ -444,7 +462,7 @@ function Platform({ platform, map, editMode, selected }: { platform: MapPlatform
           <PlatformGeometry platform={platform} />
           <meshStandardMaterial color={selected ? "#16302e" : "#14161e"} roughness={0.9} metalness={0.08} side={THREE.DoubleSide} />
         </mesh>
-        <Line points={outline} color={selected ? "#8fffe8" : "#5d6b86"} lineWidth={selected ? 2.4 : 1.4} transparent opacity={selected ? 0.95 : 0.6} />
+        <Line ref={outlineRef as never} points={outline} color={selected ? "#8fffe8" : "#5d6b86"} lineWidth={selected ? 2.4 : 1.4} transparent opacity={selected ? 0.95 : 0.6} />
         {editMode && selected && <PlatformPathEditor platform={platform} map={map} elevationY={elevationY} />}
       </group>
       {editMode && selected && obj && (
