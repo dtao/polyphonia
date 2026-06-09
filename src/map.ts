@@ -158,6 +158,12 @@ export type MapSupport =
 export const DEFAULT_WALL_THICKNESS = 0.3;
 export const MIN_WALL_THICKNESS = 0.15;
 export const MAX_WALL_THICKNESS = 3;
+// Symmetric sanity bound on any object's elevation. Not a designed limit — just
+// a guard against a runaway drag flinging something out of the playable world.
+// Applied uniformly to rooms, platforms, walls, and path points (and the gizmo
+// drag handlers) so nothing is clamped tighter than anything else.
+export const ELEVATION_LIMIT = 100;
+export const clampElevation = (value: number): number => clamp(value, -ELEVATION_LIMIT, ELEVATION_LIMIT);
 export const ROOM_WALL_THICKNESS = DEFAULT_WALL_THICKNESS;
 // How far the walkable doorway "threshold" extends outside the entrance wall, so
 // a room positioned against a path connects to it.
@@ -273,7 +279,7 @@ function normalizeElevations(value: unknown, segments: WalkableSegment[]): Recor
   }
   const out: Record<string, number> = {};
   for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
-    if (keys.has(key) && typeof raw === "number" && Number.isFinite(raw) && raw !== 0) out[key] = raw;
+    if (keys.has(key) && typeof raw === "number" && Number.isFinite(raw) && raw !== 0) out[key] = clampElevation(raw);
   }
   return out;
 }
@@ -1851,7 +1857,7 @@ function normalizeWall(wall: MapWall): MapWall {
     start: wall.start,
     end: wall.end,
     height: clamp(Number.isFinite(wall.height) ? wall.height : DEFAULT_ENCLOSURE_HEIGHT, 0.5, 12),
-    elevation: clamp(Number.isFinite(wall.elevation) ? wall.elevation! : 0, -20, 40),
+    elevation: clampElevation(Number.isFinite(wall.elevation) ? wall.elevation! : 0),
     wallThickness: normalizeWallThickness(wall.wallThickness),
   };
 }
@@ -1865,7 +1871,7 @@ function normalizePlatform(platform: MapPlatform): MapPlatform {
     shape: isPlatformShape(platform.shape) ? platform.shape : "rect",
     width,
     depth: clamp(Number.isFinite(platform.depth) ? platform.depth : width, 4, 200),
-    elevation: Number.isFinite(platform.elevation) ? platform.elevation : 0,
+    elevation: clampElevation(Number.isFinite(platform.elevation) ? platform.elevation : 0),
     attachment: isRoomAttachment(platform.attachment) ? platform.attachment : undefined,
   };
 }
@@ -1916,7 +1922,7 @@ function normalizeRoom(room: RawMapRoom): MapRoom {
     depth,
     height: clamp(room.height ?? DEFAULT_ENCLOSURE_HEIGHT, 2, 12),
     wallThickness,
-    ...(Number.isFinite(room.elevation) ? { elevation: clamp(room.elevation!, -20, 40) } : {}),
+    ...(Number.isFinite(room.elevation) ? { elevation: clampElevation(room.elevation!) } : {}),
     entrances: rawEntrances.map((entrance) => normalizeEntrance(entrance, width, depth, wallThickness)),
     attachment: isRoomAttachment(room.attachment) ? room.attachment : undefined,
   };

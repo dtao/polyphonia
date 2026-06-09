@@ -144,7 +144,26 @@ reported. So there appear to be (at least) two distinct effects:
 
 The visual-vs-readout divergence below −20 is itself a minor bug: the gizmo's
 mesh keeps following the pointer past the clamped value instead of staying
-pinned at −20. Low priority, but worth a note.
+pinned at the limit. Low priority, but worth a note.
+
+### Clamp widened and unified (2026-06-09)
+
+The clamp was previously inconsistent: rooms and walls clamped to `[-20, 40]`,
+the room/platform gizmo handlers separately clamped to `[-20, 40]`, while
+platforms and path-point elevations were not clamped at all. Per the decision
+that a clamp (if kept) must apply to everything, it is now:
+
+- A single symmetric bound `ELEVATION_LIMIT = 100` with a shared
+  `clampElevation()` helper in `src/map.ts`.
+- Applied uniformly in `normalizeMap` to rooms, walls, platforms, and
+  path-point elevations (`normalizeElevations`), and in the room/platform/wall
+  gizmo handlers in `src/scene/MapScene.tsx`.
+- The `PlatformPanel` elevation slider range widened to ±100 to match.
+
+This is an interim choice — the clamp may be removed entirely later. It does
+**not** address the shallow-floor / paths-jump bug, which is separate from the
+clamp. Before fully removing the clamp, sanity-check the radial-fade/fog
+distances and audio listener math against very large Y offsets.
 
 ## Current hypotheses (still open)
 

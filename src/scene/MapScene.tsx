@@ -6,7 +6,7 @@ import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
 import { newId } from "../id";
-import { canAddBranchAtPoint, clampToMap, CompositionMap, doorVisualOpenAmount, DOOR_DEPTH, entranceLocalCenter, isTunnelSegment, loopRoleForPoint, MapPlatform, MapRoom, MapWall, platformElevation, platformLocalPolygon, pointHasAttachment, RoomEntrance, roomElevation, roomLocalPoint, roomWorldPoint, RoomSide, solidWallSpans, surfaceHeightAt, tunnelHeight, tunnelSideWalls, wallOpenings, wallThickness, WalkableSegment } from "../map";
+import { canAddBranchAtPoint, clampElevation, clampToMap, CompositionMap, doorVisualOpenAmount, DOOR_DEPTH, entranceLocalCenter, isTunnelSegment, loopRoleForPoint, MapPlatform, MapRoom, MapWall, platformElevation, platformLocalPolygon, pointHasAttachment, RoomEntrance, roomElevation, roomLocalPoint, roomWorldPoint, RoomSide, solidWallSpans, surfaceHeightAt, tunnelHeight, tunnelSideWalls, wallOpenings, wallThickness, WalkableSegment } from "../map";
 import { useStore, viewState, pendingTeleport } from "../store";
 import { DEFAULT_ENCLOSURE_HEIGHT } from "../spatialConstants";
 import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
@@ -88,7 +88,7 @@ function Room({ room, elevationY, editMode, selected }: { room: MapRoom; elevati
     if (!obj) return;
     updateRoom(room.id, {
       center: [obj.position.x, obj.position.z],
-      elevation: Math.max(-20, Math.min(40, obj.position.y)),
+      elevation: clampElevation(obj.position.y),
       attachment: undefined,
     });
   }
@@ -433,7 +433,7 @@ function Platform({ platform, map, editMode, selected, tracks, previewFade }: { 
     if (!obj) return;
     updatePlatform(platform.id, {
       center: [obj.position.x, obj.position.z],
-      elevation: Math.max(-20, Math.min(40, obj.position.y)),
+      elevation: clampElevation(obj.position.y),
       attachment: undefined,
     });
   }
@@ -617,7 +617,7 @@ function WallMesh({ wall, editMode, selected }: { wall: MapWall; editMode: boole
     updateWall(wall.id, {
       start: [wall.start[0] + offset[0], wall.start[1] + offset[1]],
       end: [wall.end[0] + offset[0], wall.end[1] + offset[1]],
-      elevation: object.position.y - wall.height / 2,
+      elevation: clampElevation(object.position.y - wall.height / 2),
     });
   }
 
