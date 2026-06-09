@@ -263,6 +263,14 @@ to avoid rewriting history with rebase.
 - **Dev-only debug tools:** `window.polyStore` exposes the store in dev builds.
   `?debug=1` enables the debug overlay/log, with flags such as
   `debugNoPointLights=1`, `debugNoLoopPreview=1`, and `debugNoLoopLights=1`.
+- **Driving the editor in preview/headless:** `<App>` (the editor) only mounts
+  when a `user` is signed in; otherwise `main.tsx` shows `<PublicLanding>`. To
+  exercise the editor without auth (e.g. preview-tool verification), shim a fake
+  session in dev:
+  `window.polyStore.setState({ user: { id: "dev", email: "dev@local" }, authReady: true })`,
+  then `setEntered(true)`. This only unlocks the client view for local testing —
+  it does **not** grant backend access (Supabase RLS still gates real
+  publish/fetch), so it cannot be used to test sharing.
 
 ## Sharing / Supabase (the #1 source of confusing errors)
 
