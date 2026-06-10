@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import * as THREE from "three";
-import { Composition, StemDirectivity, TrackDef, audioAssetKey, compositionRevision, defaultComposition, normalizeComposition, touchComposition } from "./composition";
+import { Composition, StemDirectivity, StemShape, TrackDef, audioAssetKey, compositionRevision, defaultComposition, normalizeComposition, touchComposition } from "./composition";
 import { AudioEngine, AudioLoadProgress } from "./audio/AudioEngine";
 import {
   SerializedComposition,
@@ -252,6 +252,7 @@ interface StoreState {
   // Downsampled waveform peaks + source duration for the selected stem's meter.
   trackPeaks: (id: string, bins: number) => { peaks: Float32Array; duration: number } | null;
   setTrackDirectivity: (id: string, directivity: StemDirectivity | undefined) => void;
+  setTrackShape: (id: string, stemShape: StemShape | undefined) => void;
   renameTrack: (id: string, name: string) => void;
   setTrackColor: (id: string, color: string) => void;
   deleteTrack: (id: string) => void;
@@ -1521,6 +1522,14 @@ export const useStore = create<StoreState>((set, get) => ({
       composition: patchTrack(s.composition, id, { directivity }),
     }));
     get().engine?.setDirectivity(id, directivity);
+  },
+
+  setTrackShape: (id, stemShape) => {
+    set((s) => ({
+      ...withHistory(s, `track:${id}:stemShape`),
+      composition: patchTrack(s.composition, id, { stemShape }),
+    }));
+    get().engine?.setTrackShape(id, stemShape);
   },
 
   // Name and color are presentation-only — no audio side effects.
