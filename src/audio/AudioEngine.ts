@@ -18,6 +18,8 @@ interface LiveTrackInstance {
   id: string;
   panner: PannerNode;
   distanceGain: GainNode;
+  /** Per-instance gain for shape-dependent emission (e.g. wall one-sidedness). */
+  shapeGain: GainNode;
   occlusionGain: GainNode;
   occlusionFilter: BiquadFilterNode;
 }
@@ -863,6 +865,7 @@ export class AudioEngine {
       const level = this.distanceLevel(t.def, effectivePos, minVolume, maxVolume);
       const ratio = maxVolume > 0 ? (level / maxVolume) * stackGain : 0;
       this.setContinuousParam(instance.distanceGain.gain, ratio, at);
+      this.updateShapeGain(instance, t.def.stemShape, effectivePos, at);
       this.updateOcclusion(instance, audible.position, at);
     }
   }
@@ -874,7 +877,42 @@ export class AudioEngine {
       // Track listener elevation so horizontal XZ distance is all that drives falloff.
       return [tilePosition[0], this.listenerPosition.y, tilePosition[2]];
     }
+    if (shape?.kind === "wall") {
+      // Wall centre is the tile position. The panel extends along the tangent axis
+      // (perpendicular to facing). Project the listener's XZ offset onto that
+      // tangent, clamp to ±width/2, then resolve back to world XZ. Y tracks the
+      // listener so the panner reads horizontal distance to the panel.
+      const [fx, fz] = shape.facing;
+      const tx = -fz, tz = fx; // tangent = perpendicular to facing in XZ
+      const dx = this.listenerPosition.x - tilePosition[0];
+      const dz = this.listenerPosition.z - tilePosition[2];
+      const along = dx * tx + dz * tz;
+      const clamped = THREE.MathUtils.clamp(along, -shape.width / 2, shape.width / 2);
+      return [
+        tilePosition[0] + clamped * tx,
+        this.listenerPosition.y,
+        tilePosition[2] + clamped * tz,
+      ];
+    }
     return tilePosition;
+  }
+
+  // Applies one-sided emission gain for wall shapes.
+  private updateShapeGain(instance: LiveTrackInstance, shape: StemShape | undefined, effectivePos: [number, number, number], at: number): void {
+    if (shape?.kind !== "wall") {
+      instance.shapeGain.gain.setTargetAtTime(1, at, 0.05);
+      return;
+    }
+    // Positive dot = listener is in front of the wall (loud side).
+    const [fx, fz] = shape.facing;
+    const dx = this.listenerPosition.x - effectivePos[0];
+    const dz = this.listenerPosition.z - effectivePos[2];
+    const dot = dx * fx + dz * fz;
+    const backGain = shape.emitBothSides ? 0.15 : 0.04;
+    // Smooth S-curve over a ±1 unit transition zone around the panel surface.
+    const t = THREE.MathUtils.clamp((dot + 1) / 2, 0, 1);
+    const gain = THREE.MathUtils.lerp(backGain, 1.0, t * t * (3 - 2 * t));
+    instance.shapeGain.gain.setTargetAtTime(gain, at, 0.05);
   }
 
   private updateOcclusion(instance: LiveTrackInstance, position: [number, number, number], at: number): void {
@@ -1054,6 +1092,8 @@ export class AudioEngine {
 
     const distanceGain = this.ctx.createGain();
     distanceGain.gain.value = 0;
+    const shapeGain = this.ctx.createGain();
+    shapeGain.gain.value = 1;
     const occlusionGain = this.ctx.createGain();
     occlusionGain.gain.value = 1;
     const occlusionFilter = this.ctx.createBiquadFilter();
@@ -1062,12 +1102,13 @@ export class AudioEngine {
     occlusionFilter.Q.value = 0.4;
 
     t.gain.connect(distanceGain);
-    distanceGain.connect(occlusionFilter);
+    distanceGain.connect(shapeGain);
+    shapeGain.connect(occlusionFilter);
     occlusionFilter.connect(occlusionGain);
     occlusionGain.connect(panner);
     panner.connect(this.dryBus);
 
-    return { id: audible.id, panner, distanceGain, occlusionGain, occlusionFilter };
+    return { id: audible.id, panner, distanceGain, shapeGain, occlusionGain, occlusionFilter };
   }
 
   private disconnectTrackInstances(t: LiveTrack): void {
@@ -1082,6 +1123,7 @@ export class AudioEngine {
       /* already disconnected */
     }
     instance.distanceGain.disconnect();
+    instance.shapeGain.disconnect();
     instance.occlusionFilter.disconnect();
     instance.occlusionGain.disconnect();
     instance.panner.disconnect();
