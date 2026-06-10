@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { Composition, StemDirectivity, TrackDef } from "../composition";
+import { Composition, StemDirectivity, StemShape, TrackDef } from "../composition";
 import { CompositionMap, MapRoom, containingRoom, loopPreviewElevationOffset, roomWallObstructionCount, tiledMapTransforms, transformLoopPoint, tunnelObstructionCount, wallObstructionCount } from "../map";
 import { createPlaceholderStems } from "./synth";
 
@@ -764,6 +764,13 @@ export class AudioEngine {
     this.updateTrackAcoustics(t, this.ctx.currentTime);
   }
 
+  setTrackShape(id: string, stemShape: StemShape | undefined): void {
+    const t = this.find(id);
+    if (!t) return;
+    t.def = { ...t.def, stemShape };
+    this.updateTrackAcoustics(t, this.ctx.currentTime);
+  }
+
   // Stop everything and release the audio context. The engine is dead after.
   dispose(): void {
     clearTimeout(this.auditionTimer);
@@ -848,13 +855,26 @@ export class AudioEngine {
     for (const audible of audibleInstances) {
       const instance = t.instances.get(audible.id);
       if (!instance) continue;
-      this.setPannerPosition(instance.panner, audible.position);
+      // Shaped stems use the closest point on the shape as the effective panner
+      // position so that falloff is computed from the right distance.
+      const effectivePos = this.effectivePannerPosition(t.def.stemShape, audible.position);
+      this.setPannerPosition(instance.panner, effectivePos);
       this.setPannerOrientation(instance.panner, audible.direction);
-      const level = this.distanceLevel(t.def, audible.position, minVolume, maxVolume);
+      const level = this.distanceLevel(t.def, effectivePos, minVolume, maxVolume);
       const ratio = maxVolume > 0 ? (level / maxVolume) * stackGain : 0;
       this.setContinuousParam(instance.distanceGain.gain, ratio, at);
       this.updateOcclusion(instance, audible.position, at);
     }
+  }
+
+  // Returns the closest point on the stem's spatial shape to the listener.
+  // For point sources (orb / absent) this is just the tile centre.
+  private effectivePannerPosition(shape: StemShape | undefined, tilePosition: [number, number, number]): [number, number, number] {
+    if (shape?.kind === "pillar") {
+      // Track listener elevation so horizontal XZ distance is all that drives falloff.
+      return [tilePosition[0], this.listenerPosition.y, tilePosition[2]];
+    }
+    return tilePosition;
   }
 
   private updateOcclusion(instance: LiveTrackInstance, position: [number, number, number], at: number): void {
