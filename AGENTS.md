@@ -25,6 +25,22 @@ Local-first (works fully offline); cloud sharing is opt-in via Supabase.
 Stack: Vite · React 18 · TypeScript · React Three Fiber (+ drei, three) ·
 Zustand · Web Audio API · Supabase · React Router.
 
+## When to consult the docs
+
+Read the relevant doc **before** starting work in these areas — don't rely on
+inferring system behaviour from source alone:
+
+| Working on… | Read first |
+|---|---|
+| Composition fields, track properties, loop settings, normalization | [composition-model.md](docs/composition-model.md) |
+| Zustand store, undo/redo, non-reactive singletons (`viewState`, etc.) | [state-and-store.md](docs/state-and-store.md) |
+| Audio (stem parameters, loop behaviour, occlusion, spatialization, tiling) | [audio-engine.md](docs/audio-engine.md) |
+| Map objects, movement, elevation, tiling, occlusion geometry | [map-model.md](docs/map-model.md) |
+| Scene rendering, materials, fade/pop-in, environment packs | [scene-and-rendering.md](docs/scene-and-rendering.md) |
+| Local persistence, export/import, Supabase publishing | [persistence-and-cloud.md](docs/persistence-and-cloud.md) |
+| Editor UI layout, selection model, inspector patterns, direct manipulation | [editing-and-ux-patterns.md](docs/editing-and-ux-patterns.md) |
+| Adding any new system: composition field, map object, UI panel, pack, stem param | [adding-a-new-system.md](docs/adding-a-new-system.md) |
+
 ## Commands
 
 ```bash
