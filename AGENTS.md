@@ -2,7 +2,11 @@
 
 Orientation for coding agents working on Polyphonia. Read this, then
 [README.md](README.md) (product/features) and [BACKLOG.md](BACKLOG.md) (active
-roadmap). Keep README product guidance current when behavior changes. Treat
+roadmap). For a deeper understanding of any subsystem, see the
+[docs/](docs/) directory: [architecture-overview.md](docs/architecture-overview.md)
+is the entry point, with links to per-system deep-dives covering the composition
+model, state/store, audio engine, map model, scene/rendering, persistence/cloud,
+editor UX patterns, and how to add new systems. Keep README product guidance current when behavior changes. Treat
 BACKLOG as a forward-looking planning list. Never mark a backlog item complete
 without the user's manual verification, even when implementing a requested
 range of items autonomously; finish the code and hand off the relevant manual
