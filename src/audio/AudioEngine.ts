@@ -17,11 +17,14 @@ interface LiveTrack {
 interface LiveTrackInstance {
   id: string;
   panner: PannerNode;
+  pannerModel: PanningModelType;
   distanceGain: GainNode;
   /** Per-instance gain for shape-dependent emission (e.g. wall one-sidedness). */
   shapeGain: GainNode;
   occlusionGain: GainNode;
   occlusionFilter: BiquadFilterNode;
+  /** Audio context time when a model mismatch was first detected; null if matching. */
+  modelSwitchPendingAt: number | null;
 }
 
 interface AudibleTrackInstance {
@@ -45,6 +48,14 @@ const REDUCED_TILE_AUDIO_PREVIEW_RADIUS = 80;
 const REDUCED_LISTENER_UPDATE_INTERVAL = 1 / 30;
 const REDUCED_ACOUSTICS_UPDATE_INTERVAL = 1 / 20;
 const REDUCED_ROOM_UPDATE_INTERVAL = 1 / 8;
+// Max PannerNodes using the expensive HRTF convolution model. Instances beyond
+// this budget use equalpower (L/R gain only). Sorted by distance so the
+// closest stems always get HRTF.
+const HRTF_PANNER_BUDGET = 8;
+const REDUCED_HRTF_PANNER_BUDGET = 4;
+// Seconds an instance must be in the "wrong tier" before we switch its panner
+// model, to avoid thrashing when a stem hovers near the budget boundary.
+const HRTF_TIER_HYSTERESIS_S = 3;
 // How much overrun past the musical loop length we treat as a tail to fold
 // back across the seam, in beats. Capped so a genuinely longer stem (e.g. a
 // 32-beat clip against a 16-beat loop) is not folded onto its own first half.
@@ -103,6 +114,7 @@ export class AudioEngine {
   private tileAudioPreviewRadius: number;
   private activeRoomDebug: { id: string; decay: number; reverbSend: number; impulseDuration: number } | null = null;
   private panningModel: PanningModelType;
+  private hrtfBudget: number;
   private maxVirtualAudioInstancesPerTrack: number;
   private listenerUpdateInterval: number;
   private acousticsUpdateInterval: number;
@@ -117,6 +129,7 @@ export class AudioEngine {
     this.performanceMode = preferredAudioPerformanceMode();
     this.ctx = this.createAudioContext();
     this.panningModel = this.performanceMode === "reduced" ? "equalpower" : "HRTF";
+    this.hrtfBudget = this.performanceMode === "reduced" ? REDUCED_HRTF_PANNER_BUDGET : HRTF_PANNER_BUDGET;
     this.maxVirtualAudioInstancesPerTrack =
       this.performanceMode === "reduced" ? REDUCED_MAX_VIRTUAL_AUDIO_INSTANCES_PER_TRACK : MAX_VIRTUAL_AUDIO_INSTANCES_PER_TRACK;
     this.tileAudioPreviewRadius = this.performanceMode === "reduced" ? REDUCED_TILE_AUDIO_PREVIEW_RADIUS : 120;
@@ -638,6 +651,7 @@ export class AudioEngine {
     if (this.shouldRunTimedUpdate(this.lastAcousticsUpdate, this.acousticsUpdateInterval, at)) {
       this.lastAcousticsUpdate = at;
       for (const t of this.tracks) this.updateTrackAcoustics(t, at);
+      this.updateHrtfTiers(at);
     }
     if (this.shouldRunTimedUpdate(this.lastRoomUpdate, this.roomUpdateInterval, at)) {
       this.lastRoomUpdate = at;
@@ -913,6 +927,78 @@ export class AudioEngine {
     return tilePosition;
   }
 
+  // Reassign HRTF vs equalpower across all live instances each acoustics tick.
+  // The N closest instances (by distance to the listener) get HRTF; the rest
+  // use the cheaper equalpower model. Because PannerNode.panningModel is
+  // read-only after creation, a model change requires tearing down and
+  // recreating the panner. We gate this behind HRTF_TIER_HYSTERESIS_S to
+  // avoid thrashing when a stem hovers near the HRTF budget boundary.
+  private updateHrtfTiers(at: number): void {
+    // HRTF is only meaningful if the default model is HRTF. In reduced/mobile
+    // mode every panner already uses equalpower — nothing to do.
+    if (this.panningModel !== "HRTF") return;
+
+    // Collect all active instances with their distances.
+    type Entry = { t: LiveTrack; inst: LiveTrackInstance; distSq: number };
+    const entries: Entry[] = [];
+    for (const t of this.tracks) {
+      for (const inst of t.instances.values()) {
+        entries.push({ t, inst, distSq: this.distanceSqToListener(inst.panner.positionX ? [inst.panner.positionX.value, inst.panner.positionY.value, inst.panner.positionZ.value] : t.def.position) });
+      }
+    }
+    entries.sort((a, b) => a.distSq - b.distSq);
+
+    entries.forEach(({ t, inst }, index) => {
+      const targetModel: PanningModelType = index < this.hrtfBudget ? "HRTF" : "equalpower";
+      if (inst.pannerModel === targetModel) {
+        // Matching — clear any pending switch timer.
+        inst.modelSwitchPendingAt = null;
+        return;
+      }
+      // Mismatch — start (or continue) hysteresis timer.
+      if (inst.modelSwitchPendingAt === null) {
+        inst.modelSwitchPendingAt = at;
+        return;
+      }
+      if (at - inst.modelSwitchPendingAt < HRTF_TIER_HYSTERESIS_S) return;
+
+      // Hysteresis elapsed — swap the panner model.
+      inst.modelSwitchPendingAt = null;
+      const oldPanner = inst.panner;
+
+      // Silence immediately to avoid a click during the swap.
+      inst.occlusionGain.gain.setValueAtTime(0, at);
+
+      const newPanner = this.ctx.createPanner();
+      newPanner.panningModel = targetModel;
+      newPanner.distanceModel = "inverse";
+      newPanner.refDistance = t.def.refDistance ?? 4;
+      newPanner.maxDistance = t.def.maxDistance ?? 40;
+      newPanner.rolloffFactor = 0;
+      // Copy position/orientation from old panner.
+      if (newPanner.positionX) {
+        newPanner.positionX.value = oldPanner.positionX.value;
+        newPanner.positionY.value = oldPanner.positionY.value;
+        newPanner.positionZ.value = oldPanner.positionZ.value;
+        newPanner.orientationX.value = oldPanner.orientationX.value;
+        newPanner.orientationY.value = oldPanner.orientationY.value;
+        newPanner.orientationZ.value = oldPanner.orientationZ.value;
+      }
+      this.applyPannerDirectivity(newPanner, t.def.directivity);
+
+      oldPanner.disconnect();
+      inst.occlusionGain.connect(newPanner);
+      newPanner.connect(this.dryBus);
+
+      inst.panner = newPanner;
+      inst.pannerModel = targetModel;
+
+      // Restore gain — the normal acoustics update will set it correctly next
+      // tick, but restore to 1 now so it's not stuck at 0.
+      inst.occlusionGain.gain.setValueAtTime(1, at);
+    });
+  }
+
   // Applies one-sided emission gain for wall shapes.
   private updateShapeGain(instance: LiveTrackInstance, shape: StemShape | undefined, effectivePos: [number, number, number], at: number): void {
     if (shape?.kind !== "wall") {
@@ -1127,7 +1213,7 @@ export class AudioEngine {
     occlusionGain.connect(panner);
     panner.connect(this.dryBus);
 
-    return { id: audible.id, panner, distanceGain, shapeGain, occlusionGain, occlusionFilter };
+    return { id: audible.id, panner, pannerModel: panner.panningModel, distanceGain, shapeGain, occlusionGain, occlusionFilter, modelSwitchPendingAt: null };
   }
 
   private disconnectTrackInstances(t: LiveTrack): void {
