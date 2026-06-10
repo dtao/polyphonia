@@ -859,7 +859,7 @@ export class AudioEngine {
       if (!instance) continue;
       // Shaped stems use the closest point on the shape as the effective panner
       // position so that falloff is computed from the right distance.
-      const effectivePos = this.effectivePannerPosition(t.def.stemShape, audible.position);
+      const effectivePos = this.effectivePannerPosition(t.def, audible.position);
       this.setPannerPosition(instance.panner, effectivePos);
       this.setPannerOrientation(instance.panner, audible.direction);
       const level = this.distanceLevel(t.def, effectivePos, minVolume, maxVolume);
@@ -872,10 +872,26 @@ export class AudioEngine {
 
   // Returns the closest point on the stem's spatial shape to the listener.
   // For point sources (orb / absent) this is just the tile centre.
-  private effectivePannerPosition(shape: StemShape | undefined, tilePosition: [number, number, number]): [number, number, number] {
+  private effectivePannerPosition(def: TrackDef, tilePosition: [number, number, number]): [number, number, number] {
+    const shape = def.stemShape;
     if (shape?.kind === "pillar") {
       // Track listener elevation so horizontal XZ distance is all that drives falloff.
       return [tilePosition[0], this.listenerPosition.y, tilePosition[2]];
+    }
+    if (shape?.kind === "river") {
+      // The segment runs from the track's base position to shape.end. Tile copies
+      // apply an offset to the base; apply the same offset to the end so the
+      // segment rotates/translates with the tile.
+      const [bx, by, bz] = tilePosition;
+      const ox = tilePosition[0] - def.position[0];
+      const oy = tilePosition[1] - def.position[1];
+      const oz = tilePosition[2] - def.position[2];
+      const ex = shape.end[0] + ox, ey = shape.end[1] + oy, ez = shape.end[2] + oz;
+      const sdx = ex - bx, sdz = ez - bz;
+      const lenSq = sdx * sdx + sdz * sdz;
+      const lx = this.listenerPosition.x, lz = this.listenerPosition.z;
+      const t = lenSq > 0 ? THREE.MathUtils.clamp(((lx - bx) * sdx + (lz - bz) * sdz) / lenSq, 0, 1) : 0;
+      return [bx + t * sdx, by + t * (ey - by), bz + t * sdz];
     }
     if (shape?.kind === "wall") {
       // Wall centre is the tile position. The panel extends along the tangent axis
