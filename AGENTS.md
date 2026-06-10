@@ -6,13 +6,15 @@ roadmap). For a deeper understanding of any subsystem, see the
 [docs/](docs/) directory: [architecture-overview.md](docs/architecture-overview.md)
 is the entry point, with links to per-system deep-dives covering the composition
 model, state/store, audio engine, map model, scene/rendering, persistence/cloud,
-editor UX patterns, and how to add new systems. Keep README product guidance current when behavior changes. Treat
-BACKLOG as a forward-looking planning list. Never mark a backlog item complete
-without the user's manual verification, even when implementing a requested
-range of items autonomously; finish the code and hand off the relevant manual
-checks while leaving the checkbox open. Update existing items when priorities
-change, but do not add completed implementation notes after the fact. Git
-history is the record of changes.
+editor UX patterns, and how to add new systems.
+
+Keep README product guidance current when behavior changes. Treat BACKLOG as a
+forward-looking planning list. Never mark a backlog item complete without the
+user's manual verification, even when implementing a requested range of items
+autonomously; finish the code and hand off the relevant manual checks while
+leaving the checkbox open. Update existing items when priorities change, but do
+not add completed implementation notes after the fact. Git history is the record
+of changes.
 
 ## What this is
 
@@ -44,71 +46,6 @@ perception, camera/pointer-lock feel, visual polish, and "does this experience
 feel right?" When you finish a change that affects runtime behavior, hand off a
 short "to test" checklist rather than assuming you can fully judge the browser
 experience from automation.
-
-## Architecture & key files
-
-- **The seam:** a *composition* is plain data (`src/composition.ts`) — tracks =
-  stems + 3D position + properties, plus loop, environment-pack, map,
-  start-position, elevation, and tiling metadata. The engine/scene render any
-  normalized manifest. This is why "one demo" scales to "a platform."
-- **State hub:** `src/store.ts` — a Zustand store is the single source of truth
-  (current `composition`, `library`, `mode`, `selectedId`, `engine`, `user`,
-  `accountArtist`, `entered`, `viewer`, all editor selections, and undo/redo
-  stacks). The scene renders from it; edits flow back into it and out to the
-  engine. It also owns **non-reactive module singletons** for frame-sensitive
-  state: `markerObjects`, `viewState`, `loopWrap`, `touchMove`, `arWalk`, and
-  `geoWalk`.
-- **Audio:** `src/audio/AudioEngine.ts` — owns ONE `AudioContext`. All stems are
-  scheduled off the same clock and started together so they never drift; each
-  feeds one or more HRTF `PannerNode` instances while the camera drives the
-  `AudioListener`. It also applies adaptive audio quality, room reverb,
-  thickness-aware room/tunnel/door/wall occlusion, and square/hex/path-loop
-  virtual audio instances. See gotchas below. `src/audio/synth.ts` is the
-  procedural fallback.
-- **Scene (R3F):** `src/scene/` — `Scene` composes the runtime and tiled
-  previews; `EnvironmentScene` renders the neutral base while
-  `AuthoredEnvironmentScene` and `DetailMapDressing` add optional authored
-  packs; `EnvironmentEffects` owns pack-aware postprocessing; `MapScene`
-  renders and edits paths, tunnels, rooms, entrances/doors, platforms, walls,
-  the start marker, elevations, and tile boundaries. `Player` handles keyboard,
-  touch, AR, and geo movement while preserving map support and loop wrapping.
-  `EditControls`, `TrackGizmo`, and `TrackMarker` provide editing;
-  `ListenerSync` drives audio; `DebugSampler` captures diagnostics.
-  `src/scene/fade.ts` owns the single camera-centered radial visibility gradient
-  (see the radial-fade gotcha).
-- **Environment packs:** `src/environment.ts` stores only the selected pack,
-  variant, and quality. `src/environmentPacks.ts` is the runtime registry for
-  assets, profiles, quality budgets, attribution, and postprocessing. The map
-  remains authoritative for movement and acoustics; packs dress it.
-- **Map model:** `src/map.ts` defines path/tunnel segments, shared branch points
-  and elevations, rooms with multiple entrances and optional doors, open
-  platforms, standalone acoustic walls, start position/facing, support-aware
-  movement, collision/occlusion geometry, and
-  `none`/`path-loop`/`square`/`hex` tiling.
-- **UI (DOM overlays):** `src/ui/` — `EntryScreen` (start screen: library
-  chooser, new/export/import, sign-in, gallery link), `PropertiesPanel`,
-  `AddStem`, composition-level Environment/Map/Loop panels, and contextual
-  inspectors for map points, segments, rooms, entrances, platforms, and walls.
-  `ARWalkControls`, `GeoWalkControls`, and `TouchControls` provide alternate
-  Explore inputs. Sharing surfaces are `PublishControl`, `Account`, `Viewer`,
-  `Gallery`, and `ArtistPage`.
-- **Persistence (local-first):** `src/persistence.ts` — composition manifests in
-  `localStorage` (a *library*, schema v2, with migration from the old single
-  slot); uploaded stem audio in **IndexedDB** (localStorage can't hold audio).
-  Also export/import of a self-contained `.polyphonia.json`.
-- **Cloud:** `src/cloud.ts` — Supabase auth (email magic link), account artist
-  load/create, publish (uploads stems to Storage, manifest to Postgres), fetch,
-  unpublish, gallery list, artist page list. No custom server — RLS does the
-  gating. DB schema lives in `supabase/migrations`.
-- **Diagnostics:** `src/debug.ts`, `src/scene/DebugSampler.tsx`, and
-  `src/ui/DebugPanel.tsx` implement URL-controlled A/B flags, runtime sampling,
-  and JSON export. Dev builds also expose `window.polyStore`.
-- **Compatibility boundary:** older manifests are normalized through
-  `normalizeComposition`, `normalizeEnvironment`, and `normalizeMap`. Keep
-  backward-compatible defaults there instead of scattering legacy checks
-  through rendering and audio code.
-- **Routing:** `src/main.tsx` — `/` editor (`App`), `/c/:id` viewer, `/gallery`,
-  `/artist/:slug`. StrictMode is intentionally OFF (see gotchas).
 
 ## Conventions
 
