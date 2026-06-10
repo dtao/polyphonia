@@ -253,6 +253,9 @@ interface StoreState {
   trackPeaks: (id: string, bins: number) => { peaks: Float32Array; duration: number } | null;
   setTrackDirectivity: (id: string, directivity: StemDirectivity | undefined) => void;
   setTrackShape: (id: string, stemShape: StemShape | undefined) => void;
+  setTrackShapeWallFacing: (id: string, facing: [number, number]) => void;
+  setTrackShapeWallWidth: (id: string, width: number) => void;
+  setTrackShapeRiverEnd: (id: string, end: [number, number, number]) => void;
   renameTrack: (id: string, name: string) => void;
   setTrackColor: (id: string, color: string) => void;
   deleteTrack: (id: string) => void;
@@ -1530,6 +1533,38 @@ export const useStore = create<StoreState>((set, get) => ({
       composition: patchTrack(s.composition, id, { stemShape }),
     }));
     get().engine?.setTrackShape(id, stemShape);
+  },
+
+  setTrackShapeWallFacing: (id, facing) => {
+    set((s) => {
+      const track = s.composition.tracks.find((t) => t.id === id);
+      if (track?.stemShape?.kind !== "wall") return s;
+      const stemShape: StemShape = { ...track.stemShape, facing };
+      return { ...withHistory(s, `track:${id}:stemShape:facing`), composition: patchTrack(s.composition, id, { stemShape }) };
+    });
+    const track = get().composition.tracks.find((t) => t.id === id);
+    if (track?.stemShape?.kind === "wall") get().engine?.setTrackShape(id, { ...track.stemShape, facing });
+  },
+
+  setTrackShapeWallWidth: (id, width) => {
+    set((s) => {
+      const track = s.composition.tracks.find((t) => t.id === id);
+      if (track?.stemShape?.kind !== "wall") return s;
+      const stemShape: StemShape = { ...track.stemShape, width };
+      return { ...withHistory(s, `track:${id}:stemShape:width`), composition: patchTrack(s.composition, id, { stemShape }) };
+    });
+    const track = get().composition.tracks.find((t) => t.id === id);
+    if (track?.stemShape?.kind === "wall") get().engine?.setTrackShape(id, { ...track.stemShape, width });
+  },
+
+  setTrackShapeRiverEnd: (id, end) => {
+    set((s) => {
+      const track = s.composition.tracks.find((t) => t.id === id);
+      if (track?.stemShape?.kind !== "river") return s;
+      const stemShape: StemShape = { kind: "river", end };
+      return { ...withHistory(s, `track:${id}:stemShape:end`), composition: patchTrack(s.composition, id, { stemShape }) };
+    });
+    get().engine?.setTrackShape(id, { kind: "river", end });
   },
 
   // Name and color are presentation-only — no audio side effects.
