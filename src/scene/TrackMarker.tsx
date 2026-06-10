@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import { ThreeEvent } from "@react-three/fiber";
+import { ThreeEvent, useFrame } from "@react-three/fiber";
 import { Billboard, Line, Text } from "@react-three/drei";
 import * as THREE from "three";
-import { TrackDef } from "../composition";
+import { StemShape, TrackDef } from "../composition";
 import { isPointInsideMap, surfaceHeightAt } from "../map";
 import { markerAnimateFns, markerObjects, useStore } from "../store";
 import { UNDERFLOOR_HEIGHT } from "./mapHeights";
@@ -209,6 +209,7 @@ export function TrackMarker({
           {track.directivity && <DirectivityGuide track={track} />}
         </group>
       )}
+      <StemShapeVisual track={track} />
       <mesh ref={footprint} position={[0, footprintHeight, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[orbRadius * 0.95, orbRadius * 1.55, 48]} />
         <meshBasicMaterial color={track.color} transparent opacity={0.28} toneMapped={false} depthWrite={false} />
@@ -280,6 +281,38 @@ export function TrackMarker({
       )}
     </group>
   );
+}
+
+const PILLAR_HEIGHT = 60;
+const PILLAR_RADIUS = 0.18;
+
+function PillarVisual({ track }: { track: TrackDef }) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const color = useMemo(() => new THREE.Color(track.color), [track.color]);
+
+  useFrame(({ camera }) => {
+    if (!meshRef.current) return;
+    const [x, , z] = track.position;
+    const dist = Math.hypot(camera.position.x - x, camera.position.z - z);
+    const fade = radialFade(dist);
+    const mat = meshRef.current.material as THREE.MeshBasicMaterial;
+    mat.opacity = 0.55 * fade * fade;
+    meshRef.current.visible = fade > 0.002;
+  });
+
+  return (
+    <mesh ref={meshRef} position={[0, 0, 0]}>
+      <cylinderGeometry args={[PILLAR_RADIUS, PILLAR_RADIUS, PILLAR_HEIGHT, 16]} />
+      <meshBasicMaterial color={color} transparent opacity={0.55} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
+    </mesh>
+  );
+}
+
+function StemShapeVisual({ track }: { track: TrackDef }) {
+  const shape = track.stemShape;
+  if (!shape || shape.kind === "orb") return null;
+  if (shape.kind === "pillar") return <PillarVisual track={track} />;
+  return null;
 }
 
 function DirectivityGuide({ track }: { track: TrackDef }) {
