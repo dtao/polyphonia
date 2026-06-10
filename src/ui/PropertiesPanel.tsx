@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { StemShape } from "../composition";
 import { useStore } from "../store";
 import { shortcutKeys } from "../shortcuts";
 import { StemLoopMeter } from "./StemLoopMeter";
@@ -18,6 +19,10 @@ export function PropertiesPanel() {
     setTrackMinVolume,
     setTrackFalloff,
     setTrackDirectivity,
+    setTrackShape,
+    setTrackShapeWallFacing,
+    setTrackShapeWallWidth,
+    setTrackShapeRiverEnd,
     setTrackOffset,
     deleteTrack,
     duplicateTrack,
@@ -101,6 +106,14 @@ export function PropertiesPanel() {
         max={3}
         step={0.1}
         onChange={(v) => setTrackFalloff(track.id, { rolloff: v })}
+      />
+
+      <StemShapeSection
+        track={track}
+        setTrackShape={setTrackShape}
+        setTrackShapeWallFacing={setTrackShapeWallFacing}
+        setTrackShapeWallWidth={setTrackShapeWallWidth}
+        setTrackShapeRiverEnd={setTrackShapeRiverEnd}
       />
 
       <label style={toggleRow}>
@@ -301,6 +314,143 @@ function FineOffset({ value, onChange }: { value: number; onChange: (beats: numb
     </div>
   );
 }
+
+type ShapeKind = "orb" | "pillar" | "wall" | "river";
+const SHAPE_KINDS: ShapeKind[] = ["orb", "pillar", "wall", "river"];
+const SHAPE_LABELS: Record<ShapeKind, string> = { orb: "Orb", pillar: "Pillar", wall: "Wall", river: "River" };
+
+function StemShapeSection({
+  track,
+  setTrackShape,
+  setTrackShapeWallFacing,
+  setTrackShapeWallWidth,
+  setTrackShapeRiverEnd,
+}: {
+  track: { id: string; position: [number, number, number]; stemShape?: StemShape };
+  setTrackShape: (id: string, shape: StemShape | undefined) => void;
+  setTrackShapeWallFacing: (id: string, facing: [number, number]) => void;
+  setTrackShapeWallWidth: (id: string, width: number) => void;
+  setTrackShapeRiverEnd: (id: string, end: [number, number, number]) => void;
+}) {
+  const shapeKind: ShapeKind = (track.stemShape?.kind as ShapeKind | undefined) ?? "orb";
+
+  function handleSelectKind(kind: ShapeKind) {
+    if (kind === shapeKind) return;
+    if (kind === "orb") { setTrackShape(track.id, undefined); return; }
+    if (kind === "pillar") { setTrackShape(track.id, { kind: "pillar" }); return; }
+    if (kind === "wall") {
+      setTrackShape(track.id, { kind: "wall", facing: [0, -1], width: 10 });
+      return;
+    }
+    if (kind === "river") {
+      const [x, y, z] = track.position;
+      setTrackShape(track.id, { kind: "river", end: [x, y, z + 10] });
+    }
+  }
+
+  const wallShape = track.stemShape?.kind === "wall" ? track.stemShape : undefined;
+  const riverShape = track.stemShape?.kind === "river" ? track.stemShape : undefined;
+  const wallFacingDegrees = wallShape
+    ? (Math.atan2(wallShape.facing[0], -wallShape.facing[1]) * 180 / Math.PI + 360) % 360
+    : 0;
+
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 4 }}>Emission shape</div>
+      <div style={shapePicker}>
+        {SHAPE_KINDS.map((kind) => (
+          <button
+            key={kind}
+            style={{ ...shapeBtn, ...(kind === shapeKind ? shapeBtnActive : {}) }}
+            onClick={() => handleSelectKind(kind)}
+          >
+            {SHAPE_LABELS[kind]}
+          </button>
+        ))}
+      </div>
+      <div style={helpText}>
+        {shapeKind === "orb" && "Point source — sound emanates equally in all directions."}
+        {shapeKind === "pillar" && "Vertical column — distance depends only on horizontal position, not elevation."}
+        {shapeKind === "wall" && "Flat panel — loud from the front, near-silent from behind."}
+        {shapeKind === "river" && "Line source — closest point on the segment determines volume."}
+      </div>
+      {wallShape && (
+        <div style={{ marginTop: 8, borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 6 }}>
+          <Slider
+            label="Wall direction"
+            help="0° faces north; 90° faces east. The loud side faces this direction."
+            value={wallFacingDegrees}
+            min={0}
+            max={359}
+            step={1}
+            onChange={(degrees) => {
+              const rad = degrees * Math.PI / 180;
+              setTrackShapeWallFacing(track.id, [Math.sin(rad), -Math.cos(rad)]);
+            }}
+          />
+          <Slider
+            label="Width"
+            help="Length of the panel in world units."
+            value={wallShape.width}
+            min={1}
+            max={60}
+            step={0.5}
+            onChange={(w) => setTrackShapeWallWidth(track.id, w)}
+          />
+          <label style={toggleRow}>
+            <input
+              type="checkbox"
+              checked={Boolean(wallShape.emitBothSides)}
+              onChange={(e) =>
+                setTrackShape(track.id, { ...wallShape, emitBothSides: e.target.checked || undefined })
+              }
+            />
+            Emit both sides
+          </label>
+        </div>
+      )}
+      {riverShape && (
+        <div style={{ marginTop: 8, borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 6 }}>
+          <div style={{ fontSize: 12, opacity: 0.75 }}>
+            Length:{" "}
+            {Math.hypot(
+              riverShape.end[0] - track.position[0],
+              riverShape.end[1] - track.position[1],
+              riverShape.end[2] - track.position[2],
+            ).toFixed(1)}{" "}
+            units
+          </div>
+          <div style={{ ...helpText, marginTop: 4 }}>
+            Drag the endpoint handle in the scene to reposition the far end of the river.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const shapePicker: React.CSSProperties = {
+  display: "flex",
+  gap: 4,
+  marginBottom: 4,
+};
+
+const shapeBtn: React.CSSProperties = {
+  flex: 1,
+  padding: "5px 0",
+  borderRadius: 5,
+  border: "1px solid rgba(255,255,255,0.15)",
+  background: "rgba(255,255,255,0.05)",
+  color: "rgba(255,255,255,0.68)",
+  fontSize: 11,
+  cursor: "pointer",
+};
+
+const shapeBtnActive: React.CSSProperties = {
+  border: "1px solid rgba(91,140,255,0.55)",
+  background: "rgba(91,140,255,0.22)",
+  color: "#bcd0ff",
+};
 
 function Slider({
   label,
