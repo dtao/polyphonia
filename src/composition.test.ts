@@ -168,6 +168,49 @@ describe("composition compatibility and revisions", () => {
     expect(normalized.tracks[0].stemShape).toBeUndefined();
   });
 
+  it("normalizes wall facing to a unit vector and clamps width", () => {
+    const normalized = normalizeComposition({
+      ...defaultComposition,
+      tracks: [{
+        ...defaultComposition.tracks[0],
+        stemShape: { kind: "wall", facing: [3, 4], width: 500 },
+      }, ...defaultComposition.tracks.slice(1)],
+    });
+
+    const shape = normalized.tracks[0].stemShape as Extract<import("./composition").StemShape, { kind: "wall" }>;
+    expect(shape.kind).toBe("wall");
+    expect(shape.facing[0]).toBeCloseTo(0.6);
+    expect(shape.facing[1]).toBeCloseTo(0.8);
+    expect(shape.width).toBe(200);
+    expect(shape.emitBothSides).toBeUndefined();
+  });
+
+  it("preserves emitBothSides on wall shapes", () => {
+    const normalized = normalizeComposition({
+      ...defaultComposition,
+      tracks: [{
+        ...defaultComposition.tracks[0],
+        stemShape: { kind: "wall", facing: [1, 0], width: 10, emitBothSides: true },
+      }, ...defaultComposition.tracks.slice(1)],
+    });
+
+    const shape = normalized.tracks[0].stemShape as Extract<import("./composition").StemShape, { kind: "wall" }>;
+    expect(shape.emitBothSides).toBe(true);
+  });
+
+  it("changes revision when a wall shape is added", () => {
+    const baseline = compositionRevision(defaultComposition);
+    const withWall = {
+      ...defaultComposition,
+      tracks: [{
+        ...defaultComposition.tracks[0],
+        stemShape: { kind: "wall" as const, facing: [1, 0] as [number, number], width: 10 },
+      }, ...defaultComposition.tracks.slice(1)],
+    };
+
+    expect(compositionRevision(withWall)).not.toBe(baseline);
+  });
+
   it("migrates a legacy bars loop length to beats", () => {
     const legacy = { ...defaultComposition, beats: undefined, bars: 8 } as unknown as Parameters<typeof normalizeComposition>[0];
     const normalized = normalizeComposition(legacy);

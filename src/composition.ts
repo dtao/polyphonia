@@ -36,7 +36,14 @@ export type StemShape =
    * (horizontal) distance, so moving up or down never changes volume.
    * No extra parameters — position.x/z is the column centre.
    */
-  | { kind: "pillar" };
+  | { kind: "pillar" }
+  /**
+   * Finite flat panel that emits strongly from one face. The panel
+   * extends `width` units along the axis perpendicular to `facing`.
+   * `facing` is a unit vector in XZ pointing toward the loud side.
+   * `emitBothSides` lets sound pass (quietly) through the back face.
+   */
+  | { kind: "wall"; facing: [number, number]; width: number; emitBothSides?: boolean };
 
 export interface TrackDef {
   /** Stable identity, independent of name — so renaming never breaks lookups. */
@@ -243,7 +250,23 @@ function normalizeStemShape(value: StemShape | undefined): StemShape | undefined
   if (!value) return undefined;
   if (value.kind === "orb") return undefined; // orb is the default; no need to store
   if (value.kind === "pillar") return { kind: "pillar" };
+  if (value.kind === "wall") return normalizeWallShape(value);
   return undefined;
+}
+
+function normalizeWallShape(value: Extract<StemShape, { kind: "wall" }>): StemShape | undefined {
+  if (!Array.isArray(value.facing) || value.facing.length !== 2) return undefined;
+  const [fx, fz] = value.facing;
+  if (![fx, fz].every(Number.isFinite)) return undefined;
+  const len = Math.hypot(fx, fz);
+  if (len < 0.000001) return undefined;
+  const width = Number.isFinite(value.width) ? Math.max(1, Math.min(200, value.width)) : 10;
+  return {
+    kind: "wall",
+    facing: [fx / len, fz / len],
+    width,
+    ...(value.emitBothSides ? { emitBothSides: true } : {}),
+  };
 }
 
 function normalizeDirectivity(value: StemDirectivity | undefined): StemDirectivity | undefined {
