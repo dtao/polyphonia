@@ -308,10 +308,55 @@ function PillarVisual({ track }: { track: TrackDef }) {
   );
 }
 
+const WALL_HEIGHT = 7;
+
+function WallVisual({ track, shape }: { track: TrackDef; shape: Extract<StemShape, { kind: "wall" }> }) {
+  const frontRef = useRef<THREE.Mesh>(null);
+  const backRef = useRef<THREE.Mesh>(null);
+  const color = useMemo(() => new THREE.Color(track.color), [track.color]);
+
+  // Rotate the panel so that +Z of the mesh faces the wall's `facing` direction.
+  const rotation = useMemo(() => {
+    const [fx, fz] = shape.facing;
+    return new THREE.Euler(0, Math.atan2(fx, fz), 0);
+  }, [shape.facing]);
+
+  useFrame(({ camera }) => {
+    const [x, , z] = track.position;
+    const dist = Math.hypot(camera.position.x - x, camera.position.z - z);
+    const fade = radialFade(dist);
+    const visible = fade > 0.002;
+    if (frontRef.current) {
+      frontRef.current.visible = visible;
+      if (visible) (frontRef.current.material as THREE.MeshBasicMaterial).opacity = 0.55 * fade * fade;
+    }
+    if (backRef.current) {
+      backRef.current.visible = visible;
+      if (visible) (backRef.current.material as THREE.MeshBasicMaterial).opacity = 0.18 * fade * fade;
+    }
+  });
+
+  return (
+    <group rotation={rotation}>
+      {/* front face — bright */}
+      <mesh ref={frontRef} position={[0, 0, 0.08]}>
+        <planeGeometry args={[shape.width, WALL_HEIGHT]} />
+        <meshBasicMaterial color={color} transparent opacity={0.55} side={THREE.FrontSide} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </mesh>
+      {/* back face — dim */}
+      <mesh ref={backRef} position={[0, 0, -0.08]} rotation={[0, Math.PI, 0]}>
+        <planeGeometry args={[shape.width, WALL_HEIGHT]} />
+        <meshBasicMaterial color={color} transparent opacity={0.18} side={THREE.FrontSide} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </mesh>
+    </group>
+  );
+}
+
 function StemShapeVisual({ track }: { track: TrackDef }) {
   const shape = track.stemShape;
   if (!shape || shape.kind === "orb") return null;
   if (shape.kind === "pillar") return <PillarVisual track={track} />;
+  if (shape.kind === "wall") return <WallVisual track={track} shape={shape} />;
   return null;
 }
 
