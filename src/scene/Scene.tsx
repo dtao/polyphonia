@@ -7,6 +7,7 @@ import { TrackMarker } from "./TrackMarker";
 import { Player } from "./Player";
 import { EditControls } from "./EditControls";
 import { TrackGizmo } from "./TrackGizmo";
+import { StemShapeHandles } from "./StemShapeHandles";
 import { ListenerSync } from "./ListenerSync";
 import { EnvironmentScene, environmentBackgroundColor } from "./EnvironmentScene";
 import { MapScene } from "./MapScene";
@@ -113,6 +114,7 @@ export function Scene() {
         <>
           <EditControls />
           <TrackGizmo />
+          <StemShapeHandles />
         </>
       )}
       {/* Mounted after <Player> so its frame callback runs after the wrap is
