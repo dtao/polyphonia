@@ -211,6 +211,43 @@ describe("composition compatibility and revisions", () => {
     expect(compositionRevision(withWall)).not.toBe(baseline);
   });
 
+  it("preserves river stemShape through normalization", () => {
+    const normalized = normalizeComposition({
+      ...defaultComposition,
+      tracks: [{
+        ...defaultComposition.tracks[0],
+        stemShape: { kind: "river", end: [5, 0, 10] },
+      }, ...defaultComposition.tracks.slice(1)],
+    });
+
+    expect(normalized.tracks[0].stemShape).toEqual({ kind: "river", end: [5, 0, 10] });
+  });
+
+  it("drops river stemShape with invalid end point", () => {
+    const normalized = normalizeComposition({
+      ...defaultComposition,
+      tracks: [{
+        ...defaultComposition.tracks[0],
+        stemShape: { kind: "river", end: [Infinity, 0, 0] },
+      }, ...defaultComposition.tracks.slice(1)],
+    });
+
+    expect(normalized.tracks[0].stemShape).toBeUndefined();
+  });
+
+  it("changes revision when a river shape is added", () => {
+    const baseline = compositionRevision(defaultComposition);
+    const withRiver = {
+      ...defaultComposition,
+      tracks: [{
+        ...defaultComposition.tracks[0],
+        stemShape: { kind: "river" as const, end: [20, 0, 0] as [number, number, number] },
+      }, ...defaultComposition.tracks.slice(1)],
+    };
+
+    expect(compositionRevision(withRiver)).not.toBe(baseline);
+  });
+
   it("migrates a legacy bars loop length to beats", () => {
     const legacy = { ...defaultComposition, beats: undefined, bars: 8 } as unknown as Parameters<typeof normalizeComposition>[0];
     const normalized = normalizeComposition(legacy);

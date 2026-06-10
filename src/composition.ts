@@ -43,7 +43,14 @@ export type StemShape =
    * `facing` is a unit vector in XZ pointing toward the loud side.
    * `emitBothSides` lets sound pass (quietly) through the back face.
    */
-  | { kind: "wall"; facing: [number, number]; width: number; emitBothSides?: boolean };
+  | { kind: "wall"; facing: [number, number]; width: number; emitBothSides?: boolean }
+  /**
+   * Horizontal line-source running from `position` to `end`. Distance
+   * falloff is computed from the closest point on the segment, so
+   * walking alongside the river keeps volume constant while crossing
+   * it produces a swell-and-fade.
+   */
+  | { kind: "river"; end: [number, number, number] };
 
 export interface TrackDef {
   /** Stable identity, independent of name — so renaming never breaks lookups. */
@@ -251,7 +258,14 @@ function normalizeStemShape(value: StemShape | undefined): StemShape | undefined
   if (value.kind === "orb") return undefined; // orb is the default; no need to store
   if (value.kind === "pillar") return { kind: "pillar" };
   if (value.kind === "wall") return normalizeWallShape(value);
+  if (value.kind === "river") return normalizeRiverShape(value);
   return undefined;
+}
+
+function normalizeRiverShape(value: Extract<StemShape, { kind: "river" }>): StemShape | undefined {
+  if (!Array.isArray(value.end) || value.end.length !== 3) return undefined;
+  if (!value.end.every(Number.isFinite)) return undefined;
+  return { kind: "river", end: value.end as [number, number, number] };
 }
 
 function normalizeWallShape(value: Extract<StemShape, { kind: "wall" }>): StemShape | undefined {
