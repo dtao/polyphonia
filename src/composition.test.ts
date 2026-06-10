@@ -131,6 +131,43 @@ describe("composition compatibility and revisions", () => {
     expect(compositionRevision(changedOffsetFine)).not.toBe(baseline);
   });
 
+  it("changes revision when a stem's shape changes", () => {
+    const baseline = compositionRevision(defaultComposition);
+    const withPillar = {
+      ...defaultComposition,
+      tracks: [{ ...defaultComposition.tracks[0], stemShape: { kind: "pillar" as const } }, ...defaultComposition.tracks.slice(1)],
+    };
+
+    expect(compositionRevision(withPillar)).not.toBe(baseline);
+  });
+
+  it("normalizes orb stemShape to undefined (it is the default)", () => {
+    const normalized = normalizeComposition({
+      ...defaultComposition,
+      tracks: [{ ...defaultComposition.tracks[0], stemShape: { kind: "orb" } }, ...defaultComposition.tracks.slice(1)],
+    });
+
+    expect(normalized.tracks[0].stemShape).toBeUndefined();
+  });
+
+  it("preserves pillar stemShape through normalization", () => {
+    const normalized = normalizeComposition({
+      ...defaultComposition,
+      tracks: [{ ...defaultComposition.tracks[0], stemShape: { kind: "pillar" } }, ...defaultComposition.tracks.slice(1)],
+    });
+
+    expect(normalized.tracks[0].stemShape).toEqual({ kind: "pillar" });
+  });
+
+  it("drops unknown stemShape kinds", () => {
+    const normalized = normalizeComposition({
+      ...defaultComposition,
+      tracks: [{ ...defaultComposition.tracks[0], stemShape: { kind: "unknown" } as never }, ...defaultComposition.tracks.slice(1)],
+    });
+
+    expect(normalized.tracks[0].stemShape).toBeUndefined();
+  });
+
   it("migrates a legacy bars loop length to beats", () => {
     const legacy = { ...defaultComposition, beats: undefined, bars: 8 } as unknown as Parameters<typeof normalizeComposition>[0];
     const normalized = normalizeComposition(legacy);

@@ -25,6 +25,19 @@ export interface StemDirectivity {
   outsideGain: number;
 }
 
+/**
+ * Controls the spatial shape of a stem's audio emission. Absent or
+ * `{ kind: "orb" }` is the default point-source behaviour.
+ */
+export type StemShape =
+  | { kind: "orb" }
+  /**
+   * Vertical infinite-line source: distance falloff uses only the XZ
+   * (horizontal) distance, so moving up or down never changes volume.
+   * No extra parameters — position.x/z is the column centre.
+   */
+  | { kind: "pillar" };
+
 export interface TrackDef {
   /** Stable identity, independent of name — so renaming never breaks lookups. */
   id: string;
@@ -74,6 +87,8 @@ export interface TrackDef {
   offsetFineBeats?: number;
   /** Optional speaker-like directional output; absent means omnidirectional. */
   directivity?: StemDirectivity;
+  /** Spatial emission shape. Absent or { kind: "orb" } is the default point source. */
+  stemShape?: StemShape;
   /** Content hash of the stem audio, set in published manifests for change detection. */
   hash?: string;
 }
@@ -216,10 +231,19 @@ export function normalizeComposition(comp: Composition): Composition {
 
 function normalizeTrack(track: TrackDef): TrackDef {
   const directivity = normalizeDirectivity(track.directivity);
+  const stemShape = normalizeStemShape(track.stemShape);
   return {
     ...track,
     ...(directivity ? { directivity } : { directivity: undefined }),
+    ...(stemShape ? { stemShape } : { stemShape: undefined }),
   };
+}
+
+function normalizeStemShape(value: StemShape | undefined): StemShape | undefined {
+  if (!value) return undefined;
+  if (value.kind === "orb") return undefined; // orb is the default; no need to store
+  if (value.kind === "pillar") return { kind: "pillar" };
+  return undefined;
 }
 
 function normalizeDirectivity(value: StemDirectivity | undefined): StemDirectivity | undefined {
@@ -278,6 +302,7 @@ export function compositionRevision(comp: RevisionComposition): string {
         offsetBeats: track.offsetBeats,
         offsetFineBeats: track.offsetFineBeats,
         directivity: track.directivity,
+        stemShape: track.stemShape,
       })),
     }),
   );
