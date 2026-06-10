@@ -8,6 +8,9 @@
     "build": "tsc && vite build",
     "test": "vitest run",
     "test:watch": "vitest",
+    "bench": "vitest bench",
+    "bench:baseline": "vitest bench --outputJson perf-baselines.json",
+    "bench:compare": "vitest bench --compare perf-baselines.json",
     "preview": "vite preview"
   },
   "dependencies": {

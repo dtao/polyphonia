@@ -54,10 +54,13 @@ export function DebugPanel() {
         contextState: string;
         started: boolean;
         trackCount: number;
+        performanceMode?: string;
         instances?: {
           total: number;
           base: number;
           virtual: number;
+          hrtf: number;
+          equalpower: number;
           tracksWithInstances: number;
           tracksWithVirtualInstances: number;
           maxPerTrack: number;
@@ -125,6 +128,9 @@ export function DebugPanel() {
           <div>Audio {audio ? `${audio.contextState} · ${audio.trackCount} tracks` : "none"}</div>
           <div>
             Audible {audio?.instances ? `${audio.instances.total} inst · base ${audio.instances.base} · virt ${audio.instances.virtual}` : "n/a"}
+          </div>
+          <div>
+            Panners {audio?.instances ? `HRTF ${audio.instances.hrtf} · eq ${audio.instances.equalpower}` : "n/a"}{audio?.performanceMode === "reduced" ? " (reduced)" : ""}
           </div>
           <div>
             Audio tracks {audio?.instances ? `${audio.instances.tracksWithInstances} live · ${audio.instances.tracksWithVirtualInstances} virtual · max ${audio.instances.maxPerTrack}` : "n/a"}

@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { Composition, StemDirectivity, StemShape, TrackDef } from "../composition";
 import { CompositionMap, MapRoom, containingRoom, loopPreviewElevationOffset, roomWallObstructionCount, tiledMapTransforms, transformLoopPoint, tunnelObstructionCount, wallObstructionCount } from "../map";
 import { createPlaceholderStems } from "./synth";
+import { effectivePannerPosition as computeEffectivePannerPosition, distanceSqToListener as computeDistanceSqToListener, filterAudibleCandidates } from "./audioSpatial";
 
 interface LiveTrack {
   def: TrackDef;
@@ -541,6 +542,8 @@ export class AudioEngine {
       total: number;
       base: number;
       virtual: number;
+      hrtf: number;
+      equalpower: number;
       tracksWithInstances: number;
       tracksWithVirtualInstances: number;
       maxPerTrack: number;
@@ -565,6 +568,8 @@ export class AudioEngine {
     total: number;
     base: number;
     virtual: number;
+    hrtf: number;
+    equalpower: number;
     tracksWithInstances: number;
     tracksWithVirtualInstances: number;
     maxPerTrack: number;
@@ -572,6 +577,8 @@ export class AudioEngine {
     let total = 0;
     let base = 0;
     let virtual = 0;
+    let hrtf = 0;
+    let equalpower = 0;
     let tracksWithInstances = 0;
     let tracksWithVirtualInstances = 0;
     let maxPerTrack = 0;
@@ -582,17 +589,19 @@ export class AudioEngine {
       maxPerTrack = Math.max(maxPerTrack, size);
       total += size;
       let trackVirtual = 0;
-      for (const id of track.instances.keys()) {
+      for (const [id, inst] of track.instances) {
         if (id === "base") base++;
         else {
           virtual++;
           trackVirtual++;
         }
+        if (inst.panner.panningModel === "HRTF") hrtf++;
+        else equalpower++;
       }
       if (trackVirtual > 0) tracksWithVirtualInstances++;
     }
 
-    return { total, base, virtual, tracksWithInstances, tracksWithVirtualInstances, maxPerTrack };
+    return { total, base, virtual, hrtf, equalpower, tracksWithInstances, tracksWithVirtualInstances, maxPerTrack };
   }
 
   private playSegment(t: LiveTrack, when: number, offset: number, duration: number): void {
@@ -887,44 +896,14 @@ export class AudioEngine {
   // Returns the closest point on the stem's spatial shape to the listener.
   // For point sources (orb / absent) this is just the tile centre.
   private effectivePannerPosition(def: TrackDef, tilePosition: [number, number, number]): [number, number, number] {
-    const shape = def.stemShape;
-    if (shape?.kind === "pillar") {
-      // Track listener elevation so horizontal XZ distance is all that drives falloff.
-      return [tilePosition[0], this.listenerPosition.y, tilePosition[2]];
-    }
-    if (shape?.kind === "river") {
-      // The segment runs from the track's base position to shape.end. Tile copies
-      // apply an offset to the base; apply the same offset to the end so the
-      // segment rotates/translates with the tile.
-      const [bx, by, bz] = tilePosition;
-      const ox = tilePosition[0] - def.position[0];
-      const oy = tilePosition[1] - def.position[1];
-      const oz = tilePosition[2] - def.position[2];
-      const ex = shape.end[0] + ox, ey = shape.end[1] + oy, ez = shape.end[2] + oz;
-      const sdx = ex - bx, sdz = ez - bz;
-      const lenSq = sdx * sdx + sdz * sdz;
-      const lx = this.listenerPosition.x, lz = this.listenerPosition.z;
-      const t = lenSq > 0 ? THREE.MathUtils.clamp(((lx - bx) * sdx + (lz - bz) * sdz) / lenSq, 0, 1) : 0;
-      return [bx + t * sdx, by + t * (ey - by), bz + t * sdz];
-    }
-    if (shape?.kind === "wall") {
-      // Wall centre is the tile position. The panel extends along the tangent axis
-      // (perpendicular to facing). Project the listener's XZ offset onto that
-      // tangent, clamp to ±width/2, then resolve back to world XZ. Y tracks the
-      // listener so the panner reads horizontal distance to the panel.
-      const [fx, fz] = shape.facing;
-      const tx = -fz, tz = fx; // tangent = perpendicular to facing in XZ
-      const dx = this.listenerPosition.x - tilePosition[0];
-      const dz = this.listenerPosition.z - tilePosition[2];
-      const along = dx * tx + dz * tz;
-      const clamped = THREE.MathUtils.clamp(along, -shape.width / 2, shape.width / 2);
-      return [
-        tilePosition[0] + clamped * tx,
-        this.listenerPosition.y,
-        tilePosition[2] + clamped * tz,
-      ];
-    }
-    return tilePosition;
+    return computeEffectivePannerPosition(
+      def.stemShape,
+      def.position,
+      tilePosition,
+      this.listenerPosition.x,
+      this.listenerPosition.y,
+      this.listenerPosition.z,
+    );
   }
 
   // Reassign HRTF vs equalpower across all live instances each acoustics tick.
@@ -1110,16 +1089,18 @@ export class AudioEngine {
         direction: [direction[0] * c + direction[1] * s, -direction[0] * s + direction[1] * c],
       });
     }
-    const sorted = candidates.sort((a, b) => this.distanceSqToListener(a.position) - this.distanceSqToListener(b.position));
-    const audible = sorted.filter((candidate) => this.distanceSqToListener(candidate.position) <= audibleDistanceSq);
-    return audible.slice(0, this.maxVirtualAudioInstancesPerTrack);
+    return filterAudibleCandidates(
+      candidates,
+      audibleDistanceSq,
+      this.maxVirtualAudioInstancesPerTrack,
+      this.listenerPosition.x,
+      this.listenerPosition.y,
+      this.listenerPosition.z,
+    );
   }
 
-  private distanceSqToListener([x, y, z]: [number, number, number]): number {
-    const dx = this.listenerPosition.x - x;
-    const dy = this.listenerPosition.y - y;
-    const dz = this.listenerPosition.z - z;
-    return dx * dx + dy * dy + dz * dz;
+  private distanceSqToListener(pos: [number, number, number]): number {
+    return computeDistanceSqToListener(pos, this.listenerPosition.x, this.listenerPosition.y, this.listenerPosition.z);
   }
 
   private distanceLevel(def: TrackDef, position: [number, number, number], minVolume: number, maxVolume: number): number {
