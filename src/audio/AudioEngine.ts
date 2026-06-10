@@ -528,6 +528,8 @@ export class AudioEngine {
       total: number;
       base: number;
       virtual: number;
+      hrtf: number;
+      equalpower: number;
       tracksWithInstances: number;
       tracksWithVirtualInstances: number;
       maxPerTrack: number;
@@ -552,6 +554,8 @@ export class AudioEngine {
     total: number;
     base: number;
     virtual: number;
+    hrtf: number;
+    equalpower: number;
     tracksWithInstances: number;
     tracksWithVirtualInstances: number;
     maxPerTrack: number;
@@ -559,6 +563,8 @@ export class AudioEngine {
     let total = 0;
     let base = 0;
     let virtual = 0;
+    let hrtf = 0;
+    let equalpower = 0;
     let tracksWithInstances = 0;
     let tracksWithVirtualInstances = 0;
     let maxPerTrack = 0;
@@ -569,17 +575,19 @@ export class AudioEngine {
       maxPerTrack = Math.max(maxPerTrack, size);
       total += size;
       let trackVirtual = 0;
-      for (const id of track.instances.keys()) {
+      for (const [id, inst] of track.instances) {
         if (id === "base") base++;
         else {
           virtual++;
           trackVirtual++;
         }
+        if (inst.panner.panningModel === "HRTF") hrtf++;
+        else equalpower++;
       }
       if (trackVirtual > 0) tracksWithVirtualInstances++;
     }
 
-    return { total, base, virtual, tracksWithInstances, tracksWithVirtualInstances, maxPerTrack };
+    return { total, base, virtual, hrtf, equalpower, tracksWithInstances, tracksWithVirtualInstances, maxPerTrack };
   }
 
   private playSegment(t: LiveTrack, when: number, offset: number, duration: number): void {
