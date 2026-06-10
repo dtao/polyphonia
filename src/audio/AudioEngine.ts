@@ -799,7 +799,18 @@ export class AudioEngine {
   // Current audio level (0..1) for a track, for visual reactivity.
   level(id: string): number {
     const t = this.find(id);
-    if (!t) return 0;
+    return t ? this.computeLevel(t) : 0;
+  }
+
+  // Batch level read for all live tracks — one AnalyserNode sweep per frame
+  // instead of one per TrackMarker instance.
+  getLevels(): Map<string, number> {
+    const out = new Map<string, number>();
+    for (const t of this.tracks) out.set(t.def.id, this.computeLevel(t));
+    return out;
+  }
+
+  private computeLevel(t: LiveTrack): number {
     t.analyser.getByteTimeDomainData(t.levelData);
     let sum = 0;
     for (let i = 0; i < t.levelData.length; i++) {

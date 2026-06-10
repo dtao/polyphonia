@@ -2,7 +2,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import * as THREE from "three";
-import { arWalk, loopPreviewGroups, loopWrap, useStore, viewState } from "../store";
+import { arWalk, loopPreviewGroups, loopWrap, markerAnimateFns, useStore, viewState } from "../store";
 import { TrackMarker } from "./TrackMarker";
 import { Player } from "./Player";
 import { EditControls } from "./EditControls";
@@ -14,6 +14,7 @@ import { DebugSampler } from "./DebugSampler";
 import { ARWalkSession } from "./ARWalkSession";
 import { CompositionMap, LoopPreviewTransform, loopPreviewElevationOffset, tiledMapTransforms, transformLoopPoint } from "../map";
 import { TrackDef } from "../composition";
+import { AudioEngine } from "../audio/AudioEngine";
 import { debugEnabled, debugFlag, debugValue } from "../debug";
 import { EnvironmentEffects } from "./EnvironmentEffects";
 import { effectiveFadeInner, effectiveFadeOuter, isFadeRadiusOverridden, radialFade, setCompositionFadeRadii, subscribeDebugFade } from "./fade";
@@ -117,6 +118,7 @@ export function Scene() {
       {/* Mounted after <Player> so its frame callback runs after the wrap is
           recorded; hides the preview group on the teleport frame. */}
       {mode === "explore" && loopPreviewsEnabled && <LoopWrapBlipGuard groupRef={previewGroup} />}
+      <StemAnimationDriver />
       <ListenerSync />
       <EnvironmentEffects environment={renderedEnvironment} editMode={mode === "edit"} />
       <ARWalkSession />
@@ -125,6 +127,26 @@ export function Scene() {
       {debugEnabled() && <FadeRadiusDebug />}
     </>
   );
+}
+
+// Single frame-loop driver for all TrackMarker animations. Replaces N per-marker
+// useFrame hooks: reads all AnalyserNodes once, then fans out to each marker's
+// registered callback. This keeps audio-thread cross-thread reads constant
+// regardless of how many stems are on screen.
+const EMPTY_LEVELS: Map<string, number> = new Map();
+function StemAnimationDriver() {
+  const engineRef = useRef<AudioEngine | null>(null);
+  const engine = useStore((s) => s.engine);
+  useEffect(() => { engineRef.current = engine; }, [engine]);
+  useFrame(({ clock, camera }, dt) => {
+    if (markerAnimateFns.size === 0) return;
+    const levels = engineRef.current ? engineRef.current.getLevels() : EMPTY_LEVELS;
+    const camX = camera.position.x;
+    const camZ = camera.position.z;
+    const elapsed = clock.elapsedTime;
+    for (const animate of markerAnimateFns.values()) animate(dt, elapsed, levels, camX, camZ);
+  });
+  return null;
 }
 
 // In immersive-ar the WebXR compositor blends our render over the live camera

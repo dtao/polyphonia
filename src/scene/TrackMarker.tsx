@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
-import { useFrame, ThreeEvent } from "@react-three/fiber";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { ThreeEvent } from "@react-three/fiber";
 import { Billboard, Line, Text } from "@react-three/drei";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
 import { isPointInsideMap, surfaceHeightAt } from "../map";
-import { markerObjects, useStore } from "../store";
+import { markerAnimateFns, markerObjects, useStore } from "../store";
 import { UNDERFLOOR_HEIGHT } from "./mapHeights";
 import { radialFade } from "./fade";
 import { debugFlag } from "../debug";
 import { unregisterMarkerDebug, updateMarkerDebug } from "./markerDebug";
+import { useShallow } from "zustand/react/shallow";
 
 // A glowing orb that marks where a stem lives in space and pulses with its
 // audio level — a visual anchor for the sound you hear from that direction.
@@ -26,10 +27,21 @@ export function TrackMarker({
   debugId?: string;
   debugPosition?: [number, number];
 }) {
-  const engine = useStore((s) => s.engine);
   const mode = useStore((s) => s.mode);
   const selected = useStore((s) => !preview && s.selectedId === track.id);
-  const map = useStore((s) => s.composition.map);
+  // Narrow map subscription: only re-render when the two derived values that
+  // actually depend on this stem's position change, not on every map edit.
+  const { onWalkablePath, floorY } = useStore(
+    useShallow((s) => {
+      const [px, , pz] = track.position;
+      const m = s.composition.map;
+      const inside = !m.segments.length || isPointInsideMap(m, [px, pz]);
+      return {
+        onWalkablePath: inside,
+        floorY: inside ? surfaceHeightAt(m, [px, pz]) : UNDERFLOOR_HEIGHT,
+      };
+    }),
+  );
   const core = useRef<THREE.Mesh>(null);
   const aura = useRef<THREE.Mesh>(null);
   const outerAura = useRef<THREE.Mesh>(null);
@@ -43,11 +55,9 @@ export function TrackMarker({
   const visibleFade = useRef(preview ? 0 : fade);
   const seed = useMemo(() => trackSeed(track.id), [track.id]);
   const [x, stemY, z] = track.position;
-  const onWalkablePath = !map.segments.length || isPointInsideMap(map, [x, z]);
   // The group rides at the stem's elevation (so the move gizmo's Y handle edits
   // it). The footprint ring stays on the floor below, so its local offset is the
   // gap down from the orb to the walkable surface (or the void for off-path).
-  const floorY = onWalkablePath ? surfaceHeightAt(map, [x, z]) : UNDERFLOOR_HEIGHT;
   const footprintHeight = floorY - stemY + 0.08;
   const volume = track.volume ?? 1;
   const orbRadius = 0.42 + volume * 0.32;
@@ -59,13 +69,26 @@ export function TrackMarker({
 
   useEffect(() => () => unregisterMarkerDebug(markerDebugId), [markerDebugId]);
 
-  useFrame(({ clock, camera }, dt) => {
-    const level = engine?.level(track.id) ?? 0;
+  // Keep latest per-render values accessible from the animation callback without
+  // stale closures. The callback is registered once per markerDebugId; liveRef
+  // ensures it always sees current props/state.
+  const liveRef = useRef({ fade, mode, selected, volume, seed, x, z, markerDebugId, markerDebugPosition });
+  useLayoutEffect(() => {
+    liveRef.current = { fade, mode, selected, volume, seed, x, z, markerDebugId, markerDebugPosition };
+  });
+
+  // animateRef holds the actual per-frame work. Reassigned each render so it
+  // always captures current refs — the stable wrapper below calls it indirectly.
+  const animateRef = useRef<((dt: number, elapsed: number, levels: Map<string, number>, camX: number, camZ: number) => void) | null>(null);
+  animateRef.current = (dt, elapsed, levels, camX, camZ) => {
+    const { fade: currentFade, mode: currentMode, selected: isSelected, volume: vol, seed: s, x: px, z: pz, markerDebugId: mdi, markerDebugPosition: mdp } = liveRef.current;
+    const level = levels.get(track.id) ?? 0;
     smoothedLevel.current = THREE.MathUtils.damp(smoothedLevel.current, level, 14, dt);
-    visibleFade.current = preview ? THREE.MathUtils.damp(visibleFade.current, fade, fade > visibleFade.current ? 3.8 : 8, dt) : fade;
+    visibleFade.current = preview
+      ? THREE.MathUtils.damp(visibleFade.current, currentFade, currentFade > visibleFade.current ? 3.8 : 8, dt)
+      : currentFade;
     const pulse = smoothedLevel.current;
-    const t = clock.elapsedTime;
-    const breath = 1 + Math.sin(t * 0.9 + seed + x * 0.2 + z * 0.13) * 0.035;
+    const breath = 1 + Math.sin(elapsed * 0.9 + s + px * 0.2 + pz * 0.13) * 0.035;
     const renderedFade = visibleFade.current;
     // Additive glare layers (aura, flare, rays) read as bright even at low
     // opacity on the black void, so a linear/sqrt fade makes them appear to
@@ -73,13 +96,13 @@ export function TrackMarker({
     // bottom of the fade-in is genuinely invisible; the solid white core stays
     // on the linear fade below.
     const opticalFade = renderedFade * renderedFade;
-    const listenerDist = Math.hypot(camera.position.x - markerDebugPosition[0], camera.position.z - markerDebugPosition[1]);
+    const listenerDist = Math.hypot(camX - mdp[0], camZ - mdp[1]);
     updateMarkerDebug({
-      id: markerDebugId,
+      id: mdi,
       trackId: track.id,
       kind: preview ? "preview" : "base",
       fade: renderedFade,
-      targetFade: fade,
+      targetFade: currentFade,
       distance: listenerDist,
       updatedAt: performance.now(),
     });
@@ -112,9 +135,9 @@ export function TrackMarker({
     }
     if (starburst.current) {
       starburst.current.rotation.z =
-        seed +
-        Math.sin(t * 0.075 + seed * 1.7) * 0.85 +
-        Math.sin(t * 0.031 + seed * 4.1) * 0.55;
+        s +
+        Math.sin(elapsed * 0.075 + s * 1.7) * 0.85 +
+        Math.sin(elapsed * 0.031 + s * 4.1) * 0.55;
     }
     if (glow.current) {
       // Cull the point light by the radial fade: drop it from the renderer's
@@ -127,15 +150,25 @@ export function TrackMarker({
       // whole scene. Intensity is faded to ~0 before `visible` flips, so the
       // cull never pops. Fewer stems within the radius ⇒ fewer active lights ⇒
       // cheaper, which is why shrinking the fade radius lowers the cost.
-      const lightFade = mode === "edit" ? 1 : radialFade(listenerDist);
+      const lightFade = currentMode === "edit" ? 1 : radialFade(listenerDist);
       glow.current.visible = lightFade > 0.002;
       if (glow.current.visible) {
-        glow.current.intensity = ((selected ? 8 : 4.8) + volume * 3.2 + pulse * 44) * renderedFade * lightFade;
-        glow.current.distance = 12 + volume * 8 + pulse * 16;
+        glow.current.intensity = ((isSelected ? 8 : 4.8) + vol * 3.2 + pulse * 44) * renderedFade * lightFade;
+        glow.current.distance = 12 + vol * 8 + pulse * 16;
       }
     }
     if (ring.current) ring.current.rotation.z += dt * 1.5;
-  });
+  };
+
+  // Stable wrapper registered once per markerDebugId — survives re-renders
+  // without churn in the global registry.
+  useEffect(() => {
+    const key = markerDebugId;
+    markerAnimateFns.set(key, (dt, elapsed, levels, camX, camZ) => {
+      animateRef.current?.(dt, elapsed, levels, camX, camZ);
+    });
+    return () => { markerAnimateFns.delete(key); };
+  }, [markerDebugId]);
 
   // Selection only happens in edit mode; in explore the click locks the pointer.
   function handleClick(e: ThreeEvent<MouseEvent>) {

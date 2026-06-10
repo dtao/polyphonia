@@ -371,3 +371,85 @@ tradeoffs worth preserving:
 | 9 | Lower undo limit for complex compositions | Low | Low-medium |
 | 11 | Faster `mapPointKey` | Low | Low |
 | 12 | Reduce torus/ring segment counts in edit mode | Low | Low |
+
+---
+
+## Addendum: Scaling to hundreds of stems across a large map
+
+*Added 2026-06-09 after implementation of findings #3 and #4.*
+
+The original review treated large stem counts as a dense-scene problem (many
+stems in the same space). The actual target is different: hundreds of stems
+spread across a very large map, with only a small fraction audible or visible
+to the listener at any moment. This changes the dominant costs and the right
+architectural path.
+
+### What "spread across a large map" changes
+
+At any position, the listener can only hear stems within roughly one fade
+radius. With stems spread out, the audio engine's O(stems × map-geometry)
+`updateTrackAcoustics` path and the virtual-instance bookkeeping are doing
+work for stems that contribute zero audible signal. The same applies to
+`getLevels()`: reading all N AnalyserNodes every frame is fine for N=50 but
+unnecessary for stems hundreds of meters away.
+
+The existing radial-fade system (`RADIAL_FADE_INNER`/`RADIAL_FADE_OUTER` in
+`src/scene/fade.ts`) already solves the rendering side: orbs and point lights
+beyond `RADIAL_FADE_OUTER` fade to zero and the lights are culled. The audio
+side does not yet have an equivalent.
+
+### Recommended architectural path: unified radius-based culling
+
+Extend the existing inner/outer radius system to govern audio processing as a
+first-class concern, not just rendering. The same two radii (`effectiveFadeInner`,
+`effectiveFadeOuter` from `fade.ts`) should gate:
+
+**1. `updateTrackAcoustics` — skip beyond outer radius**
+
+The acoustics update (`updateListener` → `updateTrackAcoustics`) already runs
+on a throttled interval. Add a distance check per track at the top of
+`updateTrackAcoustics`: if the track's nearest instance is beyond
+`RADIAL_FADE_OUTER`, skip the full O(map) occlusion pass and set gain to zero
+directly. This keeps the per-frame acoustic cost proportional to the number of
+*nearby* stems, not all stems.
+
+**2. `getLevels()` — skip beyond outer radius**
+
+`StemAnimationDriver` calls `getLevels()` once per frame. For stems beyond the
+outer fade radius their AnalyserNode output will be silence (gain is zero), so
+reading them is wasteful. Pass the listener position into `getLevels()` and
+skip `getByteTimeDomainData` calls for tracks whose nearest instance exceeds
+`RADIAL_FADE_OUTER`. The returned map simply omits those ids; `TrackMarker`
+callbacks already default to `levels.get(track.id) ?? 0`.
+
+**3. Virtual instance management — generate/remove by radius**
+
+The square/hex/path-loop tiling already generates virtual instances up to a
+preview radius. At large stem counts, instance bookkeeping (the
+`audibleTrackInstances` call) runs for every track even when none are nearby.
+An outer-radius pre-filter on which tracks even enter `audibleTrackInstances`
+would reduce this proportionally.
+
+**4. `StemAnimationDriver` — skip animation callbacks beyond outer radius**
+
+The driver currently iterates all registered `markerAnimateFns` regardless of
+distance. For stems far beyond the fade radius, `visibleFade` is already near
+zero so the ref mutations are no-ops — but the function call overhead still
+accumulates with hundreds of stems. The driver can skip callbacks for stems
+whose `markerDebugPosition` is beyond `RADIAL_FADE_OUTER` from the camera.
+The animation state (`smoothedLevel`, `visibleFade`) needs to be reset to its
+quiescent values when a stem re-enters range, which the existing damping
+handles naturally once the callback resumes.
+
+### Effort and sequencing
+
+These four changes form a coherent system: the same radius that governs what
+you see governs what the engine computes. The author's composition-level
+`visibleRadius` override already flows into `setCompositionFadeRadii` and from
+there into `effectiveFadeOuter`, so a larger map can widen the active zone
+without touching audio code.
+
+Effort: each change is localized (one function body or one loop). None requires
+data model changes. The most impactful and lowest-risk is (1) — the acoustics
+skip — because it directly reduces the dominant per-frame CPU cost on large
+maps.

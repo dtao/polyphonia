@@ -60,6 +60,17 @@ import { DEFAULT_ENCLOSURE_HEIGHT } from "./spatialConstants";
 // can attach to the selected track's object without prop-drilling refs.
 export const markerObjects = new Map<string, THREE.Object3D>();
 
+// Per-frame animation callback for a single marker instance, called by the
+// single StemAnimationDriver in Scene rather than N separate useFrame hooks.
+export type MarkerAnimateFn = (
+  dt: number,
+  elapsed: number,
+  levels: Map<string, number>,
+  camX: number,
+  camZ: number,
+) => void;
+export const markerAnimateFns = new Map<string, MarkerAnimateFn>();
+
 // Your location and facing on the spatial plane, shared across camera modes so
 // switching Explore <-> Edit preserves both position and heading. `x,z` is the
 // ground anchor (in edit it's the orbit pivot / screen center); `fx,fz` is the
