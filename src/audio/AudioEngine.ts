@@ -1003,6 +1003,12 @@ export class AudioEngine {
   private audibleTrackInstances(def: TrackDef): AudibleTrackInstance[] {
     const base = def.position;
     const direction = def.directivity?.direction ?? [0, -1];
+    const far = Math.max(def.maxDistance ?? 40, def.refDistance ?? 4);
+    const audibleDistance = Math.max(far, this.tileAudioPreviewRadius);
+    const audibleDistanceSq = audibleDistance * audibleDistance;
+
+    if (this.distanceSqToListener(base) > audibleDistanceSq) return [];
+
     if (!this.map) return [{ id: "base", position: base, direction }];
     const previews = tiledMapTransforms(this.map, [this.listenerPosition.x, this.listenerPosition.z], this.tileAudioPreviewRadius);
     if (!previews.length) return [{ id: "base", position: base, direction }];
@@ -1018,11 +1024,8 @@ export class AudioEngine {
         direction: [direction[0] * c + direction[1] * s, -direction[0] * s + direction[1] * c],
       });
     }
-    const far = Math.max(def.maxDistance ?? 40, def.refDistance ?? 4);
-    const audibleDistance = Math.max(far, this.tileAudioPreviewRadius);
-    const audibleDistanceSq = audibleDistance * audibleDistance;
     const sorted = candidates.sort((a, b) => this.distanceSqToListener(a.position) - this.distanceSqToListener(b.position));
-    const audible = sorted.filter((candidate, index) => index === 0 || this.distanceSqToListener(candidate.position) <= audibleDistanceSq);
+    const audible = sorted.filter((candidate) => this.distanceSqToListener(candidate.position) <= audibleDistanceSq);
     return audible.slice(0, this.maxVirtualAudioInstancesPerTrack);
   }
 
