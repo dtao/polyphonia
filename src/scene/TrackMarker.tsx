@@ -352,11 +352,52 @@ function WallVisual({ track, shape }: { track: TrackDef; shape: Extract<StemShap
   );
 }
 
+const RIVER_RADIUS = 0.22;
+const RIVER_SEGMENTS = 6;
+
+function RiverVisual({ track, shape }: { track: TrackDef; shape: Extract<StemShape, { kind: "river" }> }) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const color = useMemo(() => new THREE.Color(track.color), [track.color]);
+
+  // The group sits at track.position; express the end in local space.
+  const [x, stemY, z] = track.position;
+  const localEnd = useMemo(
+    () => new THREE.Vector3(shape.end[0] - x, shape.end[1] - stemY, shape.end[2] - z),
+    [shape.end, x, stemY, z],
+  );
+  const midpoint = useMemo(() => localEnd.clone().multiplyScalar(0.5), [localEnd]);
+  const length = useMemo(() => localEnd.length(), [localEnd]);
+  const rotation = useMemo(() => {
+    // Align cylinder Y-axis with the river direction.
+    const dir = localEnd.clone().normalize();
+    const quaternion = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+    return new THREE.Euler().setFromQuaternion(quaternion);
+  }, [localEnd]);
+
+  useFrame(({ camera }) => {
+    if (!meshRef.current) return;
+    const midX = x + midpoint.x, midZ = z + midpoint.z;
+    const dist = Math.hypot(camera.position.x - midX, camera.position.z - midZ);
+    const fade = radialFade(dist);
+    const mat = meshRef.current.material as THREE.MeshBasicMaterial;
+    mat.opacity = 0.5 * fade * fade;
+    meshRef.current.visible = fade > 0.002;
+  });
+
+  return (
+    <mesh ref={meshRef} position={midpoint} rotation={rotation}>
+      <cylinderGeometry args={[RIVER_RADIUS, RIVER_RADIUS, length, RIVER_SEGMENTS]} />
+      <meshBasicMaterial color={color} transparent opacity={0.5} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
+    </mesh>
+  );
+}
+
 function StemShapeVisual({ track }: { track: TrackDef }) {
   const shape = track.stemShape;
   if (!shape || shape.kind === "orb") return null;
   if (shape.kind === "pillar") return <PillarVisual track={track} />;
   if (shape.kind === "wall") return <WallVisual track={track} shape={shape} />;
+  if (shape.kind === "river") return <RiverVisual track={track} shape={shape} />;
   return null;
 }
 
