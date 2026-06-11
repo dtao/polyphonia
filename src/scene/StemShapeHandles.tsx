@@ -2,9 +2,11 @@
 // Rendered in Scene.tsx next to TrackGizmo when a shaped stem is selected.
 
 import { ThreeEvent, useThree } from "@react-three/fiber";
-import { useMemo, useRef } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { TransformControls } from "@react-three/drei";
 import * as THREE from "three";
 import { StemShape } from "../composition";
+import { nearestBoundaryPointInMap } from "../map";
 import { useStore } from "../store";
 
 const HANDLE_COLOR = "#8fffe8";
@@ -57,7 +59,9 @@ function RiverEndHandle({
     if (!dragging.current) return;
     e.stopPropagation();
     if (!e.ray.intersectPlane(ground, hit)) return;
-    setTrackShapeRiverEnd(trackId, [hit.x, stemY, hit.z]);
+    const map = useStore.getState().composition.map;
+    const snapped = nearestBoundaryPointInMap(map, [hit.x, hit.z]) ?? [hit.x, hit.z];
+    setTrackShapeRiverEnd(trackId, [snapped[0], stemY, snapped[1]]);
   }
 
   function onUp(e?: ThreeEvent<PointerEvent>) {
@@ -111,7 +115,10 @@ function WallShapeHandles({
   );
 }
 
-// Arrow in the facing direction — drag to rotate the wall.
+// Y-axis rotation ring — drag the arc to set the wall's facing direction.
+// Uses TransformControls (same mechanism as the start-marker rotate mode) so
+// the handle stays fixed while you arc around it, avoiding the grip-loss that
+// a moving arrow cone causes.
 function WallFacingHandle({
   trackId,
   position,
@@ -122,62 +129,39 @@ function WallFacingHandle({
   shape: Extract<StemShape, { kind: "wall" }>;
 }) {
   const setTrackShapeWallFacing = useStore((s) => s.setTrackShapeWallFacing);
-  const controls = useThree((s) => s.controls as { enabled?: boolean } | undefined);
-  const dragging = useRef(false);
+  const [obj, setObj] = useState<THREE.Group | null>(null);
   const [cx, stemY, cz] = position;
-  const ground = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), -stemY), [stemY]);
-  const hit = useMemo(() => new THREE.Vector3(), []);
 
-  const [fx, fz] = shape.facing;
-  const arrowOffset = shape.width / 2 + 2;
-  const arrowPos: [number, number, number] = [cx + fx * arrowOffset, stemY, cz + fz * arrowOffset];
+  // Keep the gizmo object's rotation in sync with shape.facing (handles
+  // external changes such as undo/redo). During drag the update is idempotent
+  // because atan2(sin(a), cos(a)) === a, so there is no feedback loop.
+  useLayoutEffect(() => {
+    if (!obj) return;
+    const [fx, fz] = shape.facing;
+    obj.rotation.y = Math.atan2(fx, fz);
+  }, [obj, shape.facing]);
 
-  function onDown(e: ThreeEvent<PointerEvent>) {
-    e.stopPropagation();
-    dragging.current = true;
-    if (controls) controls.enabled = false;
-    (e.nativeEvent.target as Element | null)?.setPointerCapture?.(e.pointerId);
-    document.body.style.cursor = "grabbing";
-  }
-
-  function onMove(e: ThreeEvent<PointerEvent>) {
-    if (!dragging.current) return;
-    e.stopPropagation();
-    if (!e.ray.intersectPlane(ground, hit)) return;
-    const dx = hit.x - cx, dz = hit.z - cz;
-    const len = Math.hypot(dx, dz);
-    if (len < 0.001) return;
-    setTrackShapeWallFacing(trackId, [dx / len, dz / len]);
-  }
-
-  function onUp(e?: ThreeEvent<PointerEvent>) {
-    dragging.current = false;
-    if (controls) controls.enabled = true;
-    (e?.nativeEvent.target as Element | null | undefined)?.releasePointerCapture?.(e?.pointerId ?? -1);
-    document.body.style.cursor = "auto";
+  function handleObjectChange() {
+    if (!obj) return;
+    const a = obj.rotation.y;
+    setTrackShapeWallFacing(trackId, [Math.sin(a), Math.cos(a)]);
   }
 
   return (
-    <group onPointerUp={onUp} onPointerCancel={onUp}>
-      {dragging.current && (
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, stemY, 0]} onPointerMove={onMove} onPointerUp={onUp}>
-          <planeGeometry args={[400, 400]} />
-          <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
-        </mesh>
+    <>
+      <group ref={setObj} position={[cx, stemY, cz]} />
+      {obj && (
+        <TransformControls
+          object={obj}
+          mode="rotate"
+          showX={false}
+          showY={true}
+          showZ={false}
+          size={1.2}
+          onObjectChange={handleObjectChange}
+        />
       )}
-      <mesh
-        position={arrowPos}
-        rotation={[Math.PI / 2, Math.atan2(fx, fz), 0]}
-        onPointerDown={onDown}
-        onPointerMove={onMove}
-        onPointerUp={onUp}
-        onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "grab"; }}
-        onPointerOut={() => { if (!dragging.current) document.body.style.cursor = "auto"; }}
-      >
-        <coneGeometry args={[0.45, 1.2, 12]} />
-        <meshBasicMaterial color="#ffcc44" toneMapped={false} />
-      </mesh>
-    </group>
+    </>
   );
 }
 

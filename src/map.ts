@@ -898,6 +898,71 @@ function closestPointInPlatform(platform: MapPlatform, point: [number, number]):
   return fromLocalXZ(platform.center, platform.rotation, clamped);
 }
 
+function nearestBoundaryPointInSegment(
+  point: [number, number],
+  segment: WalkableSegment,
+): [number, number] {
+  const dx = segment.end[0] - segment.start[0];
+  const dz = segment.end[1] - segment.start[1];
+  const len = Math.hypot(dx, dz) || 1;
+  const nx = -dz / len, nz = dx / len; // left normal, matches tunnelSideWalls
+  const hw = segment.width / 2;
+  const sl: [number, number] = [segment.start[0] + nx * hw, segment.start[1] + nz * hw];
+  const sr: [number, number] = [segment.start[0] - nx * hw, segment.start[1] - nz * hw];
+  const el: [number, number] = [segment.end[0] + nx * hw, segment.end[1] + nz * hw];
+  const er: [number, number] = [segment.end[0] - nx * hw, segment.end[1] - nz * hw];
+  const edges: [[number, number], [number, number]][] = [[sl, el], [sr, er], [sl, sr], [el, er]];
+  let best: [number, number] = sl;
+  let bestDist = Infinity;
+  for (const [a, b] of edges) {
+    const c = closestPointOnSegment(point, a, b);
+    const d = Math.hypot(c[0] - point[0], c[1] - point[1]);
+    if (d < bestDist) { bestDist = d; best = c; }
+  }
+  return best;
+}
+
+function nearestBoundaryPointInPlatform(
+  platform: MapPlatform,
+  point: [number, number],
+): [number, number] {
+  const local = toPlatformLocal(platform, point);
+  if (platform.shape === "circle") {
+    const r = platform.width / 2;
+    const d = Math.hypot(local[0], local[1]) || r;
+    return fromPlatformLocal(platform, [(local[0] / d) * r, (local[1] / d) * r]);
+  }
+  const polygon = platformLocalPolygon(platform);
+  let bestLocal: [number, number] = polygon[0];
+  let bestDist = Infinity;
+  for (let i = 0; i < polygon.length; i++) {
+    const a = polygon[i];
+    const b = polygon[(i + 1) % polygon.length];
+    const c = closestPointOnSegment(local, a, b);
+    const d = Math.hypot(c[0] - local[0], c[1] - local[1]);
+    if (d < bestDist) { bestDist = d; bestLocal = c; }
+  }
+  return fromPlatformLocal(platform, bestLocal);
+}
+
+// Returns the nearest point on the outer boundary of any walkable surface in the
+// map. Used to constrain river endpoints so they sit on surface edges rather
+// than floating in the air beyond the path.
+export function nearestBoundaryPointInMap(
+  map: Pick<CompositionMap, "segments" | "platforms">,
+  point: [number, number],
+): [number, number] | null {
+  let best: [number, number] | null = null;
+  let bestDist = Infinity;
+  function consider(candidate: [number, number]) {
+    const d = Math.hypot(candidate[0] - point[0], candidate[1] - point[1]);
+    if (d < bestDist) { bestDist = d; best = candidate; }
+  }
+  for (const segment of map.segments) consider(nearestBoundaryPointInSegment(point, segment));
+  for (const platform of map.platforms) consider(nearestBoundaryPointInPlatform(platform, point));
+  return best;
+}
+
 export function mapPointKey(point: [number, number]): string {
   return `${point[0].toFixed(3)},${point[1].toFixed(3)}`;
 }
