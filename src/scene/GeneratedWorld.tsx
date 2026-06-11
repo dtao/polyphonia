@@ -3,10 +3,12 @@ import { ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { GeneratedEnvironment, WorldObjectPlacement } from "../environment";
-import { useStore } from "../store";
+import { loopWrap, useStore } from "../store";
+import { CompositionMap, LoopPreviewTransform, tiledMapTransforms, transformLoopPoint } from "../map";
 import { WORLD_OBJECT_SPECS, WorldObjectPart } from "../worldgen/objects";
 import { terrainFieldFor } from "../worldgen/sampler";
 import { TerrainField, flattenSources, terrainHeightAt } from "../worldgen/terrain";
+import { loopEditPoint } from "../worldgen/loop";
 import { valueNoise2 } from "../worldgen/noise";
 import {
   createFadedInstancedMesh,
@@ -39,8 +41,8 @@ export function GeneratedWorld({ editMode }: { editMode: boolean }) {
     <group>
       <MoodLighting generated={generated} />
       <TerrainPatch generated={generated} field={field} editMode={editMode} />
-      <ScatterInstances generated={generated} field={field} editMode={editMode} />
-      {editMode && <SelectedWorldObjectGizmo generated={generated} field={field} />}
+      <ScatterInstances generated={generated} field={field} map={composition.map} editMode={editMode} />
+      {editMode && <SelectedWorldObjectGizmo generated={generated} field={field} map={composition.map} />}
       {editMode && <ConstraintZones generated={generated} />}
     </group>
   );
@@ -108,9 +110,14 @@ function buildTerrainGeometry(generated: GeneratedEnvironment, field: TerrainFie
       positions[index * 3] = x;
       positions[index * 3 + 1] = h;
       positions[index * 3 + 2] = z;
-      // Palette ramp by height with a little patchiness so flats aren't flat-colored.
-      const patch = valueNoise2(generated.seed + 977, x * 0.11, z * 0.11) * 0.35;
-      const t = Math.min(1, Math.max(0, 0.5 + h / (2 * amplitude) + (patch - 0.175)));
+      // Palette ramp by height with a little patchiness so flats aren't
+      // flat-colored. Loop-aware fields supply lift-free shade heights and
+      // canonical patch coordinates so colors match across the loop seam.
+      const shadeHeight = field.shade ? field.shade[index] : h;
+      const px = field.patch ? field.patch[index * 2] : x;
+      const pz = field.patch ? field.patch[index * 2 + 1] : z;
+      const patch = valueNoise2(generated.seed + 977, px * 0.11, pz * 0.11) * 0.35;
+      const t = Math.min(1, Math.max(0, 0.5 + shadeHeight / (2 * amplitude) + (patch - 0.175)));
       if (t < 0.5) color.lerpColors(palette[0], palette[1], t * 2);
       else color.lerpColors(palette[1], palette[2], (t - 0.5) * 2);
       colors[index * 3] = color.r;
@@ -315,7 +322,11 @@ function partMaterial(part: WorldObjectPart): THREE.MeshStandardMaterial {
   return material;
 }
 
-function buildScatterBatches(generated: GeneratedEnvironment, field: TerrainField): ScatterBatch[] {
+function buildScatterBatches(
+  generated: GeneratedEnvironment,
+  field: TerrainField,
+  loopCopies: LoopPreviewTransform[],
+): ScatterBatch[] {
   const byKind = new Map<string, WorldObjectPlacement[]>();
   for (const object of generated.objects) {
     const list = byKind.get(object.kind);
@@ -331,20 +342,33 @@ function buildScatterBatches(generated: GeneratedEnvironment, field: TerrainFiel
       const matrices: THREE.Matrix4[] = [];
       const colors: THREE.Color[] = [];
       const ids: string[] = [];
-      for (const object of objects) {
-        const baseY = terrainHeightAt(field, object.position[0], object.position[2]) + object.position[1];
-        quaternion.setFromAxisAngle(up, object.yaw);
+      const push = (object: WorldObjectPlacement, x: number, z: number, yaw: number) => {
+        // Display-field height: by loop invariance a copy's spot already
+        // carries the right lift, so the object always sits on visible terrain.
+        const baseY = terrainHeightAt(field, x, z) + object.position[1];
+        quaternion.setFromAxisAngle(up, yaw);
         const offset = new THREE.Vector3(...part.offset)
           .multiplyScalar(object.scale)
           .applyQuaternion(quaternion);
-        const matrix = new THREE.Matrix4().compose(
-          new THREE.Vector3(object.position[0] + offset.x, baseY + offset.y, object.position[2] + offset.z),
-          quaternion,
-          new THREE.Vector3(part.scale[0] * object.scale, part.scale[1] * object.scale, part.scale[2] * object.scale),
+        matrices.push(
+          new THREE.Matrix4().compose(
+            new THREE.Vector3(x + offset.x, baseY + offset.y, z + offset.z),
+            quaternion,
+            new THREE.Vector3(part.scale[0] * object.scale, part.scale[1] * object.scale, part.scale[2] * object.scale),
+          ),
         );
-        matrices.push(matrix);
         colors.push(new THREE.Color(part.tintable && object.tint ? object.tint : part.color));
+        // Copies share the base object's id: clicking the tree beyond the loop
+        // seam selects (and edits) the one object it is a view of.
         ids.push(object.id);
+      };
+      for (const object of objects) {
+        push(object, object.position[0], object.position[2], object.yaw);
+        for (const copy of loopCopies) {
+          const [x, z] = transformLoopPoint(copy, [object.position[0], object.position[2]]);
+          if (Math.abs(x - generated.center[0]) > field.size || Math.abs(z - generated.center[1]) > field.size) continue;
+          push(object, x, z, object.yaw + copy.rotation);
+        }
       }
       batches.push({
         key: `${kind}:${partIndex}`,
@@ -362,13 +386,28 @@ function buildScatterBatches(generated: GeneratedEnvironment, field: TerrainFiel
 function ScatterInstances({
   generated,
   field,
+  map,
   editMode,
 }: {
   generated: GeneratedEnvironment;
   field: TerrainField;
+  map: CompositionMap;
   editMode: boolean;
 }) {
-  const batches = useMemo(() => buildScatterBatches(generated, field), [generated, field]);
+  // Path-loop maps repeat the scattered objects across the seam, like stems
+  // do. The chain is anchored at the region center (not the viewer), so the
+  // matrices are static; per-frame visibility is the refill's job.
+  const loopCopies = useMemo(
+    () =>
+      map.tiling.type === "path-loop"
+        ? tiledMapTransforms(map, generated.center, generated.size + 180)
+        : [],
+    [map, generated.center, generated.size],
+  );
+  const batches = useMemo(
+    () => buildScatterBatches(generated, field, loopCopies),
+    [generated, field, loopCopies],
+  );
   return (
     <group>
       {batches.map((batch) => (
@@ -424,8 +463,13 @@ function ScatterBatchMesh({ batch, editMode }: { batch: ScatterBatch; editMode: 
   useEffect(() => subscribeDebugFade(() => {
     lastUpdate.current = -Infinity;
   }), []);
+  const seenWrap = useRef(loopWrap.generation);
   useFrame(({ clock }) => {
-    if (clock.elapsedTime - lastUpdate.current < ENVIRONMENT_INSTANCE_UPDATE_INTERVAL) return;
+    // On a loop wrap the camera teleports; refill immediately so loop copies'
+    // fades match the new position instead of lagging a frame.
+    const wrapped = seenWrap.current !== loopWrap.generation;
+    seenWrap.current = loopWrap.generation;
+    if (!wrapped && clock.elapsedTime - lastUpdate.current < ENVIRONMENT_INSTANCE_UPDATE_INTERVAL) return;
     lastUpdate.current = clock.elapsedTime;
     refill();
   });
@@ -456,9 +500,11 @@ function ScatterBatchMesh({ batch, editMode }: { batch: ScatterBatch; editMode: 
 function SelectedWorldObjectGizmo({
   generated,
   field,
+  map,
 }: {
   generated: GeneratedEnvironment;
   field: TerrainField;
+  map: CompositionMap;
 }) {
   const selectedId = useStore((s) => s.selectedWorldObjectId);
   const object = generated.objects.find((candidate) => candidate.id === selectedId);
@@ -498,6 +544,19 @@ function SelectedWorldObjectGizmo({
     if (!start || !target) return;
     if (Math.hypot(target.position.x - start[0], target.position.z - start[1]) >= 3) {
       useStore.getState().markWorldObjectEdit(object.id, "major");
+    }
+    // On path-loop maps, an object dropped near/beyond the end seam is stored
+    // at its fundamental-domain spot (remapping mid-drag would yank the gizmo
+    // away from the cursor); its loop copy keeps it visible where it was
+    // dropped.
+    const mapped = loopEditPoint(map, [target.position.x, target.position.z]);
+    if (mapped[0] !== target.position.x || mapped[1] !== target.position.z) {
+      // Offset above the terrain is measured at the DROP spot (display field);
+      // measuring at the remapped spot would bake the loop lift into it.
+      const terrain = terrainHeightAt(field, target.position.x, target.position.z);
+      useStore.getState().updateWorldObject(object.id, {
+        position: [mapped[0], Math.max(-4, Math.round((target.position.y - terrain) * 100) / 100), mapped[1]],
+      });
     }
   };
 

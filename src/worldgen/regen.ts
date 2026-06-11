@@ -27,6 +27,7 @@ import type { CompositionMap } from "../map";
 import type { TrackDef } from "../composition";
 import { flattenSources } from "./terrain";
 import { MAX_WORLD_OBJECTS, scatterObjects } from "./scatter";
+import { loopFieldContext } from "./loop";
 
 export type RegenerationMode = "overwrite" | "keep-constraints" | "keep-major" | "keep-all";
 
@@ -86,7 +87,7 @@ export function generateEnvironment(
     generatedAt: options.now,
   };
   const sources = flattenSources(map, tracks, generated);
-  return { ...generated, objects: scatterObjects(generated, sources) };
+  return { ...generated, objects: scatterObjects(generated, sources, { loop: loopFieldContext(map) }) };
 }
 
 export function regenerateEnvironment(
@@ -121,7 +122,10 @@ export function regenerateEnvironment(
   };
   const sources = flattenSources(map, tracks, next);
   const budget = Math.max(0, MAX_WORLD_OBJECTS - kept.length);
-  return { ...next, objects: [...kept, ...scatterObjects(next, sources, { avoid: kept, budget })] };
+  return {
+    ...next,
+    objects: [...kept, ...scatterObjects(next, sources, { avoid: kept, budget, loop: loopFieldContext(map) })],
+  };
 }
 
 export function regenerateRegion(
@@ -160,6 +164,12 @@ export function regenerateRegion(
   const next: GeneratedEnvironment = { ...generated, edits, locks, objects: kept, generatedAt: options.now };
   const sources = flattenSources(map, tracks, next);
   const budget = Math.max(0, MAX_WORLD_OBJECTS - kept.length);
-  const fresh = scatterObjects(next, sources, { region, avoid: kept, seed: options.seed, budget });
+  const fresh = scatterObjects(next, sources, {
+    region,
+    avoid: kept,
+    seed: options.seed,
+    budget,
+    loop: loopFieldContext(map),
+  });
   return { ...next, objects: [...kept, ...fresh] };
 }

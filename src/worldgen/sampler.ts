@@ -17,17 +17,23 @@ import type { GeneratedEdit, GeneratedEnvironment } from "../environment";
 import type { CompositionMap } from "../map";
 import {
   applyEditsToField,
+  applyLoopToField,
   buildTerrainField,
   flattenSources,
   terrainHeightAt,
   TerrainField,
   FlattenSource,
 } from "./terrain";
+import { LoopFieldContext, loopFieldContext } from "./loop";
 
 const STEM_REBUILD_THROTTLE_MS = 300;
 
 interface CacheEntry {
-  field: TerrainField;
+  /** Fundamental-domain field (noise + flattening + edits). */
+  base: TerrainField;
+  /** What the scene samples: base, made loop-invariant on path-loop maps. */
+  display: TerrainField;
+  loop: LoopFieldContext | null;
   sources: FlattenSource[];
   map: CompositionMap;
   baseKey: string;
@@ -67,7 +73,7 @@ export function terrainFieldFor(composition: Composition): TerrainField | null {
     const sameEdits =
       signatures.length === cache.editSignatures.length &&
       cache.editSignatures.every((signature, i) => signature === signatures[i]);
-    if (cache.tracksKey === tracks && sameEdits) return cache.field;
+    if (cache.tracksKey === tracks && sameEdits) return cache.display;
 
     // Appended brush ops: apply just the new edits to the cached grid.
     const extendsCache =
@@ -79,22 +85,35 @@ export function terrainFieldFor(composition: Composition): TerrainField | null {
         ...generated,
         edits: generated.edits.slice(cache.editSignatures.length),
       };
-      const field = buildIncremental(cache.field, partial, cache.sources);
-      cache = { ...cache, field, editSignatures: signatures, builtAt: Date.now() };
-      return field;
+      const nextBase = buildIncremental(cache.base, partial, cache.sources);
+      const display = cache.loop ? applyLoopToField(nextBase, cache.loop) : nextBase;
+      cache = { ...cache, base: nextBase, display, editSignatures: signatures, builtAt: Date.now() };
+      return display;
     }
 
     // Stem positions moved (flatten mask change only): serve the stale field
     // during the drag, rebuilding at most a few times per second.
     if (sameEdits && Date.now() - cache.builtAt < STEM_REBUILD_THROTTLE_MS) {
-      return cache.field;
+      return cache.display;
     }
   }
 
   const sources = flattenSources(map, composition.tracks, generated);
-  const field = buildTerrainField(generated, sources);
-  cache = { field, sources, map, baseKey: base, tracksKey: tracks, editSignatures: signatures, builtAt: Date.now() };
-  return field;
+  const baseField = buildTerrainField(generated, sources);
+  const loop = loopFieldContext(map);
+  const display = loop ? applyLoopToField(baseField, loop) : baseField;
+  cache = {
+    base: baseField,
+    display,
+    loop,
+    sources,
+    map,
+    baseKey: base,
+    tracksKey: tracks,
+    editSignatures: signatures,
+    builtAt: Date.now(),
+  };
+  return display;
 }
 
 // Applying only new ops reuses buildTerrainField's edit pass by handing it a

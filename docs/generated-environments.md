@@ -81,6 +81,32 @@ fresh region seed.
   walkable surfaces anyway). On maps with **no walkable bounds**, `Player`
   rides `generatedGroundHeight` so hills are actually walkable.
 
+## Path-loop maps (`src/worldgen/loop.ts`)
+
+On path-loop tiling the world repeats across the seam so the wrap teleport is
+invisible: a hill sculpted next to the start loop point is visible ahead as
+you approach the end loop point.
+
+- The terrain *field* is made loop-invariant (`applyLoopToField`): each sample
+  is canonicalized into the fundamental cell and, in a `LOOP_BLEND_BAND`
+  before the end seam, blended toward the transported start-side values plus
+  the loop's vertical lift. Invariance is exact at the seam and approximate
+  off-corridor (masked by the same distance fade that hides the structural
+  map-copy seam). No terrain mesh copies are rendered — overlapping opaque
+  heightfields would z-fight.
+- Scatter objects get transformed instance copies (chained via
+  `tiledMapTransforms`, static around the region center); copies share the
+  base object's id, so clicking one selects the object it is a view of.
+- The zone before the end seam *displays* the transported start-side world,
+  so scatter skips generating there, and composer edits (brush centers,
+  placements, gizmo drops) are remapped to their fundamental-domain spot via
+  `loopEditPoint` — the transport shows them under the cursor.
+- `shade`/`patch` on the display field keep terrain coloring (height ramp and
+  patch noise) consistent across the seam despite the lift.
+
+Square/hex tiling is not loop-aware yet; generated worlds there stay a single
+region as before.
+
 ## UI
 
 - World panel (top-left stack, `src/ui/WorldPanel.tsx`): biome, generate,

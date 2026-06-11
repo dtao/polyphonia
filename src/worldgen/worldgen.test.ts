@@ -15,6 +15,8 @@ import {
   regenerateEnvironment,
   regenerateRegion,
 } from "./regen";
+import { applyLoopToField } from "./terrain";
+import { LOOP_BLEND_BAND, loopEditPoint, loopFieldContext, loopProgress } from "./loop";
 import { normalizeMap } from "../map";
 import type { TrackDef } from "../composition";
 import type { GeneratedEnvironment, WorldObjectPlacement } from "../environment";
@@ -152,6 +154,74 @@ describe("edit classification", () => {
     expect(classifyTerrainEdit("raise", 3, 8)).toBe("major");
     expect(classifyTerrainEdit("raise", 0.5, 6)).toBe("minor");
     expect(classifyTerrainEdit("smooth", 1, 30)).toBe("minor");
+  });
+});
+
+describe("path-loop awareness", () => {
+  const loopMap = normalizeMap({
+    preset: "custom",
+    segments: [{ id: "s1", start: [0, 0], end: [60, 0], width: 4 }],
+    tiling: {
+      type: "path-loop",
+      origin: [0, 0],
+      tileSize: 80,
+      pathLoop: { start: { segmentId: "s1", end: "start" }, end: { segmentId: "s1", end: "end" } },
+    },
+    start: { position: [0, 0], direction: [1, 0] },
+    elevations: { "60.000,0.000": 4 },
+  });
+
+  it("derives the loop context from the map", () => {
+    const ctx = loopFieldContext(loopMap);
+    expect(ctx).not.toBeNull();
+    expect(ctx!.start).toEqual([0, 0]);
+    expect(ctx!.end).toEqual([60, 0]);
+    expect(ctx!.lift).toBe(4);
+    expect(loopFieldContext(pathMap)).toBeNull();
+  });
+
+  it("makes the display field invariant across the seam (including lift)", () => {
+    const ctx = loopFieldContext(loopMap)!;
+    const generated = testEnvironment();
+    const base = buildTerrainField(generated, flattenSources(loopMap, [], generated));
+    const display = applyLoopToField(base, ctx);
+    // Beyond the end seam the field is exactly the start side, one lift up.
+    expect(terrainHeightAt(display, 75, 0)).toBeCloseTo(terrainHeightAt(display, 15, 0) + 4, 4);
+    expect(terrainHeightAt(display, 70, 0)).toBeCloseTo(terrainHeightAt(display, 10, 0) + 4, 4);
+    // Slightly off-axis the blend is approximate but close.
+    expect(Math.abs(terrainHeightAt(display, 70, 10) - terrainHeightAt(display, 10, 10) - 4)).toBeLessThan(0.8);
+  });
+
+  it("shows a sculpted hill near the start ahead of the end seam", () => {
+    const ctx = loopFieldContext(loopMap)!;
+    const plain = testEnvironment();
+    const sources = flattenSources(loopMap, [], plain);
+    const before = applyLoopToField(buildTerrainField(plain, sources), ctx);
+    const hilly = testEnvironment({
+      edits: [{ id: "hill", type: "terrain", mode: "raise", center: [10, 20], radius: 6, amount: 3, at: NOW, level: "major" }],
+    });
+    const after = applyLoopToField(buildTerrainField(hilly, sources), ctx);
+    expect(terrainHeightAt(after, 10, 20) - terrainHeightAt(before, 10, 20)).toBeCloseTo(3, 1);
+    // The hill's transported image sits ahead of the end loop point.
+    expect(terrainHeightAt(after, 70, 20) - terrainHeightAt(before, 70, 20)).toBeGreaterThan(1.5);
+  });
+
+  it("stores edits near the seam at their fundamental-domain spot", () => {
+    expect(loopEditPoint(loopMap, [70, 0])).toEqual([10, 0]);
+    expect(loopEditPoint(loopMap, [55, 0])).toEqual([-5, 0]);
+    expect(loopEditPoint(loopMap, [20, 5])).toEqual([20, 5]);
+    expect(loopEditPoint(pathMap, [70, 0])).toEqual([70, 0]);
+  });
+
+  it("scatters no base objects in the override zone before the end seam", () => {
+    const ctx = loopFieldContext(loopMap)!;
+    const generated = testEnvironment();
+    const sources = flattenSources(loopMap, [], generated);
+    const objects = scatterObjects(generated, sources, { loop: ctx });
+    expect(objects.length).toBeGreaterThan(10);
+    for (const object of objects) {
+      expect(loopProgress(ctx, object.position[0], object.position[2])).toBeLessThan(1 - LOOP_BLEND_BAND / 2);
+    }
   });
 });
 

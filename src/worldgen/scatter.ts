@@ -14,6 +14,7 @@ import type {
 import { hash2 } from "./noise";
 import { WORLD_OBJECT_SPECS } from "./objects";
 import { FlattenSource, insideClearZone } from "./terrain";
+import { LOOP_BLEND_BAND, LoopFieldContext, loopProgress } from "./loop";
 
 /** Hard cap so dense settings can't balloon the manifest. */
 export const MAX_WORLD_OBJECTS = 1100;
@@ -59,6 +60,12 @@ export interface ScatterOptions {
   seed?: number;
   /** Cap on how many new objects this pass may add. */
   budget?: number;
+  /**
+   * Path-loop context: the zone before the end seam displays the transported
+   * start-side world (see worldgen/loop.ts), so no base objects are generated
+   * there — the start's objects appear there as loop copies instead.
+   */
+  loop?: LoopFieldContext | null;
 }
 
 export function scatterObjects(
@@ -100,6 +107,7 @@ export function scatterObjects(
       if (x < bounds.minX || x > bounds.maxX || z < bounds.minZ || z > bounds.maxZ) continue;
       if (Math.abs(x - center[0]) > size - 2 || Math.abs(z - center[1]) > size - 2) continue;
       if (options.region && Math.hypot(x - options.region.center[0], z - options.region.center[1]) > options.region.radius) continue;
+      if (options.loop && loopProgress(options.loop, x, z) >= 1 - LOOP_BLEND_BAND / 2) continue;
 
       const entry = pickKind(kinds, totalWeight, hash2(seed + 3, cx, cz));
       const spec = WORLD_OBJECT_SPECS[entry.kind];

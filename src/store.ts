@@ -36,6 +36,7 @@ import {
   regenerateEnvironment,
   regenerateRegion,
 } from "./worldgen/regen";
+import { loopEditPoint } from "./worldgen/loop";
 import { attachmentForPoint, canAddBranchAtPoint, canAddPlatformAtPoint, canAddRoomAtPoint, CompositionMap, entranceDoorwayCenter, entranceLocalCenter, entranceOuterPoint, MAP_PRESETS, MapPlatform, MapRoom, MapWall, RoomAttachment, RoomEntrance, RoomSide, defaultMap, mapPointKey, normalizeMap, platformContains, platformElevation, pointElevation, pointInOriginalTile, roomContains, roomElevation, roomWorldPoint, surfaceHeightAt, WalkableSegment } from "./map";
 import { ArtistIdentity } from "./artist";
 import {
@@ -1304,7 +1305,10 @@ export const useStore = create<StoreState>((set, get) => ({
         id,
         type: "terrain",
         mode: brush.mode,
-        center: brush.center,
+        // On path-loop maps, strokes near/beyond the end seam are stored at
+        // their fundamental-domain spot; the loop transport shows them under
+        // the cursor (see worldgen/loop.ts).
+        center: loopEditPoint(s.composition.map, brush.center),
         radius: brush.radius,
         amount: brush.amount,
         at: new Date().toISOString(),
@@ -1367,10 +1371,11 @@ export const useStore = create<StoreState>((set, get) => ({
       selectedWallId: null,
     }),
   addWorldObject: (kind, at) => {
+    const placed = loopEditPoint(get().composition.map, at);
     const object: WorldObjectPlacement = {
       id: newId(),
       kind,
-      position: [at[0], 0, at[1]],
+      position: [placed[0], 0, placed[1]],
       yaw: 0,
       scale: 1,
       userPlaced: true,

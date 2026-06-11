@@ -16,6 +16,7 @@
 import type { GeneratedEdit, GeneratedEnvironment } from "../environment";
 import {
   CompositionMap,
+  inverseTransformLoopPoint,
   loopPreviewElevationOffset,
   pointElevation,
   mapPointKey,
@@ -27,6 +28,7 @@ import {
 } from "../map";
 import type { TrackDef } from "../composition";
 import { fbm2 } from "./noise";
+import { LOOP_BLEND_BAND, LoopFieldContext, canonicalizeLoopPoint, loopProgress } from "./loop";
 
 export const STEM_CLEAR_RADIUS = 2.5;
 export const START_CLEAR_RADIUS = 5;
@@ -52,6 +54,13 @@ export interface TerrainField {
   resolution: number;
   /** (resolution + 1)^2 heights, row-major over z then x. */
   heights: Float32Array;
+  /**
+   * Loop-aware display fields only (see applyLoopToField): per-vertex height
+   * with the loop lift removed, and canonical sample coordinates (x,z pairs),
+   * so terrain coloring matches across loop copies. Absent on base fields.
+   */
+  shade?: Float32Array;
+  patch?: Float32Array;
 }
 
 export function terrainResolution(size: number): number {
@@ -292,6 +301,55 @@ function applyEdit(
       }
     }
   }
+}
+
+/**
+ * Derive the loop-aware display field from a base field: each vertex is
+ * canonicalized into the loop's fundamental cell and, in a band before the
+ * end seam, blended toward the transported start-side values (+ the loop's
+ * vertical lift). The result is loop-invariant at the seam, so the wrap
+ * teleport is invisible and edits near the start appear ahead of the end.
+ * Also fills `shade`/`patch` so coloring matches across the seam.
+ */
+export function applyLoopToField(base: TerrainField, ctx: LoopFieldContext): TerrainField {
+  const { center, size, resolution } = base;
+  const verts = resolution + 1;
+  const cell = (size * 2) / resolution;
+  const heights = new Float32Array(verts * verts);
+  const shade = new Float32Array(verts * verts);
+  const patch = new Float32Array(verts * verts * 2);
+
+  for (let iz = 0; iz < verts; iz++) {
+    for (let ix = 0; ix < verts; ix++) {
+      const index = iz * verts + ix;
+      const x = center[0] - size + ix * cell;
+      const z = center[1] - size + iz * cell;
+      const canonical = canonicalizeLoopPoint(ctx, x, z);
+      const s = loopProgress(ctx, canonical.x, canonical.z);
+      const w = smoothstep((s - (1 - LOOP_BLEND_BAND)) / LOOP_BLEND_BAND);
+      const here = terrainHeightAt(base, canonical.x, canonical.z);
+      let blended = here;
+      let px = canonical.x;
+      let pz = canonical.z;
+      if (w > 0) {
+        const [bx, bz] = inverseTransformLoopPoint(ctx.forward, [canonical.x, canonical.z]);
+        const there = terrainHeightAt(base, bx, bz);
+        blended = here * (1 - w) + there * w;
+        heights[index] = here * (1 - w) + (there + ctx.lift) * w + canonical.steps * ctx.lift;
+        if (w > 0.5) {
+          px = bx;
+          pz = bz;
+        }
+      } else {
+        heights[index] = here + canonical.steps * ctx.lift;
+      }
+      shade[index] = blended;
+      patch[index * 2] = px;
+      patch[index * 2 + 1] = pz;
+    }
+  }
+
+  return { center, size, resolution, heights, shade, patch };
 }
 
 /** Bilinear height lookup; returns 0 outside the generated region. */
