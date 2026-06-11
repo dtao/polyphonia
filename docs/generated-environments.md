@@ -75,8 +75,12 @@ fresh region seed.
   per-instance visibility routes through `radialFade` per the AGENTS.md rule.
   Instance picking maps `event.instanceId` through the per-refill
   `visibleIds` array.
-- The biome mood adds lights and overrides the fog/background color via
-  `environmentBackground` (fog and background must stay identical).
+- The biome mood adds lights and a camera-following gradient sky dome: both
+  shades derive from the single authored sky color (`skyGradient.ts` —
+  lighter horizon, darker zenith). The horizon shade is the canonical
+  background: `environmentBackground` feeds it to the fog, scene background,
+  and AR backdrop, which must all stay identical so fog-faded geometry
+  dissolves into the dome at eye level.
 - Movement: the world is visual-only on bounded maps (terrain flattens to the
   walkable surfaces anyway). On maps with **no walkable bounds**, `Player`
   rides `generatedGroundHeight` so hills are actually walkable.
@@ -117,7 +121,8 @@ region as before.
 
 ## Tuning constants worth knowing
 
-- `MAX_WORLD_OBJECTS` (scatter.ts) caps manifest size and draw cost.
+- `MAX_WORLD_OBJECTS` (scatter.ts) caps manifest size and draw cost; density
+  0 scatters nothing at all (bare hills and valleys).
 - Major/minor thresholds live in regen.ts (`MAJOR_TERRAIN_IMPACT`,
   `MAJOR_MOVE_DISTANCE`).
 - `FLATTEN_BLEND` / `RIM_BLEND` (terrain.ts) shape how terrain meets paths and

@@ -78,7 +78,7 @@ export function WorldPanel({ open, onOpen, onClose }: { open: boolean; onOpen: (
             <div style={label}>Shape & mood</div>
             <Slider label="Density" min={0} max={1} step={0.05} value={generated.params.density}
               onChange={(density) => setWorldParams({ density })} />
-            <div style={miniHint}>Density applies on the next regenerate.</div>
+            <div style={miniHint}>Density applies on the next regenerate; 0 generates bare terrain with no objects.</div>
             <Slider label="Relief" min={0} max={12} step={0.5} value={generated.params.terrainAmplitude}
               onChange={(terrainAmplitude) => setWorldParams({ terrainAmplitude })} />
             <Slider label="Feature size" min={20} max={120} step={2} value={generated.params.terrainScale}

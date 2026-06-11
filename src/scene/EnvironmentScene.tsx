@@ -13,6 +13,7 @@ import {
 import { useStore } from "../store";
 import { CreatorLandmarks } from "./CreatorLandmarks";
 import { GeneratedWorld } from "./GeneratedWorld";
+import { skyGradient } from "./skyGradient";
 import { SurfaceMapDressing } from "./DetailMapDressing";
 import { RADIAL_FADE_INNER, RADIAL_FADE_OUTER, effectiveFadeInner, effectiveFadeOuter } from "./fade";
 
@@ -56,8 +57,11 @@ export const environmentBackgroundColor = "#030407";
 
 // A generated environment carries its own sky mood; fog and background must
 // stay the same color so fog-faded geometry blends seamlessly (see FogSync).
+// That color is the gradient sky's HORIZON shade — the dome (GeneratedWorld's
+// SkyDome) meets the fog at eye level, so distant geometry dissolves into it.
 export function environmentBackground(environment: EnvironmentSettings): string {
-  return environment.generated?.params.skyColor ?? environmentBackgroundColor;
+  const skyColor = environment.generated?.params.skyColor;
+  return skyColor ? skyGradient(skyColor).horizon : environmentBackgroundColor;
 }
 
 export function EnvironmentScene({

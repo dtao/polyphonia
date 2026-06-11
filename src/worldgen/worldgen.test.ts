@@ -130,6 +130,11 @@ describe("scatter", () => {
     expect(scatterObjects(dense, sources).length).toBeGreaterThan(scatterObjects(sparse, sources).length);
   });
 
+  it("generates no objects at density 0 (terrain only)", () => {
+    const bare = testEnvironment({ params: { ...testEnvironment().params, density: 0 } });
+    expect(scatterObjects(bare, flattenSources(pathMap, [], bare))).toEqual([]);
+  });
+
   it("ignores constraints when the toggles are off", () => {
     const generated = testEnvironment({ constraints: { stems: false, paths: false, buffer: 3 } });
     const sources = flattenSources(pathMap, [track(0, 30)], generated);

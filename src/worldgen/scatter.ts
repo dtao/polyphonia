@@ -73,6 +73,8 @@ export function scatterObjects(
   sources: FlattenSource[],
   options: ScatterOptions = {},
 ): WorldObjectPlacement[] {
+  // Density 0 means a bare landscape: hills and valleys only, no objects.
+  if (generated.params.density <= 0) return [];
   const seed = options.seed ?? generated.seed;
   const { center, size } = generated;
   const kinds = BIOME_KINDS[generated.biome];

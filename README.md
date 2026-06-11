@@ -52,7 +52,8 @@ these spatial compositions.
 - **Generated worlds** — the World panel (edit mode) procedurally generates a
   visual environment around the composition: a sculptable terrain heightfield
   plus scattered objects in three biomes (forest, cavern, open meadow), with
-  controls for density, relief, lighting mood, sky, and ground colors.
+  controls for density (0 = bare terrain, no objects), relief, lighting mood,
+  a gradient sky derived from one picked color, and ground colors.
   Generation is constraint-aware: it keeps clear, walkable zones around stems
   and paths (toggleable, with an adjustable buffer, visualizable in the
   editor). Composers can sculpt terrain with raise/lower/smooth brushes, place

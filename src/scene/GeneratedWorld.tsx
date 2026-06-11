@@ -10,6 +10,7 @@ import { terrainFieldFor } from "../worldgen/sampler";
 import { TerrainField, flattenSources, terrainHeightAt } from "../worldgen/terrain";
 import { loopEditPoint } from "../worldgen/loop";
 import { valueNoise2 } from "../worldgen/noise";
+import { skyGradient } from "./skyGradient";
 import {
   createFadedInstancedMesh,
   disposeFadedInstancedMesh,
@@ -39,12 +40,64 @@ export function GeneratedWorld({ editMode }: { editMode: boolean }) {
   if (!generated || !field) return null;
   return (
     <group>
+      <SkyDome skyColor={generated.params.skyColor} />
       <MoodLighting generated={generated} />
       <TerrainPatch generated={generated} field={field} editMode={editMode} />
       <ScatterInstances generated={generated} field={field} map={composition.map} editMode={editMode} />
       {editMode && <SelectedWorldObjectGizmo generated={generated} field={field} map={composition.map} />}
       {editMode && <ConstraintZones generated={generated} />}
     </group>
+  );
+}
+
+// Camera-following gradient sky: lighter shade of the authored sky color at
+// the horizon, darker at the zenith (both derived in skyGradient.ts — the
+// composer picks one color). The horizon shade doubles as the fog/background
+// color, so geometry fading at the radial band dissolves into the dome
+// seamlessly. Drawn first with depth disabled, like the AR backdrop, so the
+// world always renders over it; fog must not affect it.
+function SkyDome({ skyColor }: { skyColor: string }) {
+  const camera = useThree((state) => state.camera);
+  const mesh = useRef<THREE.Mesh>(null);
+  const material = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        side: THREE.BackSide,
+        depthWrite: false,
+        depthTest: false,
+        fog: false,
+        uniforms: {
+          horizonColor: { value: new THREE.Color() },
+          zenithColor: { value: new THREE.Color() },
+        },
+        vertexShader: `
+varying vec3 vDir;
+void main() {
+  vDir = position;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`,
+        fragmentShader: `
+uniform vec3 horizonColor;
+uniform vec3 zenithColor;
+varying vec3 vDir;
+void main() {
+  float up = clamp(normalize(vDir).y, 0.0, 1.0);
+  gl_FragColor = vec4(mix(horizonColor, zenithColor, pow(up, 0.6)), 1.0);
+}`,
+      }),
+    [],
+  );
+  useEffect(() => {
+    const { horizon, zenith } = skyGradient(skyColor);
+    (material.uniforms.horizonColor.value as THREE.Color).set(horizon);
+    (material.uniforms.zenithColor.value as THREE.Color).set(zenith);
+  }, [material, skyColor]);
+  useEffect(() => () => material.dispose(), [material]);
+  useFrame(() => mesh.current?.position.copy(camera.position));
+  return (
+    <mesh ref={mesh} material={material} renderOrder={-999} frustumCulled={false}>
+      <sphereGeometry args={[170, 32, 16]} />
+    </mesh>
   );
 }
 
