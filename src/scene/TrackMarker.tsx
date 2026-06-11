@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { MutableRefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { ThreeEvent, useFrame } from "@react-three/fiber";
 import { Billboard, Line, Text } from "@react-three/drei";
 import * as THREE from "three";
@@ -61,6 +61,7 @@ export function TrackMarker({
   const footprintHeight = floorY - stemY + 0.08;
   const volume = track.volume ?? 1;
   const orbRadius = 0.42 + volume * 0.32;
+  const isOrb = !track.stemShape || track.stemShape.kind === "orb";
   const showPointLight = !preview && !debugFlag("debugNoPointLights");
   const showFlare = !debugFlag("debugNoFlare");
   const showStarRays = !debugFlag("debugNoStarRays");
@@ -153,8 +154,14 @@ export function TrackMarker({
       const lightFade = currentMode === "edit" ? 1 : radialFade(listenerDist);
       glow.current.visible = lightFade > 0.002;
       if (glow.current.visible) {
-        glow.current.intensity = ((isSelected ? 8 : 4.8) + vol * 3.2 + pulse * 44) * renderedFade * lightFade;
-        glow.current.distance = 12 + vol * 8 + pulse * 16;
+        const orbShape = !track.stemShape || track.stemShape.kind === "orb";
+        if (orbShape) {
+          glow.current.intensity = ((isSelected ? 8 : 4.8) + vol * 3.2 + pulse * 44) * renderedFade * lightFade;
+          glow.current.distance = 12 + vol * 8 + pulse * 16;
+        } else {
+          glow.current.intensity = (1.5 + vol * 1.2 + pulse * 12) * renderedFade * lightFade;
+          glow.current.distance = 7 + vol * 3 + pulse * 7;
+        }
       }
     }
     if (ring.current) ring.current.rotation.z += dt * 1.5;
@@ -209,61 +216,71 @@ export function TrackMarker({
           {track.directivity && <DirectivityGuide track={track} />}
         </group>
       )}
-      <StemShapeVisual track={track} />
-      <mesh ref={footprint} position={[0, footprintHeight, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[orbRadius * 0.95, orbRadius * 1.55, 48]} />
-        <meshBasicMaterial color={track.color} transparent opacity={0.28} toneMapped={false} depthWrite={false} />
-      </mesh>
-      <mesh ref={aura} position={[0, 0, 0]}>
-        <sphereGeometry args={[orbRadius, 24, 16]} />
-        <meshBasicMaterial color={track.color} transparent opacity={0.18} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
-      </mesh>
-      <mesh ref={outerAura} position={[0, 0, 0]}>
-        <sphereGeometry args={[orbRadius, 24, 16]} />
-        <meshBasicMaterial color={track.color} transparent opacity={0.1} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
-      </mesh>
-      <Billboard position={[0, 0, 0]}>
-        {showFlare && (
-          <mesh scale={[orbRadius * 5.6, orbRadius * 5.6, 1]}>
-            <circleGeometry args={[0.5, 64]} />
-            <shaderMaterial
-              ref={flare}
-              transparent
-              depthWrite={false}
-              blending={THREE.AdditiveBlending}
-              uniforms={{
-                color: { value: new THREE.Color(track.color) },
-                opacity: { value: 0.5 },
-                radius: { value: 0.42 },
-              }}
-              vertexShader={flareVertexShader}
-              fragmentShader={flareFragmentShader}
-            />
-          </mesh>
-        )}
-        {showStarRays && (
-          <mesh ref={starburst} scale={[orbRadius * 10.8, orbRadius * 10.8, 1]} rotation={[0, 0, seed]}>
-            <circleGeometry args={[0.5, 64]} />
-            <shaderMaterial
-              ref={rays}
-              transparent
-              depthWrite={false}
-              blending={THREE.AdditiveBlending}
-              uniforms={{
-                color: { value: new THREE.Color(track.color) },
-                opacity: { value: 0.38 },
-                radius: { value: 0.22 },
-              }}
-              vertexShader={flareVertexShader}
-              fragmentShader={starRayFragmentShader}
-            />
-          </mesh>
-        )}
-      </Billboard>
-      <mesh ref={core} position={[0, 0, 0]}>
-        <sphereGeometry args={[orbRadius * 0.62, 32, 20]} />
-        <meshBasicMaterial color="white" transparent={preview || fade < 0.999} opacity={preview ? 0 : fade} toneMapped={false} depthWrite={!preview && fade >= 0.999} />
-      </mesh>
+      <StemShapeVisual track={track} smoothedLevel={smoothedLevel} />
+      {isOrb && (
+        <mesh ref={footprint} position={[0, footprintHeight, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[orbRadius * 0.95, orbRadius * 1.55, 48]} />
+          <meshBasicMaterial color={track.color} transparent opacity={0.28} toneMapped={false} depthWrite={false} />
+        </mesh>
+      )}
+      {isOrb && (
+        <mesh ref={aura} position={[0, 0, 0]}>
+          <sphereGeometry args={[orbRadius, 24, 16]} />
+          <meshBasicMaterial color={track.color} transparent opacity={0.18} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
+        </mesh>
+      )}
+      {isOrb && (
+        <mesh ref={outerAura} position={[0, 0, 0]}>
+          <sphereGeometry args={[orbRadius, 24, 16]} />
+          <meshBasicMaterial color={track.color} transparent opacity={0.1} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
+        </mesh>
+      )}
+      {isOrb && (
+        <Billboard position={[0, 0, 0]}>
+          {showFlare && (
+            <mesh scale={[orbRadius * 5.6, orbRadius * 5.6, 1]}>
+              <circleGeometry args={[0.5, 64]} />
+              <shaderMaterial
+                ref={flare}
+                transparent
+                depthWrite={false}
+                blending={THREE.AdditiveBlending}
+                uniforms={{
+                  color: { value: new THREE.Color(track.color) },
+                  opacity: { value: 0.5 },
+                  radius: { value: 0.42 },
+                }}
+                vertexShader={flareVertexShader}
+                fragmentShader={flareFragmentShader}
+              />
+            </mesh>
+          )}
+          {showStarRays && (
+            <mesh ref={starburst} scale={[orbRadius * 10.8, orbRadius * 10.8, 1]} rotation={[0, 0, seed]}>
+              <circleGeometry args={[0.5, 64]} />
+              <shaderMaterial
+                ref={rays}
+                transparent
+                depthWrite={false}
+                blending={THREE.AdditiveBlending}
+                uniforms={{
+                  color: { value: new THREE.Color(track.color) },
+                  opacity: { value: 0.38 },
+                  radius: { value: 0.22 },
+                }}
+                vertexShader={flareVertexShader}
+                fragmentShader={starRayFragmentShader}
+              />
+            </mesh>
+          )}
+        </Billboard>
+      )}
+      {isOrb && (
+        <mesh ref={core} position={[0, 0, 0]}>
+          <sphereGeometry args={[orbRadius * 0.62, 32, 20]} />
+          <meshBasicMaterial color="white" transparent={preview || fade < 0.999} opacity={preview ? 0 : fade} toneMapped={false} depthWrite={!preview && fade >= 0.999} />
+        </mesh>
+      )}
       {/* selection ring */}
       {selected && (
         <mesh ref={ring} position={[0, 0, 0]} rotation={[Math.PI / 2, 0, 0]}>
@@ -285,32 +302,52 @@ export function TrackMarker({
 
 const PILLAR_HEIGHT = 60;
 const PILLAR_RADIUS = 0.18;
+const PILLAR_GLOW_RADIUS = PILLAR_RADIUS * 4.5;
 
-function PillarVisual({ track }: { track: TrackDef }) {
-  const meshRef = useRef<THREE.Mesh>(null);
+function PillarVisual({ track, smoothedLevel }: { track: TrackDef; smoothedLevel: MutableRefObject<number> }) {
+  const coreRef = useRef<THREE.Mesh>(null);
+  const glowRef = useRef<THREE.Mesh>(null);
   const color = useMemo(() => new THREE.Color(track.color), [track.color]);
 
   useFrame(({ camera }) => {
-    if (!meshRef.current) return;
     const [x, , z] = track.position;
     const dist = Math.hypot(camera.position.x - x, camera.position.z - z);
     const fade = radialFade(dist);
-    const mat = meshRef.current.material as THREE.MeshBasicMaterial;
-    mat.opacity = 0.55 * fade * fade;
-    meshRef.current.visible = fade > 0.002;
+    const visible = fade > 0.002;
+    const pulse = smoothedLevel.current;
+    const fadeSq = fade * fade;
+
+    if (coreRef.current) {
+      coreRef.current.visible = visible;
+      if (visible) (coreRef.current.material as THREE.MeshBasicMaterial).opacity = (0.55 + pulse * 0.45) * fadeSq;
+    }
+    if (glowRef.current) {
+      glowRef.current.visible = visible;
+      if (visible) {
+        (glowRef.current.material as THREE.MeshBasicMaterial).opacity = (0.07 + pulse * 0.22) * fadeSq;
+        const s = 1 + pulse * 0.55;
+        glowRef.current.scale.set(s, 1, s);
+      }
+    }
   });
 
   return (
-    <mesh ref={meshRef} position={[0, 0, 0]}>
-      <cylinderGeometry args={[PILLAR_RADIUS, PILLAR_RADIUS, PILLAR_HEIGHT, 16]} />
-      <meshBasicMaterial color={color} transparent opacity={0.55} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
-    </mesh>
+    <>
+      <mesh ref={glowRef} position={[0, 0, 0]}>
+        <cylinderGeometry args={[PILLAR_GLOW_RADIUS, PILLAR_GLOW_RADIUS, PILLAR_HEIGHT, 12]} />
+        <meshBasicMaterial color={color} transparent opacity={0.07} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </mesh>
+      <mesh ref={coreRef} position={[0, 0, 0]}>
+        <cylinderGeometry args={[PILLAR_RADIUS, PILLAR_RADIUS, PILLAR_HEIGHT, 16]} />
+        <meshBasicMaterial color={color} transparent opacity={0.55} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </mesh>
+    </>
   );
 }
 
 const WALL_HEIGHT = 7;
 
-function WallVisual({ track, shape }: { track: TrackDef; shape: Extract<StemShape, { kind: "wall" }> }) {
+function WallVisual({ track, shape, smoothedLevel }: { track: TrackDef; shape: Extract<StemShape, { kind: "wall" }>; smoothedLevel: MutableRefObject<number> }) {
   const frontRef = useRef<THREE.Mesh>(null);
   const backRef = useRef<THREE.Mesh>(null);
   const color = useMemo(() => new THREE.Color(track.color), [track.color]);
@@ -326,27 +363,29 @@ function WallVisual({ track, shape }: { track: TrackDef; shape: Extract<StemShap
     const dist = Math.hypot(camera.position.x - x, camera.position.z - z);
     const fade = radialFade(dist);
     const visible = fade > 0.002;
+    const pulse = smoothedLevel.current;
+    const fadeSq = fade * fade;
     if (frontRef.current) {
       frontRef.current.visible = visible;
-      if (visible) (frontRef.current.material as THREE.MeshBasicMaterial).opacity = 0.55 * fade * fade;
+      if (visible) (frontRef.current.material as THREE.MeshBasicMaterial).opacity = (0.38 + pulse * 0.42) * fadeSq;
     }
     if (backRef.current) {
       backRef.current.visible = visible;
-      if (visible) (backRef.current.material as THREE.MeshBasicMaterial).opacity = 0.18 * fade * fade;
+      if (visible) (backRef.current.material as THREE.MeshBasicMaterial).opacity = (0.1 + pulse * 0.15) * fadeSq;
     }
   });
 
   return (
     <group rotation={rotation}>
-      {/* front face — bright */}
+      {/* front face — bright, pulses with music */}
       <mesh ref={frontRef} position={[0, 0, 0.08]}>
         <planeGeometry args={[shape.width, WALL_HEIGHT]} />
-        <meshBasicMaterial color={color} transparent opacity={0.55} side={THREE.FrontSide} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
+        <meshBasicMaterial color={color} transparent opacity={0.38} side={THREE.FrontSide} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
       </mesh>
       {/* back face — dim */}
       <mesh ref={backRef} position={[0, 0, -0.08]} rotation={[0, Math.PI, 0]}>
         <planeGeometry args={[shape.width, WALL_HEIGHT]} />
-        <meshBasicMaterial color={color} transparent opacity={0.18} side={THREE.FrontSide} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
+        <meshBasicMaterial color={color} transparent opacity={0.1} side={THREE.FrontSide} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
       </mesh>
     </group>
   );
@@ -354,9 +393,11 @@ function WallVisual({ track, shape }: { track: TrackDef; shape: Extract<StemShap
 
 const RIVER_RADIUS = 0.22;
 const RIVER_SEGMENTS = 6;
+const RIVER_GLOW_RADIUS = RIVER_RADIUS * 4;
 
-function RiverVisual({ track, shape }: { track: TrackDef; shape: Extract<StemShape, { kind: "river" }> }) {
-  const meshRef = useRef<THREE.Mesh>(null);
+function RiverVisual({ track, shape, smoothedLevel }: { track: TrackDef; shape: Extract<StemShape, { kind: "river" }>; smoothedLevel: MutableRefObject<number> }) {
+  const coreRef = useRef<THREE.Mesh>(null);
+  const glowRef = useRef<THREE.Mesh>(null);
   const color = useMemo(() => new THREE.Color(track.color), [track.color]);
 
   // The group sits at track.position; express the end in local space.
@@ -375,29 +416,47 @@ function RiverVisual({ track, shape }: { track: TrackDef; shape: Extract<StemSha
   }, [localEnd]);
 
   useFrame(({ camera }) => {
-    if (!meshRef.current) return;
     const midX = x + midpoint.x, midZ = z + midpoint.z;
     const dist = Math.hypot(camera.position.x - midX, camera.position.z - midZ);
     const fade = radialFade(dist);
-    const mat = meshRef.current.material as THREE.MeshBasicMaterial;
-    mat.opacity = 0.5 * fade * fade;
-    meshRef.current.visible = fade > 0.002;
+    const visible = fade > 0.002;
+    const pulse = smoothedLevel.current;
+    const fadeSq = fade * fade;
+
+    if (coreRef.current) {
+      coreRef.current.visible = visible;
+      if (visible) (coreRef.current.material as THREE.MeshBasicMaterial).opacity = (0.5 + pulse * 0.45) * fadeSq;
+    }
+    if (glowRef.current) {
+      glowRef.current.visible = visible;
+      if (visible) {
+        (glowRef.current.material as THREE.MeshBasicMaterial).opacity = (0.07 + pulse * 0.2) * fadeSq;
+        const s = 1 + pulse * 0.55;
+        glowRef.current.scale.set(s, 1, s);
+      }
+    }
   });
 
   return (
-    <mesh ref={meshRef} position={midpoint} rotation={rotation}>
-      <cylinderGeometry args={[RIVER_RADIUS, RIVER_RADIUS, length, RIVER_SEGMENTS]} />
-      <meshBasicMaterial color={color} transparent opacity={0.5} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
-    </mesh>
+    <group position={midpoint} rotation={rotation}>
+      <mesh ref={glowRef}>
+        <cylinderGeometry args={[RIVER_GLOW_RADIUS, RIVER_GLOW_RADIUS, length, RIVER_SEGMENTS]} />
+        <meshBasicMaterial color={color} transparent opacity={0.07} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </mesh>
+      <mesh ref={coreRef}>
+        <cylinderGeometry args={[RIVER_RADIUS, RIVER_RADIUS, length, RIVER_SEGMENTS]} />
+        <meshBasicMaterial color={color} transparent opacity={0.5} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </mesh>
+    </group>
   );
 }
 
-function StemShapeVisual({ track }: { track: TrackDef }) {
+function StemShapeVisual({ track, smoothedLevel }: { track: TrackDef; smoothedLevel: MutableRefObject<number> }) {
   const shape = track.stemShape;
   if (!shape || shape.kind === "orb") return null;
-  if (shape.kind === "pillar") return <PillarVisual track={track} />;
-  if (shape.kind === "wall") return <WallVisual track={track} shape={shape} />;
-  if (shape.kind === "river") return <RiverVisual track={track} shape={shape} />;
+  if (shape.kind === "pillar") return <PillarVisual track={track} smoothedLevel={smoothedLevel} />;
+  if (shape.kind === "wall") return <WallVisual track={track} shape={shape} smoothedLevel={smoothedLevel} />;
+  if (shape.kind === "river") return <RiverVisual track={track} shape={shape} smoothedLevel={smoothedLevel} />;
   return null;
 }
 
