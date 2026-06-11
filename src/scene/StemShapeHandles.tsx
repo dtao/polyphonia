@@ -132,13 +132,22 @@ function WallFacingHandle({
   const [obj, setObj] = useState<THREE.Group | null>(null);
   const [cx, stemY, cz] = position;
 
-  // Keep the gizmo object's rotation in sync with shape.facing (handles
-  // external changes such as undo/redo). During drag the update is idempotent
-  // because atan2(sin(a), cos(a)) === a, so there is no feedback loop.
+  // Keep the gizmo object's rotation in sync with shape.facing for external
+  // changes (undo/redo). During a drag, TransformControls sets obj.rotation.y
+  // to a continuously growing angle that may exceed ±π. If we naively reset it
+  // to atan2(fx, fz) every time, the angle gets normalised back into (-π, π]
+  // mid-drag, which makes the wall snap and reverse direction. Guard the sync
+  // by comparing the *facing direction* as a unit vector: sin/cos of the current
+  // angle equal sin/cos of atan2(fx, fz) within floating-point epsilon, so
+  // drag-induced store updates read as a no-op while genuine undo/redo changes
+  // (where the stored direction differs from the live rotation) still snap through.
   useLayoutEffect(() => {
     if (!obj) return;
     const [fx, fz] = shape.facing;
-    obj.rotation.y = Math.atan2(fx, fz);
+    const cur = obj.rotation.y;
+    if (Math.abs(Math.sin(cur) - fx) > 0.001 || Math.abs(Math.cos(cur) - fz) > 0.001) {
+      obj.rotation.y = Math.atan2(fx, fz);
+    }
   }, [obj, shape.facing]);
 
   function handleObjectChange() {
