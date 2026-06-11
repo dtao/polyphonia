@@ -20,7 +20,7 @@ import {
   defaultEnvironment,
   normalizeEnvironment,
 } from "./environment";
-import { attachmentForPoint, canAddBranchAtPoint, canAddPlatformAtPoint, canAddRoomAtPoint, CompositionMap, entranceDoorwayCenter, entranceLocalCenter, entranceOuterPoint, MAP_PRESETS, MapPlatform, MapRoom, MapWall, RoomAttachment, RoomEntrance, RoomSide, defaultMap, mapPointKey, normalizeMap, platformContains, platformElevation, pointElevation, pointInOriginalTile, roomContains, roomElevation, roomWorldPoint, surfaceHeightAt, WalkableSegment } from "./map";
+import { attachmentForPoint, canAddBranchAtPoint, canAddPlatformAtPoint, canAddRoomAtPoint, CompositionMap, entranceDoorwayCenter, entranceLocalCenter, entranceOuterPoint, MAP_PRESETS, MapPlatform, MapRoom, MapWall, nearestBoundaryPointInMap, RoomAttachment, RoomEntrance, RoomSide, defaultMap, mapPointKey, normalizeMap, platformContains, platformElevation, pointElevation, pointInOriginalTile, roomContains, roomElevation, roomWorldPoint, surfaceHeightAt, WalkableSegment } from "./map";
 import { ArtistIdentity } from "./artist";
 import {
   AuthUser,
@@ -1528,11 +1528,28 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   setTrackShape: (id, stemShape) => {
-    set((s) => ({
-      ...withHistory(s, `track:${id}:stemShape`),
-      composition: patchTrack(s.composition, id, { stemShape }),
-    }));
-    get().engine?.setTrackShape(id, stemShape);
+    set((s) => {
+      const patch: Partial<TrackDef> = { stemShape };
+      if (stemShape?.kind === "river") {
+        const track = s.composition.tracks.find((t) => t.id === id);
+        if (track) {
+          const map = s.composition.map;
+          const [x, y, z] = track.position;
+          const snappedStart = nearestBoundaryPointInMap(map, [x, z]);
+          if (snappedStart) patch.position = [snappedStart[0], y, snappedStart[1]];
+          const [ex, ey, ez] = stemShape.end;
+          const snappedEnd = nearestBoundaryPointInMap(map, [ex, ez]);
+          if (snappedEnd) patch.stemShape = { kind: "river", end: [snappedEnd[0], ey, snappedEnd[1]] };
+        }
+      }
+      return { ...withHistory(s, `track:${id}:stemShape`), composition: patchTrack(s.composition, id, patch) };
+    });
+    // Notify engine with whatever was actually stored after snapping.
+    const stored = get().composition.tracks.find((t) => t.id === id);
+    if (stored) {
+      get().engine?.setTrackShape(id, stored.stemShape);
+      if (stemShape?.kind === "river") get().engine?.setPosition(id, stored.position);
+    }
   },
 
   setTrackShapeWallFacing: (id, facing) => {
