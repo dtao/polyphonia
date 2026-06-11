@@ -11,9 +11,11 @@ import { debugFlag } from "../debug";
 import { unregisterMarkerDebug, updateMarkerDebug } from "./markerDebug";
 import { useShallow } from "zustand/react/shallow";
 
-// A glowing orb that marks where a stem lives in space and pulses with its
-// audio level — a visual anchor for the sound you hear from that direction.
-// In edit mode it can be clicked to select; the selected track wears a ring.
+// A stem marker: the 3D presence of an audio stem in the scene.
+// TrackMarker owns interaction (click-to-select, gizmo registration) and
+// structural overlays (falloff map, directivity guide, selection ring, label).
+// All visual rendering — geometry, glow, point light — lives entirely within
+// each shape component (OrbVisual, PillarVisual, WallVisual, RiverVisual).
 export function TrackMarker({
   track,
   preview = false,
@@ -29,19 +31,200 @@ export function TrackMarker({
 }) {
   const mode = useStore((s) => s.mode);
   const selected = useStore((s) => !preview && s.selectedId === track.id);
-  // Narrow map subscription: only re-render when the two derived values that
-  // actually depend on this stem's position change, not on every map edit.
-  const { onWalkablePath, floorY } = useStore(
+  const floorY = useStore(
     useShallow((s) => {
       const [px, , pz] = track.position;
       const m = s.composition.map;
       const inside = !m.segments.length || isPointInsideMap(m, [px, pz]);
-      return {
-        onWalkablePath: inside,
-        floorY: inside ? surfaceHeightAt(m, [px, pz]) : UNDERFLOOR_HEIGHT,
-      };
+      return inside ? surfaceHeightAt(m, [px, pz]) : UNDERFLOOR_HEIGHT;
     }),
   );
+  const ring = useRef<THREE.Mesh>(null);
+  const smoothedLevel = useRef(0);
+  const [x, stemY, z] = track.position;
+  const markerDebugId = debugId ?? `base:${track.id}`;
+  const markerDebugPosition: [number, number] = debugPosition ?? [x, z];
+
+  useEffect(() => () => unregisterMarkerDebug(markerDebugId), [markerDebugId]);
+
+  // Keep latest per-render values accessible from the animation callback without
+  // stale closures. The callback is registered once per markerDebugId; liveRef
+  // ensures it always sees current props/state.
+  const liveRef = useRef({ fade, markerDebugId, markerDebugPosition, trackId: track.id });
+  useLayoutEffect(() => {
+    liveRef.current = { fade, markerDebugId, markerDebugPosition, trackId: track.id };
+  });
+
+  // animateRef holds the per-frame work driven by StemAnimationDriver: update
+  // smoothedLevel (used by the shape visual) and push debug data.
+  const animateRef = useRef<((dt: number, elapsed: number, levels: Map<string, number>, camX: number, camZ: number) => void) | null>(null);
+  animateRef.current = (dt, _elapsed, levels, camX, camZ) => {
+    const { fade: currentFade, markerDebugId: mdi, markerDebugPosition: mdp, trackId } = liveRef.current;
+    const level = levels.get(trackId) ?? 0;
+    smoothedLevel.current = THREE.MathUtils.damp(smoothedLevel.current, level, 14, dt);
+    const listenerDist = Math.hypot(camX - mdp[0], camZ - mdp[1]);
+    updateMarkerDebug({
+      id: mdi,
+      trackId,
+      kind: preview ? "preview" : "base",
+      fade: currentFade,
+      targetFade: currentFade,
+      distance: listenerDist,
+      updatedAt: performance.now(),
+    });
+  };
+
+  // Stable wrapper registered once per markerDebugId — survives re-renders
+  // without churn in the global registry.
+  useEffect(() => {
+    const key = markerDebugId;
+    markerAnimateFns.set(key, (dt, elapsed, levels, camX, camZ) => {
+      animateRef.current?.(dt, elapsed, levels, camX, camZ);
+    });
+    return () => { markerAnimateFns.delete(key); };
+  }, [markerDebugId]);
+
+  useFrame((_, dt) => {
+    if (ring.current) ring.current.rotation.z += dt * 1.5;
+  });
+
+  // Selection only happens in edit mode; in explore the click locks the pointer.
+  function handleClick(e: ThreeEvent<MouseEvent>) {
+    if (preview || useStore.getState().mode !== "edit") return;
+    e.stopPropagation();
+    useStore.getState().select(track.id);
+  }
+
+  function setCursor(c: string) {
+    if (!preview && useStore.getState().mode === "edit") document.body.style.cursor = c;
+  }
+
+  // Register/unregister this marker's object for the move-gizmo to target.
+  const registerGroup = useCallback(
+    (g: THREE.Group | null) => {
+      if (preview) return;
+      if (g) markerObjects.set(track.id, g);
+      else markerObjects.delete(track.id);
+    },
+    [preview, track.id],
+  );
+
+  const showPointLight = !preview && !debugFlag("debugNoPointLights");
+
+  return (
+    <group
+      ref={registerGroup}
+      position={[x, stemY, z]}
+      onClick={handleClick}
+      onPointerOver={() => setCursor("pointer")}
+      onPointerOut={() => setCursor("auto")}
+    >
+      {mode === "edit" && selected && (
+        // Near/Far rings and the directivity guide ride at the stem's elevation
+        // so they stay visible where those properties are actually adjusted.
+        <group position={[0, 0, 0]}>
+          <FalloffMap track={track} />
+          {track.directivity && <DirectivityGuide track={track} />}
+        </group>
+      )}
+      <StemShapeVisual
+        track={track}
+        smoothedLevel={smoothedLevel}
+        preview={preview}
+        fade={fade}
+        showPointLight={showPointLight}
+        floorY={floorY}
+        mode={mode}
+        selected={selected}
+      />
+      {selected && (
+        <mesh ref={ring} position={[0, 0, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[1, 0.045, 10, 56]} />
+          <meshBasicMaterial color="white" toneMapped={false} />
+        </mesh>
+      )}
+      {mode === "edit" && (
+        <Billboard position={[0, 1.5, 0]}>
+          <Text fontSize={0.5} color="white" anchorX="center">
+            {track.name}
+          </Text>
+        </Billboard>
+      )}
+    </group>
+  );
+}
+
+// Dispatches to the appropriate shape visual. Every shape — including the orb —
+// is a first-class peer here; there is no implicit default.
+function StemShapeVisual({
+  track,
+  smoothedLevel,
+  preview,
+  fade,
+  showPointLight,
+  floorY,
+  mode,
+  selected,
+}: {
+  track: TrackDef;
+  smoothedLevel: MutableRefObject<number>;
+  preview: boolean;
+  fade: number;
+  showPointLight: boolean;
+  floorY: number;
+  mode: string;
+  selected: boolean;
+}) {
+  const shape = track.stemShape;
+  const kind = shape?.kind ?? "orb";
+
+  if (kind === "orb") {
+    return (
+      <OrbVisual
+        track={track}
+        smoothedLevel={smoothedLevel}
+        preview={preview}
+        fade={fade}
+        showPointLight={showPointLight}
+        floorY={floorY}
+        mode={mode}
+        selected={selected}
+      />
+    );
+  }
+  if (kind === "pillar") {
+    return <PillarVisual track={track} smoothedLevel={smoothedLevel} showPointLight={showPointLight} mode={mode} />;
+  }
+  if (kind === "wall" && shape?.kind === "wall") {
+    return <WallVisual track={track} shape={shape} smoothedLevel={smoothedLevel} showPointLight={showPointLight} mode={mode} />;
+  }
+  if (kind === "river" && shape?.kind === "river") {
+    return <RiverVisual track={track} shape={shape} smoothedLevel={smoothedLevel} showPointLight={showPointLight} mode={mode} />;
+  }
+  return null;
+}
+
+// The omnidirectional stem shape: a glowing orb that pulses with its audio
+// level, acting as a visual anchor for the sound coming from that direction.
+function OrbVisual({
+  track,
+  smoothedLevel,
+  preview,
+  fade,
+  showPointLight,
+  floorY,
+  mode,
+  selected,
+}: {
+  track: TrackDef;
+  smoothedLevel: MutableRefObject<number>;
+  preview: boolean;
+  fade: number;
+  showPointLight: boolean;
+  floorY: number;
+  mode: string;
+  selected: boolean;
+}) {
   const core = useRef<THREE.Mesh>(null);
   const aura = useRef<THREE.Mesh>(null);
   const outerAura = useRef<THREE.Mesh>(null);
@@ -50,63 +233,37 @@ export function TrackMarker({
   const rays = useRef<THREE.ShaderMaterial>(null);
   const starburst = useRef<THREE.Mesh>(null);
   const glow = useRef<THREE.PointLight>(null);
-  const ring = useRef<THREE.Mesh>(null);
-  const smoothedLevel = useRef(0);
   const visibleFade = useRef(preview ? 0 : fade);
-  const seed = useMemo(() => trackSeed(track.id), [track.id]);
-  const [x, stemY, z] = track.position;
-  // The group rides at the stem's elevation (so the move gizmo's Y handle edits
-  // it). The footprint ring stays on the floor below, so its local offset is the
-  // gap down from the orb to the walkable surface (or the void for off-path).
-  const footprintHeight = floorY - stemY + 0.08;
+
   const volume = track.volume ?? 1;
   const orbRadius = 0.42 + volume * 0.32;
-  const isOrb = !track.stemShape || track.stemShape.kind === "orb";
-  const showPointLight = !preview && !debugFlag("debugNoPointLights");
+  const seed = useMemo(() => trackSeed(track.id), [track.id]);
+  const [x, stemY, z] = track.position;
+  const footprintHeight = floorY - stemY + 0.08;
   const showFlare = !debugFlag("debugNoFlare");
   const showStarRays = !debugFlag("debugNoStarRays");
-  const markerDebugId = debugId ?? `base:${track.id}`;
-  const markerDebugPosition = debugPosition ?? [x, z];
 
-  useEffect(() => () => unregisterMarkerDebug(markerDebugId), [markerDebugId]);
-
-  // Keep latest per-render values accessible from the animation callback without
-  // stale closures. The callback is registered once per markerDebugId; liveRef
-  // ensures it always sees current props/state.
-  const liveRef = useRef({ fade, mode, selected, volume, seed, x, z, markerDebugId, markerDebugPosition });
+  // Stale-closure avoidance for the useFrame callback, same pattern as
+  // TrackMarker's animateRef.
+  const liveRef = useRef({ fade, mode, selected, volume, seed, x, z });
   useLayoutEffect(() => {
-    liveRef.current = { fade, mode, selected, volume, seed, x, z, markerDebugId, markerDebugPosition };
+    liveRef.current = { fade, mode, selected, volume, seed, x, z };
   });
 
-  // animateRef holds the actual per-frame work. Reassigned each render so it
-  // always captures current refs — the stable wrapper below calls it indirectly.
-  const animateRef = useRef<((dt: number, elapsed: number, levels: Map<string, number>, camX: number, camZ: number) => void) | null>(null);
-  animateRef.current = (dt, elapsed, levels, camX, camZ) => {
-    const { fade: currentFade, mode: currentMode, selected: isSelected, volume: vol, seed: s, x: px, z: pz, markerDebugId: mdi, markerDebugPosition: mdp } = liveRef.current;
-    const level = levels.get(track.id) ?? 0;
-    smoothedLevel.current = THREE.MathUtils.damp(smoothedLevel.current, level, 14, dt);
+  useFrame(({ camera, clock }, dt) => {
+    const { fade: currentFade, mode: currentMode, selected: isSelected, volume: vol, seed: s, x: px, z: pz } = liveRef.current;
+    const pulse = smoothedLevel.current;
+    const elapsed = clock.elapsedTime;
+    const breath = 1 + Math.sin(elapsed * 0.9 + s + px * 0.2 + pz * 0.13) * 0.035;
+
     visibleFade.current = preview
       ? THREE.MathUtils.damp(visibleFade.current, currentFade, currentFade > visibleFade.current ? 3.8 : 8, dt)
       : currentFade;
-    const pulse = smoothedLevel.current;
-    const breath = 1 + Math.sin(elapsed * 0.9 + s + px * 0.2 + pz * 0.13) * 0.035;
     const renderedFade = visibleFade.current;
-    // Additive glare layers (aura, flare, rays) read as bright even at low
-    // opacity on the black void, so a linear/sqrt fade makes them appear to
-    // pop in well before the orb is "really" visible. Square the fade so the
-    // bottom of the fade-in is genuinely invisible; the solid white core stays
-    // on the linear fade below.
+    // Additive glare layers read as bright even at low opacity, so square the
+    // fade so they're genuinely invisible at the bottom of the fade-in.
     const opticalFade = renderedFade * renderedFade;
-    const listenerDist = Math.hypot(camX - mdp[0], camZ - mdp[1]);
-    updateMarkerDebug({
-      id: mdi,
-      trackId: track.id,
-      kind: preview ? "preview" : "base",
-      fade: renderedFade,
-      targetFade: currentFade,
-      distance: listenerDist,
-      updatedAt: performance.now(),
-    });
+
     if (core.current) {
       core.current.scale.setScalar(breath + pulse * 0.85);
       const material = core.current.material;
@@ -145,158 +302,77 @@ export function TrackMarker({
       // active light set once the stem is beyond the fade band. At that range a
       // light with reach ~18 only illuminates geometry that is itself faded to
       // the void, so the cull is visually free — but it removes that light's
-      // per-fragment cost. This is what keeps a 50-stem map from shading 50
-      // lights on every lit pixel (the tunnel-walls slowdown); only stems near
-      // the listener stay lit. Editing keeps every light so the author sees the
-      // whole scene. Intensity is faded to ~0 before `visible` flips, so the
-      // cull never pops. Fewer stems within the radius ⇒ fewer active lights ⇒
-      // cheaper, which is why shrinking the fade radius lowers the cost.
+      // per-fragment cost. Intensity is faded to ~0 before `visible` flips, so
+      // the cull never pops. Editing keeps every light so the author sees the
+      // whole scene.
+      const listenerDist = Math.hypot(camera.position.x - px, camera.position.z - pz);
       const lightFade = currentMode === "edit" ? 1 : radialFade(listenerDist);
       glow.current.visible = lightFade > 0.002;
       if (glow.current.visible) {
-        const orbShape = !track.stemShape || track.stemShape.kind === "orb";
-        if (orbShape) {
-          glow.current.intensity = ((isSelected ? 8 : 4.8) + vol * 3.2 + pulse * 44) * renderedFade * lightFade;
-          glow.current.distance = 12 + vol * 8 + pulse * 16;
-        } else {
-          glow.current.intensity = (1.5 + vol * 1.2 + pulse * 12) * renderedFade * lightFade;
-          glow.current.distance = 7 + vol * 3 + pulse * 7;
-        }
+        glow.current.intensity = ((isSelected ? 8 : 4.8) + vol * 3.2 + pulse * 44) * renderedFade * lightFade;
+        glow.current.distance = 12 + vol * 8 + pulse * 16;
       }
     }
-    if (ring.current) ring.current.rotation.z += dt * 1.5;
-  };
-
-  // Stable wrapper registered once per markerDebugId — survives re-renders
-  // without churn in the global registry.
-  useEffect(() => {
-    const key = markerDebugId;
-    markerAnimateFns.set(key, (dt, elapsed, levels, camX, camZ) => {
-      animateRef.current?.(dt, elapsed, levels, camX, camZ);
-    });
-    return () => { markerAnimateFns.delete(key); };
-  }, [markerDebugId]);
-
-  // Selection only happens in edit mode; in explore the click locks the pointer.
-  function handleClick(e: ThreeEvent<MouseEvent>) {
-    if (preview || useStore.getState().mode !== "edit") return;
-    e.stopPropagation();
-    useStore.getState().select(track.id);
-  }
-
-  function setCursor(c: string) {
-    if (!preview && useStore.getState().mode === "edit") document.body.style.cursor = c;
-  }
-
-  // Register/unregister this marker's object for the move-gizmo to target.
-  const registerGroup = useCallback(
-    (g: THREE.Group | null) => {
-      if (preview) return;
-      if (g) markerObjects.set(track.id, g);
-      else markerObjects.delete(track.id);
-    },
-    [preview, track.id],
-  );
+  });
 
   return (
-    <group
-      ref={registerGroup}
-      position={[x, stemY, z]}
-      onClick={handleClick}
-      onPointerOver={() => setCursor("pointer")}
-      onPointerOut={() => setCursor("auto")}
-    >
-      {mode === "edit" && selected && (
-        // Near/Far rings and the directivity guide ride at the orb's elevation
-        // (offset 0 from this group, which already sits at stemY) so they stay
-        // visible where those properties are actually adjusted — not stranded on
-        // the floor below an elevated stem.
-        <group position={[0, 0, 0]}>
-          <FalloffMap track={track} />
-          {track.directivity && <DirectivityGuide track={track} />}
-        </group>
-      )}
-      <StemShapeVisual track={track} smoothedLevel={smoothedLevel} />
-      {isOrb && (
-        <mesh ref={footprint} position={[0, footprintHeight, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[orbRadius * 0.95, orbRadius * 1.55, 48]} />
-          <meshBasicMaterial color={track.color} transparent opacity={0.28} toneMapped={false} depthWrite={false} />
-        </mesh>
-      )}
-      {isOrb && (
-        <mesh ref={aura} position={[0, 0, 0]}>
-          <sphereGeometry args={[orbRadius, 24, 16]} />
-          <meshBasicMaterial color={track.color} transparent opacity={0.18} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
-        </mesh>
-      )}
-      {isOrb && (
-        <mesh ref={outerAura} position={[0, 0, 0]}>
-          <sphereGeometry args={[orbRadius, 24, 16]} />
-          <meshBasicMaterial color={track.color} transparent opacity={0.1} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
-        </mesh>
-      )}
-      {isOrb && (
-        <Billboard position={[0, 0, 0]}>
-          {showFlare && (
-            <mesh scale={[orbRadius * 5.6, orbRadius * 5.6, 1]}>
-              <circleGeometry args={[0.5, 64]} />
-              <shaderMaterial
-                ref={flare}
-                transparent
-                depthWrite={false}
-                blending={THREE.AdditiveBlending}
-                uniforms={{
-                  color: { value: new THREE.Color(track.color) },
-                  opacity: { value: 0.5 },
-                  radius: { value: 0.42 },
-                }}
-                vertexShader={flareVertexShader}
-                fragmentShader={flareFragmentShader}
-              />
-            </mesh>
-          )}
-          {showStarRays && (
-            <mesh ref={starburst} scale={[orbRadius * 10.8, orbRadius * 10.8, 1]} rotation={[0, 0, seed]}>
-              <circleGeometry args={[0.5, 64]} />
-              <shaderMaterial
-                ref={rays}
-                transparent
-                depthWrite={false}
-                blending={THREE.AdditiveBlending}
-                uniforms={{
-                  color: { value: new THREE.Color(track.color) },
-                  opacity: { value: 0.38 },
-                  radius: { value: 0.22 },
-                }}
-                vertexShader={flareVertexShader}
-                fragmentShader={starRayFragmentShader}
-              />
-            </mesh>
-          )}
-        </Billboard>
-      )}
-      {isOrb && (
-        <mesh ref={core} position={[0, 0, 0]}>
-          <sphereGeometry args={[orbRadius * 0.62, 32, 20]} />
-          <meshBasicMaterial color="white" transparent={preview || fade < 0.999} opacity={preview ? 0 : fade} toneMapped={false} depthWrite={!preview && fade >= 0.999} />
-        </mesh>
-      )}
-      {/* selection ring */}
-      {selected && (
-        <mesh ref={ring} position={[0, 0, 0]} rotation={[Math.PI / 2, 0, 0]}>
-          <torusGeometry args={[1, 0.045, 10, 56]} />
-          <meshBasicMaterial color="white" toneMapped={false} />
-        </mesh>
-      )}
+    <>
+      <mesh ref={footprint} position={[0, footprintHeight, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[orbRadius * 0.95, orbRadius * 1.55, 48]} />
+        <meshBasicMaterial color={track.color} transparent opacity={0.28} toneMapped={false} depthWrite={false} />
+      </mesh>
+      <mesh ref={aura} position={[0, 0, 0]}>
+        <sphereGeometry args={[orbRadius, 24, 16]} />
+        <meshBasicMaterial color={track.color} transparent opacity={0.18} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </mesh>
+      <mesh ref={outerAura} position={[0, 0, 0]}>
+        <sphereGeometry args={[orbRadius, 24, 16]} />
+        <meshBasicMaterial color={track.color} transparent opacity={0.1} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </mesh>
+      <Billboard position={[0, 0, 0]}>
+        {showFlare && (
+          <mesh scale={[orbRadius * 5.6, orbRadius * 5.6, 1]}>
+            <circleGeometry args={[0.5, 64]} />
+            <shaderMaterial
+              ref={flare}
+              transparent
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+              uniforms={{
+                color: { value: new THREE.Color(track.color) },
+                opacity: { value: 0.5 },
+                radius: { value: 0.42 },
+              }}
+              vertexShader={flareVertexShader}
+              fragmentShader={flareFragmentShader}
+            />
+          </mesh>
+        )}
+        {showStarRays && (
+          <mesh ref={starburst} scale={[orbRadius * 10.8, orbRadius * 10.8, 1]} rotation={[0, 0, seed]}>
+            <circleGeometry args={[0.5, 64]} />
+            <shaderMaterial
+              ref={rays}
+              transparent
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+              uniforms={{
+                color: { value: new THREE.Color(track.color) },
+                opacity: { value: 0.38 },
+                radius: { value: 0.22 },
+              }}
+              vertexShader={flareVertexShader}
+              fragmentShader={starRayFragmentShader}
+            />
+          </mesh>
+        )}
+      </Billboard>
+      <mesh ref={core} position={[0, 0, 0]}>
+        <sphereGeometry args={[orbRadius * 0.62, 32, 20]} />
+        <meshBasicMaterial color="white" transparent={preview || fade < 0.999} opacity={preview ? 0 : fade} toneMapped={false} depthWrite={!preview && fade >= 0.999} />
+      </mesh>
       {showPointLight && <pointLight ref={glow} position={[0, 0, 0]} color={track.color} intensity={6} distance={18} />}
-      {mode === "edit" && (
-        <Billboard position={[0, orbRadius + 0.75, 0]}>
-          <Text fontSize={0.5} color="white" anchorX="center">
-            {track.name}
-          </Text>
-        </Billboard>
-      )}
-    </group>
+    </>
   );
 }
 
@@ -304,10 +380,24 @@ const PILLAR_HEIGHT = 60;
 const PILLAR_RADIUS = 0.18;
 const PILLAR_GLOW_RADIUS = PILLAR_RADIUS * 4.5;
 
-function PillarVisual({ track, smoothedLevel }: { track: TrackDef; smoothedLevel: MutableRefObject<number> }) {
+// A luminous column: thin bright shaft with a soft ambient glow that expands
+// radially on beats.
+function PillarVisual({
+  track,
+  smoothedLevel,
+  showPointLight,
+  mode,
+}: {
+  track: TrackDef;
+  smoothedLevel: MutableRefObject<number>;
+  showPointLight: boolean;
+  mode: string;
+}) {
   const coreRef = useRef<THREE.Mesh>(null);
   const glowRef = useRef<THREE.Mesh>(null);
+  const lightRef = useRef<THREE.PointLight>(null);
   const color = useMemo(() => new THREE.Color(track.color), [track.color]);
+  const volume = track.volume ?? 1;
 
   useFrame(({ camera }) => {
     const [x, , z] = track.position;
@@ -329,6 +419,14 @@ function PillarVisual({ track, smoothedLevel }: { track: TrackDef; smoothedLevel
         glowRef.current.scale.set(s, 1, s);
       }
     }
+    if (lightRef.current) {
+      const lightFade = mode === "edit" ? 1 : fade;
+      lightRef.current.visible = lightFade > 0.002;
+      if (lightRef.current.visible) {
+        lightRef.current.intensity = (1.5 + volume * 1.2 + pulse * 12) * lightFade;
+        lightRef.current.distance = 7 + volume * 3 + pulse * 7;
+      }
+    }
   });
 
   return (
@@ -341,16 +439,33 @@ function PillarVisual({ track, smoothedLevel }: { track: TrackDef; smoothedLevel
         <cylinderGeometry args={[PILLAR_RADIUS, PILLAR_RADIUS, PILLAR_HEIGHT, 16]} />
         <meshBasicMaterial color={color} transparent opacity={0.55} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
       </mesh>
+      {showPointLight && <pointLight ref={lightRef} position={[0, 0, 0]} color={track.color} intensity={2} distance={10} />}
     </>
   );
 }
 
 const WALL_HEIGHT = 7;
 
-function WallVisual({ track, shape, smoothedLevel }: { track: TrackDef; shape: Extract<StemShape, { kind: "wall" }>; smoothedLevel: MutableRefObject<number> }) {
+// A luminous panel: both faces pulse with the music, the bright face more
+// dramatically than the dim back face.
+function WallVisual({
+  track,
+  shape,
+  smoothedLevel,
+  showPointLight,
+  mode,
+}: {
+  track: TrackDef;
+  shape: Extract<StemShape, { kind: "wall" }>;
+  smoothedLevel: MutableRefObject<number>;
+  showPointLight: boolean;
+  mode: string;
+}) {
   const frontRef = useRef<THREE.Mesh>(null);
   const backRef = useRef<THREE.Mesh>(null);
+  const lightRef = useRef<THREE.PointLight>(null);
   const color = useMemo(() => new THREE.Color(track.color), [track.color]);
+  const volume = track.volume ?? 1;
 
   // Rotate the panel so that +Z of the mesh faces the wall's `facing` direction.
   const rotation = useMemo(() => {
@@ -365,6 +480,7 @@ function WallVisual({ track, shape, smoothedLevel }: { track: TrackDef; shape: E
     const visible = fade > 0.002;
     const pulse = smoothedLevel.current;
     const fadeSq = fade * fade;
+
     if (frontRef.current) {
       frontRef.current.visible = visible;
       if (visible) (frontRef.current.material as THREE.MeshBasicMaterial).opacity = (0.38 + pulse * 0.42) * fadeSq;
@@ -372,6 +488,14 @@ function WallVisual({ track, shape, smoothedLevel }: { track: TrackDef; shape: E
     if (backRef.current) {
       backRef.current.visible = visible;
       if (visible) (backRef.current.material as THREE.MeshBasicMaterial).opacity = (0.1 + pulse * 0.15) * fadeSq;
+    }
+    if (lightRef.current) {
+      const lightFade = mode === "edit" ? 1 : fade;
+      lightRef.current.visible = lightFade > 0.002;
+      if (lightRef.current.visible) {
+        lightRef.current.intensity = (1.5 + volume * 1.2 + pulse * 12) * lightFade;
+        lightRef.current.distance = 7 + volume * 3 + pulse * 7;
+      }
     }
   });
 
@@ -387,6 +511,7 @@ function WallVisual({ track, shape, smoothedLevel }: { track: TrackDef; shape: E
         <planeGeometry args={[shape.width, WALL_HEIGHT]} />
         <meshBasicMaterial color={color} transparent opacity={0.1} side={THREE.FrontSide} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
       </mesh>
+      {showPointLight && <pointLight ref={lightRef} position={[0, 0, 0]} color={track.color} intensity={2} distance={10} />}
     </group>
   );
 }
@@ -395,10 +520,25 @@ const RIVER_RADIUS = 0.22;
 const RIVER_SEGMENTS = 6;
 const RIVER_GLOW_RADIUS = RIVER_RADIUS * 4;
 
-function RiverVisual({ track, shape, smoothedLevel }: { track: TrackDef; shape: Extract<StemShape, { kind: "river" }>; smoothedLevel: MutableRefObject<number> }) {
+// A luminous tube: thin bright core with a soft glow tube that expands on beats.
+function RiverVisual({
+  track,
+  shape,
+  smoothedLevel,
+  showPointLight,
+  mode,
+}: {
+  track: TrackDef;
+  shape: Extract<StemShape, { kind: "river" }>;
+  smoothedLevel: MutableRefObject<number>;
+  showPointLight: boolean;
+  mode: string;
+}) {
   const coreRef = useRef<THREE.Mesh>(null);
   const glowRef = useRef<THREE.Mesh>(null);
+  const lightRef = useRef<THREE.PointLight>(null);
   const color = useMemo(() => new THREE.Color(track.color), [track.color]);
+  const volume = track.volume ?? 1;
 
   // The group sits at track.position; express the end in local space.
   const [x, stemY, z] = track.position;
@@ -435,6 +575,14 @@ function RiverVisual({ track, shape, smoothedLevel }: { track: TrackDef; shape: 
         glowRef.current.scale.set(s, 1, s);
       }
     }
+    if (lightRef.current) {
+      const lightFade = mode === "edit" ? 1 : fade;
+      lightRef.current.visible = lightFade > 0.002;
+      if (lightRef.current.visible) {
+        lightRef.current.intensity = (1.5 + volume * 1.2 + pulse * 12) * lightFade;
+        lightRef.current.distance = 7 + volume * 3 + pulse * 7;
+      }
+    }
   });
 
   return (
@@ -447,17 +595,9 @@ function RiverVisual({ track, shape, smoothedLevel }: { track: TrackDef; shape: 
         <cylinderGeometry args={[RIVER_RADIUS, RIVER_RADIUS, length, RIVER_SEGMENTS]} />
         <meshBasicMaterial color={color} transparent opacity={0.5} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
       </mesh>
+      {showPointLight && <pointLight ref={lightRef} position={[0, 0, 0]} color={track.color} intensity={2} distance={10} />}
     </group>
   );
-}
-
-function StemShapeVisual({ track, smoothedLevel }: { track: TrackDef; smoothedLevel: MutableRefObject<number> }) {
-  const shape = track.stemShape;
-  if (!shape || shape.kind === "orb") return null;
-  if (shape.kind === "pillar") return <PillarVisual track={track} smoothedLevel={smoothedLevel} />;
-  if (shape.kind === "wall") return <WallVisual track={track} shape={shape} smoothedLevel={smoothedLevel} />;
-  if (shape.kind === "river") return <RiverVisual track={track} shape={shape} smoothedLevel={smoothedLevel} />;
-  return null;
 }
 
 function DirectivityGuide({ track }: { track: TrackDef }) {
