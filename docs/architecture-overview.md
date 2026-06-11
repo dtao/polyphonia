@@ -115,6 +115,7 @@ manifest that the engine already knows how to render.
 - Audio: [audio-engine.md](audio-engine.md)
 - Map/movement: [map-model.md](map-model.md)
 - Rendering: [scene-and-rendering.md](scene-and-rendering.md)
+- Generated worlds (terrain, scatter, regeneration): [generated-environments.md](generated-environments.md)
 - Saving and sharing: [persistence-and-cloud.md](persistence-and-cloud.md)
 - Editor UX rules: [editing-and-ux-patterns.md](editing-and-ux-patterns.md)
 - Adding new features: [adding-a-new-system.md](adding-a-new-system.md)

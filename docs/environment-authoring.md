@@ -5,6 +5,11 @@ composition map. The map remains authoritative for movement, elevation,
 occlusion, rooms, doors, tiling, start position, and audio. A pack must never
 require custom gameplay geometry to make a composition usable.
 
+Packs are the *authored* visual layer. The separate *procedurally generated*
+layer (terrain heightfield + scattered objects, the World panel) is covered in
+[generated-environments.md](generated-environments.md); the two can coexist on
+one composition.
+
 ## Coordinate And Asset Conventions
 
 - Use meters as scene units, with Y up and the walkable floor at Y = 0.
