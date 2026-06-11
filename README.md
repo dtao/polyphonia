@@ -49,6 +49,20 @@ these spatial compositions.
   properties panel to rename, recolor, set volume, tune distance falloff, or
   point a stem like a directional speaker with configurable beam width and
   dispersion.
+- **Generated worlds** — the World panel (edit mode) procedurally generates a
+  visual environment around the composition: a sculptable terrain heightfield
+  plus scattered objects in three biomes (forest, cavern, open meadow), with
+  controls for density, relief, lighting mood, sky, and ground colors.
+  Generation is constraint-aware: it keeps clear, walkable zones around stems
+  and paths (toggleable, with an adjustable buffer, visualizable in the
+  editor). Composers can sculpt terrain with raise/lower/smooth brushes, place
+  or delete objects, recolor/scale/lock individual objects, and then
+  **regenerate** with preservation modes — fresh overwrite, fresh around
+  stems & paths, preserve major edits, preserve all edits, or regenerate just
+  a zone around the viewer. The generated world is visual dressing (the map
+  still owns movement and acoustics; on boundless open maps the listener also
+  walks the terrain), and it round-trips through export/import and cloud
+  publishing as part of the composition.
 - **Build from scratch** — create a new composition (title / BPM, plus an
   artist name for local-only use) and add stems by file picker or
   drag-and-drop; uploads drop into the running loop in time.
@@ -251,7 +265,8 @@ src/
   scene/        React Three Fiber scene: detail packs, Player, EditControls, gizmo, markers
   ui/           EntryScreen, PropertiesPanel, AddStem, EnvironmentPanel, LoopPanel, PublishControl, Account, Viewer, Gallery, ArtistPage
   artist.ts       artist identity helpers (slugs, artist routes)
-  environment.ts  optional detail-pack, surface-material, and landmark metadata
+  environment.ts  optional detail-pack, surface-material, landmark, and generated-world metadata
+  worldgen/       deterministic noise, terrain field, constraint-aware scatter, regeneration modes
   composition.ts  types + the built-in "Journey" demo
   store.ts        Zustand store
   persistence.ts  local-first save/load + export/import

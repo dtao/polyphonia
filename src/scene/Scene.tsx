@@ -9,7 +9,7 @@ import { EditControls } from "./EditControls";
 import { TrackGizmo } from "./TrackGizmo";
 import { StemShapeHandles } from "./StemShapeHandles";
 import { ListenerSync } from "./ListenerSync";
-import { EnvironmentScene, environmentBackgroundColor } from "./EnvironmentScene";
+import { EnvironmentScene, environmentBackground } from "./EnvironmentScene";
 import { MapScene } from "./MapScene";
 import { DebugSampler } from "./DebugSampler";
 import { ARWalkSession } from "./ARWalkSession";
@@ -177,7 +177,7 @@ function ARBackdrop() {
     <mesh ref={mesh} renderOrder={-1000} visible={false} frustumCulled={false}>
       <sphereGeometry args={[50, 32, 16]} />
       <meshBasicMaterial
-        color={environmentBackgroundColor}
+        color={environmentBackground(environment)}
         side={THREE.BackSide}
         depthTest={false}
         depthWrite={false}

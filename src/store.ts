@@ -17,9 +17,25 @@ import { newId } from "./id";
 import {
   EnvironmentLandmarkPlacement,
   EnvironmentSettings,
+  GeneratedBiome,
+  GeneratedConstraints,
+  GeneratedEdit,
+  GeneratedEnvironment,
+  GeneratedEnvironmentParams,
+  TerrainEditMode,
+  WorldObjectKind,
+  WorldObjectPlacement,
   defaultEnvironment,
   normalizeEnvironment,
 } from "./environment";
+import {
+  RegenerationMode,
+  classifyObjectEdit,
+  classifyTerrainEdit,
+  generateEnvironment,
+  regenerateEnvironment,
+  regenerateRegion,
+} from "./worldgen/regen";
 import { attachmentForPoint, canAddBranchAtPoint, canAddPlatformAtPoint, canAddRoomAtPoint, CompositionMap, entranceDoorwayCenter, entranceLocalCenter, entranceOuterPoint, MAP_PRESETS, MapPlatform, MapRoom, MapWall, RoomAttachment, RoomEntrance, RoomSide, defaultMap, mapPointKey, normalizeMap, platformContains, platformElevation, pointElevation, pointInOriginalTile, roomContains, roomElevation, roomWorldPoint, surfaceHeightAt, WalkableSegment } from "./map";
 import { ArtistIdentity } from "./artist";
 import {
@@ -133,6 +149,18 @@ export const geoWalk = {
 type Falloff = Pick<TrackDef, "refDistance" | "maxDistance" | "rolloff">;
 
 export type Mode = "explore" | "edit";
+
+// Active tool for editing the generated environment in the 3D view. Transient
+// UI state (not part of the composition); cleared when leaving edit mode.
+export type WorldTool =
+  | { kind: "none" }
+  | { kind: "terrain"; mode: TerrainEditMode; radius: number; amount: number }
+  | { kind: "place"; objectKind: WorldObjectKind }
+  | { kind: "delete" };
+
+function newWorldSeed(): number {
+  return Math.floor(Math.random() * 0xffffffff) | 0;
+}
 export type AudioLoadingState =
   | { status: "idle" }
   | ({ status: "loading" } & AudioLoadProgress)
@@ -162,6 +190,9 @@ interface StoreState {
   selectedPlatformId: string | null;
   selectedWallId: string | null;
   selectedLandmarkId: string | null;
+  selectedWorldObjectId: string | null; // generated-environment object (tree/rock/…)
+  worldTool: WorldTool; // active generated-environment edit tool (transient UI state)
+  showConstraintZones: boolean; // visualize stem/path clear zones in edit mode
   entered: boolean; // has the user started the experience (left the entry screen)
   viewer: boolean; // read-only shared-link view (no autosave, no editing)
   user: AuthUser | null; // signed-in account (for publishing); null = anonymous
@@ -205,6 +236,26 @@ interface StoreState {
   updateLandmark: (id: string, patch: Partial<EnvironmentLandmarkPlacement>) => void;
   deleteLandmark: (id: string) => void;
   duplicateLandmark: (id: string) => void;
+
+  // Generated environment (procedural terrain + scattered objects).
+  generateWorld: (biome: GeneratedBiome, options?: { size?: number }) => void;
+  regenerateWorld: (mode: RegenerationMode) => void;
+  regenerateWorldRegion: (radius: number) => void;
+  clearGeneratedWorld: () => void;
+  setWorldParams: (params: Partial<GeneratedEnvironmentParams>) => void;
+  setWorldConstraints: (constraints: Partial<GeneratedConstraints>) => void;
+  applyTerrainBrush: (brush: { mode: TerrainEditMode; center: [number, number]; radius: number; amount: number }) => string;
+  finishTerrainStroke: (editIds: string[]) => void;
+  selectWorldObject: (id: string | null) => void;
+  addWorldObject: (kind: WorldObjectKind, at: [number, number]) => void;
+  updateWorldObject: (id: string, patch: Partial<Pick<WorldObjectPlacement, "position" | "yaw" | "scale" | "tint">>) => void;
+  deleteWorldObject: (id: string) => void;
+  duplicateWorldObject: (id: string) => void;
+  /** Raise (never lower) an object's classified edit level, e.g. at gizmo-drag end. */
+  markWorldObjectEdit: (id: string, level: "minor" | "major") => void;
+  setWorldObjectLock: (id: string, locked: boolean) => void;
+  setWorldTool: (tool: WorldTool) => void;
+  setShowConstraintZones: (show: boolean) => void;
 
   // Rooms (enclosed spaces on the map).
   selectRoom: (id: string | null) => void;
@@ -655,7 +706,7 @@ function shiftRoomForPinnedResize(room: MapRoom, patch: Partial<MapRoom>, dimens
 function pruneSelection(
   s: StoreState,
   composition: Composition,
-): Pick<StoreState, "selectedId" | "selectedMapPointKey" | "selectedMapSegmentId" | "branchStartPointKey" | "selectedStart" | "selectedRoomId" | "selectedEntranceIndex" | "selectedPlatformId" | "selectedWallId" | "selectedLandmarkId"> {
+): Pick<StoreState, "selectedId" | "selectedMapPointKey" | "selectedMapSegmentId" | "branchStartPointKey" | "selectedStart" | "selectedRoomId" | "selectedEntranceIndex" | "selectedPlatformId" | "selectedWallId" | "selectedLandmarkId" | "selectedWorldObjectId"> {
   const selectedRoom = s.selectedRoomId ? composition.map.rooms.find((room) => room.id === s.selectedRoomId) : undefined;
   return {
     selectedId: s.selectedId && composition.tracks.some((t) => t.id === s.selectedId) ? s.selectedId : null,
@@ -679,6 +730,25 @@ function pruneSelection(
     selectedLandmarkId:
       s.selectedLandmarkId && composition.environment.landmarks?.some((landmark) => landmark.id === s.selectedLandmarkId)
         ? s.selectedLandmarkId
+        : null,
+    selectedWorldObjectId:
+      s.selectedWorldObjectId &&
+      composition.environment.generated?.objects.some((object) => object.id === s.selectedWorldObjectId)
+        ? s.selectedWorldObjectId
+        : null,
+  };
+}
+
+// After a regenerate replaces the object set, keep the selection only if the
+// selected object survived (locked/user-placed objects do).
+function pruneSelectionAfterWorldChange(
+  s: StoreState,
+  generated: GeneratedEnvironment,
+): Pick<StoreState, "selectedWorldObjectId"> {
+  return {
+    selectedWorldObjectId:
+      s.selectedWorldObjectId && generated.objects.some((object) => object.id === s.selectedWorldObjectId)
+        ? s.selectedWorldObjectId
         : null,
   };
 }
@@ -752,6 +822,9 @@ export const useStore = create<StoreState>((set, get) => ({
   selectedPlatformId: null,
   selectedWallId: null,
   selectedLandmarkId: null,
+  selectedWorldObjectId: null,
+  worldTool: { kind: "none" },
+  showConstraintZones: false,
   entered: false,
   viewer: false,
   user: null,
@@ -968,11 +1041,13 @@ export const useStore = create<StoreState>((set, get) => ({
         selectedPlatformId: mode === "edit" ? s.selectedPlatformId : null,
         selectedWallId: mode === "edit" ? s.selectedWallId : null,
         selectedLandmarkId: mode === "edit" ? s.selectedLandmarkId : null,
+        selectedWorldObjectId: mode === "edit" ? s.selectedWorldObjectId : null,
+        worldTool: mode === "edit" ? s.worldTool : ({ kind: "none" } as WorldTool),
       };
     }),
   toggleMode: () => get().setMode(get().mode === "edit" ? "explore" : "edit"),
-  select: (selectedId) => set({ selectedId, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null }),
-  selectMapPoint: (selectedMapPointKey) => set({ selectedMapPointKey, selectedMapSegmentId: null, selectedId: null, selectedStart: false, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null }),
+  select: (selectedId) => set({ selectedId, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedWorldObjectId: null }),
+  selectMapPoint: (selectedMapPointKey) => set({ selectedMapPointKey, selectedMapSegmentId: null, selectedId: null, selectedStart: false, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedWorldObjectId: null }),
   moveMapPoint: (key, point, elevation) =>
     set((s) => {
       if (!s.composition.map.segments.some((segment) => mapPointExists(segment, key))) return s;
@@ -1002,14 +1077,15 @@ export const useStore = create<StoreState>((set, get) => ({
         branchStartPointKey: s.branchStartPointKey === key ? null : s.branchStartPointKey,
       };
     }),
-  selectMapSegment: (selectedMapSegmentId) => set({ selectedMapSegmentId, selectedMapPointKey: null, selectedId: null, branchStartPointKey: null, selectedStart: false, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null }),
-  setBranchStartPoint: (branchStartPointKey) => set({ branchStartPointKey, selectedMapPointKey: branchStartPointKey, selectedMapSegmentId: null, selectedId: null, selectedStart: false, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null }),
-  selectStart: () => set({ selectedStart: true, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null }),
+  selectMapSegment: (selectedMapSegmentId) => set({ selectedMapSegmentId, selectedMapPointKey: null, selectedId: null, branchStartPointKey: null, selectedStart: false, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedWorldObjectId: null }),
+  setBranchStartPoint: (branchStartPointKey) => set({ branchStartPointKey, selectedMapPointKey: branchStartPointKey, selectedMapSegmentId: null, selectedId: null, selectedStart: false, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedWorldObjectId: null }),
+  selectStart: () => set({ selectedStart: true, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedWorldObjectId: null }),
   setStartGizmoMode: (startGizmoMode) => set({ startGizmoMode }),
 
   selectLandmark: (selectedLandmarkId) =>
     set({
       selectedLandmarkId,
+      selectedWorldObjectId: null,
       selectedId: null,
       selectedMapPointKey: null,
       selectedMapSegmentId: null,
@@ -1050,6 +1126,7 @@ export const useStore = create<StoreState>((set, get) => ({
         }),
       },
       selectedLandmarkId: landmark.id,
+      selectedWorldObjectId: null,
       selectedId: null,
       selectedMapPointKey: null,
       selectedMapSegmentId: null,
@@ -1111,6 +1188,7 @@ export const useStore = create<StoreState>((set, get) => ({
         }),
       },
       selectedLandmarkId: copy.id,
+      selectedWorldObjectId: null,
       selectedId: null,
       selectedMapPointKey: null,
       selectedMapSegmentId: null,
@@ -1124,8 +1202,306 @@ export const useStore = create<StoreState>((set, get) => ({
     }));
   },
 
+  generateWorld: (biome, options) => {
+    const state = get();
+    const generated = generateEnvironment(biome, state.composition.map, state.composition.tracks, {
+      seed: newWorldSeed(),
+      size: options?.size ?? state.composition.environment.generated?.size,
+      now: new Date().toISOString(),
+    });
+    set((s) => ({
+      ...withHistory(s, "world:generate"),
+      composition: {
+        ...touchComposition(s.composition),
+        environment: normalizeEnvironment({ ...s.composition.environment, generated }),
+      },
+      selectedWorldObjectId: null,
+    }));
+  },
+  regenerateWorld: (mode) => {
+    const state = get();
+    const generated = state.composition.environment.generated;
+    if (!generated) return;
+    const next = regenerateEnvironment(generated, state.composition.map, state.composition.tracks, mode, {
+      seed: newWorldSeed(),
+      now: new Date().toISOString(),
+    });
+    set((s) => ({
+      ...withHistory(s, "world:regenerate"),
+      composition: {
+        ...touchComposition(s.composition),
+        environment: normalizeEnvironment({ ...s.composition.environment, generated: next }),
+      },
+      ...pruneSelectionAfterWorldChange(s, next),
+    }));
+  },
+  regenerateWorldRegion: (radius) => {
+    const state = get();
+    const generated = state.composition.environment.generated;
+    if (!generated) return;
+    const next = regenerateRegion(
+      generated,
+      state.composition.map,
+      state.composition.tracks,
+      { center: [viewState.x, viewState.z], radius },
+      { seed: newWorldSeed(), editId: newId(), now: new Date().toISOString() },
+    );
+    set((s) => ({
+      ...withHistory(s, "world:regenerate-region"),
+      composition: {
+        ...touchComposition(s.composition),
+        environment: normalizeEnvironment({ ...s.composition.environment, generated: next }),
+      },
+      ...pruneSelectionAfterWorldChange(s, next),
+    }));
+  },
+  clearGeneratedWorld: () =>
+    set((s) => ({
+      ...withHistory(s, "world:clear"),
+      composition: {
+        ...touchComposition(s.composition),
+        environment: normalizeEnvironment({ ...s.composition.environment, generated: undefined }),
+      },
+      selectedWorldObjectId: null,
+      worldTool: { kind: "none" },
+    })),
+  setWorldParams: (params) =>
+    set((s) => {
+      const generated = s.composition.environment.generated;
+      if (!generated) return s;
+      return {
+        ...withHistory(s, `world:params:${Object.keys(params).sort().join(",")}`),
+        composition: {
+          ...touchComposition(s.composition),
+          environment: normalizeEnvironment({
+            ...s.composition.environment,
+            generated: { ...generated, params: { ...generated.params, ...params } },
+          }),
+        },
+      };
+    }),
+  setWorldConstraints: (constraints) =>
+    set((s) => {
+      const generated = s.composition.environment.generated;
+      if (!generated) return s;
+      return {
+        ...withHistory(s, `world:constraints:${Object.keys(constraints).sort().join(",")}`),
+        composition: {
+          ...touchComposition(s.composition),
+          environment: normalizeEnvironment({
+            ...s.composition.environment,
+            generated: { ...generated, constraints: { ...generated.constraints, ...constraints } },
+          }),
+        },
+      };
+    }),
+  applyTerrainBrush: (brush) => {
+    const id = newId();
+    set((s) => {
+      const generated = s.composition.environment.generated;
+      if (!generated) return s;
+      const edit: GeneratedEdit = {
+        id,
+        type: "terrain",
+        mode: brush.mode,
+        center: brush.center,
+        radius: brush.radius,
+        amount: brush.amount,
+        at: new Date().toISOString(),
+        level: classifyTerrainEdit(brush.mode, brush.amount, brush.radius),
+      };
+      return {
+        // One undo entry per stroke: brush emissions coalesce under this key.
+        ...withHistory(s, "world:terrain"),
+        composition: {
+          ...touchComposition(s.composition),
+          environment: normalizeEnvironment({
+            ...s.composition.environment,
+            generated: { ...generated, edits: [...generated.edits, edit] },
+          }),
+        },
+      };
+    });
+    return id;
+  },
+  finishTerrainStroke: (editIds) =>
+    set((s) => {
+      const generated = s.composition.environment.generated;
+      if (!generated || !editIds.length) return s;
+      // A long carving stroke is many small ops; classify the stroke by its
+      // cumulative impact so "Preserve major edits" keeps deliberate sculpting.
+      const ids = new Set(editIds);
+      const strokeImpact = generated.edits.reduce(
+        (sum, edit) => (ids.has(edit.id) && edit.type === "terrain" ? sum + Math.abs(edit.amount) * edit.radius : sum),
+        0,
+      );
+      if (strokeImpact < 18) return s;
+      return {
+        ...withHistory(s, "world:terrain"),
+        composition: {
+          ...touchComposition(s.composition),
+          environment: normalizeEnvironment({
+            ...s.composition.environment,
+            generated: {
+              ...generated,
+              edits: generated.edits.map((edit) =>
+                ids.has(edit.id) && edit.type === "terrain" ? { ...edit, level: "major" } : edit,
+              ),
+            },
+          }),
+        },
+      };
+    }),
+  selectWorldObject: (selectedWorldObjectId) =>
+    set({
+      selectedWorldObjectId,
+      selectedLandmarkId: null,
+      selectedId: null,
+      selectedMapPointKey: null,
+      selectedMapSegmentId: null,
+      branchStartPointKey: null,
+      selectedStart: false,
+      selectedRoomId: null,
+      selectedEntranceIndex: null,
+      selectedPlatformId: null,
+      selectedWallId: null,
+    }),
+  addWorldObject: (kind, at) => {
+    const object: WorldObjectPlacement = {
+      id: newId(),
+      kind,
+      position: [at[0], 0, at[1]],
+      yaw: 0,
+      scale: 1,
+      userPlaced: true,
+    };
+    set((s) => {
+      const generated = s.composition.environment.generated;
+      if (!generated) return s;
+      return {
+        ...withHistory(s, `world:object:${object.id}:add`),
+        composition: {
+          ...touchComposition(s.composition),
+          environment: normalizeEnvironment({
+            ...s.composition.environment,
+            generated: { ...generated, objects: [...generated.objects, object] },
+          }),
+        },
+        selectedWorldObjectId: object.id,
+      };
+    });
+  },
+  updateWorldObject: (id, patch) =>
+    set((s) => {
+      const generated = s.composition.environment.generated;
+      const before = generated?.objects.find((object) => object.id === id);
+      if (!generated || !before) return s;
+      const edit = before.userPlaced ? undefined : classifyObjectEdit(before, patch);
+      return {
+        ...withHistory(s, `world:object:${id}:${Object.keys(patch).sort().join(",")}`),
+        composition: {
+          ...touchComposition(s.composition),
+          environment: normalizeEnvironment({
+            ...s.composition.environment,
+            generated: {
+              ...generated,
+              objects: generated.objects.map((object) =>
+                object.id === id ? { ...object, ...patch, ...(edit ? { edit } : {}) } : object,
+              ),
+            },
+          }),
+        },
+      };
+    }),
+  deleteWorldObject: (id) =>
+    set((s) => {
+      const generated = s.composition.environment.generated;
+      if (!generated) return s;
+      const locks = { ...generated.locks };
+      delete locks[id];
+      return {
+        ...withHistory(s, `world:object:${id}:delete`),
+        composition: {
+          ...touchComposition(s.composition),
+          environment: normalizeEnvironment({
+            ...s.composition.environment,
+            generated: { ...generated, locks, objects: generated.objects.filter((object) => object.id !== id) },
+          }),
+        },
+        selectedWorldObjectId: s.selectedWorldObjectId === id ? null : s.selectedWorldObjectId,
+      };
+    }),
+  duplicateWorldObject: (id) => {
+    const state = get();
+    const generated = state.composition.environment.generated;
+    const source = generated?.objects.find((object) => object.id === id);
+    if (!generated || !source) return;
+    const copy: WorldObjectPlacement = {
+      ...source,
+      id: newId(),
+      position: [source.position[0] + 2, source.position[1], source.position[2] + 2],
+      userPlaced: true,
+    };
+    delete copy.edit;
+    set((s) => ({
+      ...withHistory(s, `world:object:${copy.id}:duplicate`),
+      composition: {
+        ...touchComposition(s.composition),
+        environment: normalizeEnvironment({
+          ...s.composition.environment,
+          generated: { ...generated, objects: [...generated.objects, copy] },
+        }),
+      },
+      selectedWorldObjectId: copy.id,
+    }));
+  },
+  markWorldObjectEdit: (id, level) =>
+    set((s) => {
+      const generated = s.composition.environment.generated;
+      const before = generated?.objects.find((object) => object.id === id);
+      if (!generated || !before || before.userPlaced || before.edit === "major" || before.edit === level) return s;
+      return {
+        // Same key as the drag's position updates, so the upgrade coalesces
+        // into the drag's single undo entry.
+        ...withHistory(s, `world:object:${id}:position`),
+        composition: {
+          ...touchComposition(s.composition),
+          environment: normalizeEnvironment({
+            ...s.composition.environment,
+            generated: {
+              ...generated,
+              objects: generated.objects.map((object) => (object.id === id ? { ...object, edit: level } : object)),
+            },
+          }),
+        },
+      };
+    }),
+  setWorldObjectLock: (id, locked) =>
+    set((s) => {
+      const generated = s.composition.environment.generated;
+      if (!generated) return s;
+      const locks = { ...generated.locks };
+      if (locked) locks[id] = true;
+      else delete locks[id];
+      return {
+        ...withHistory(s, `world:object:${id}:lock`),
+        composition: {
+          ...touchComposition(s.composition),
+          environment: normalizeEnvironment({
+            ...s.composition.environment,
+            generated: { ...generated, locks },
+          }),
+        },
+      };
+    }),
+  // Picking a tool clears the object selection so brush/place clicks never
+  // fight the inspector; selecting an object clears the tool (see scene).
+  setWorldTool: (worldTool) =>
+    set(worldTool.kind !== "none" ? { worldTool, selectedWorldObjectId: null } : { worldTool }),
+  setShowConstraintZones: (showConstraintZones) => set({ showConstraintZones }),
+
   selectRoom: (selectedRoomId) =>
-    set({ selectedRoomId, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
+    set({ selectedRoomId, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedWorldObjectId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
 
   addRoom: () => {
     const map = get().composition.map;
@@ -1191,11 +1567,11 @@ export const useStore = create<StoreState>((set, get) => ({
       entrances: room.entrances.map((entrance) => ({ ...entrance })),
     };
     get().setMap({ rooms: [...map.rooms, copy] });
-    set({ selectedRoomId: copy.id, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false });
+    set({ selectedRoomId: copy.id, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedWorldObjectId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false });
   },
 
   selectEntrance: (roomId, index) =>
-    set({ selectedRoomId: roomId, selectedEntranceIndex: index, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
+    set({ selectedRoomId: roomId, selectedEntranceIndex: index, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedWorldObjectId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
 
   addEntrance: (roomId, side) => {
     const map = get().composition.map;
@@ -1203,7 +1579,7 @@ export const useStore = create<StoreState>((set, get) => ({
     if (!room) return;
     const entrances: RoomEntrance[] = [...room.entrances, { side, width: 5, offset: 0 }];
     get().updateRoom(roomId, { entrances });
-    set({ selectedRoomId: roomId, selectedEntranceIndex: entrances.length - 1, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, selectedStart: false });
+    set({ selectedRoomId: roomId, selectedEntranceIndex: entrances.length - 1, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedWorldObjectId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, selectedStart: false });
   },
 
   updateEntrance: (roomId, index, patch) => {
@@ -1299,7 +1675,7 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   selectPlatform: (selectedPlatformId) =>
-    set({ selectedPlatformId, selectedWallId: null, selectedLandmarkId: null, selectedRoomId: null, selectedEntranceIndex: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
+    set({ selectedPlatformId, selectedWallId: null, selectedLandmarkId: null, selectedWorldObjectId: null, selectedRoomId: null, selectedEntranceIndex: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
 
   // Attach a platform to a terminal path point; alignment positions it just
   // past that point so its near edge meets the path.
@@ -1366,11 +1742,11 @@ export const useStore = create<StoreState>((set, get) => ({
       elevation: platformElevation(map, platform),
     };
     get().setMap({ preset: "custom", platforms: [...map.platforms, copy] });
-    set({ selectedPlatformId: copy.id, selectedWallId: null, selectedRoomId: null, selectedEntranceIndex: null, selectedLandmarkId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false });
+    set({ selectedPlatformId: copy.id, selectedWallId: null, selectedRoomId: null, selectedEntranceIndex: null, selectedLandmarkId: null, selectedWorldObjectId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false });
   },
 
   selectWall: (selectedWallId) =>
-    set({ selectedWallId, selectedPlatformId: null, selectedLandmarkId: null, selectedRoomId: null, selectedEntranceIndex: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
+    set({ selectedWallId, selectedPlatformId: null, selectedLandmarkId: null, selectedWorldObjectId: null, selectedRoomId: null, selectedEntranceIndex: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
 
   addWall: () => {
     const map = get().composition.map;
@@ -1411,7 +1787,7 @@ export const useStore = create<StoreState>((set, get) => ({
       end: [wall.end[0] + CLONE_OFFSET, wall.end[1] + CLONE_OFFSET],
     };
     get().setMap({ preset: "custom", walls: [...map.walls, copy] });
-    set({ selectedWallId: copy.id, selectedPlatformId: null, selectedRoomId: null, selectedEntranceIndex: null, selectedLandmarkId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false });
+    set({ selectedWallId: copy.id, selectedPlatformId: null, selectedRoomId: null, selectedEntranceIndex: null, selectedLandmarkId: null, selectedWorldObjectId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false });
   },
 
   // Create a room whose doorway is centered on the given path point and aligned
@@ -1787,7 +2163,7 @@ export const useStore = create<StoreState>((set, get) => ({
     set({
       composition: comp,
       selectedId: null,
-      selectedLandmarkId: null,
+      selectedLandmarkId: null, selectedWorldObjectId: null,
       library: next,
       undoStack: [],
       redoStack: [],
@@ -1811,7 +2187,7 @@ export const useStore = create<StoreState>((set, get) => ({
     set({
       composition: comp,
       selectedId: null,
-      selectedLandmarkId: null,
+      selectedLandmarkId: null, selectedWorldObjectId: null,
       customDetailPacks,
       creatorAssets,
       library: next,

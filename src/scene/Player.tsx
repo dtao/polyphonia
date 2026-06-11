@@ -3,6 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { useStore, viewState, touchMove, arWalk, geoWalk, loopWrap } from "../store";
 import { MapSupport, mapSupportAt, stepOnMap, surfaceHeightOnSupport, wrapLoopPosition } from "../map";
+import { generatedGroundHeight } from "../worldgen/sampler";
 import { EYE_HEIGHT } from "../spatialConstants";
 
 const AR_HEADING_SMOOTHING = 0.45;
@@ -236,7 +237,14 @@ export function Player() {
     // seam, snap instead — the canonical elevation resets there, but the lifted
     // preview copy you were walking toward dropped by the same amount, so the
     // instantaneous reset is invisible and the climb feels continuous.
-    const ground = surfaceHeightOnSupport(map, step.position, support.current);
+    // On maps with no walkable bounds the listener roams the open plane; if a
+    // generated terrain exists there, ride its hills instead of the flat 0
+    // (sampler returns 0 when there is no generated environment). Bounded maps
+    // are untouched: their terrain flattens to the walkable surfaces anyway.
+    const ground =
+      step.support.kind === "open"
+        ? generatedGroundHeight(useStore.getState().composition, step.position[0], step.position[1])
+        : surfaceHeightOnSupport(map, step.position, support.current);
     camera.position.y = wrapped ? ground + EYE_HEIGHT : THREE.MathUtils.damp(camera.position.y, ground + EYE_HEIGHT, 12, dt);
 
     // Record position + heading so edit mode (and new stems) stay anchored here.

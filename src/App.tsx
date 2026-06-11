@@ -10,6 +10,8 @@ import { EntrancePanel } from "./ui/EntrancePanel";
 import { PlatformPanel } from "./ui/PlatformPanel";
 import { WallPanel } from "./ui/WallPanel";
 import { LandmarkPanel } from "./ui/LandmarkPanel";
+import { WorldPanel } from "./ui/WorldPanel";
+import { WorldObjectPanel } from "./ui/WorldObjectPanel";
 import { AddStem } from "./ui/AddStem";
 import { EntryScreen } from "./ui/EntryScreen";
 import { PublishControl } from "./ui/PublishControl";
@@ -33,6 +35,7 @@ function hudShortcutHint({
   branchStartPointKey,
   selectedStart,
   selectedLandmarkId,
+  selectedWorldObjectId,
 }: {
   mode: string;
   selectedId: string | null;
@@ -41,6 +44,7 @@ function hudShortcutHint({
   branchStartPointKey: string | null;
   selectedStart: boolean;
   selectedLandmarkId: string | null;
+  selectedWorldObjectId: string | null;
 }): string {
   const del = shortcutKeys("delete-selected");
   const esc = shortcutKeys("clear-selection");
@@ -49,6 +53,7 @@ function hudShortcutHint({
     return `WASD + mouse to move · click scene for mouse look · Esc releases cursor · ${shortcutKeys("toggle-mode")} to edit · ${shortcutKeys("toggle-fullscreen")} fullscreen`;
   if (selectedId) return `drag to move stem · ${del} removes · ${clone} clones · ${esc} clears`;
   if (selectedLandmarkId) return `drag to place landmark · adjust rotation and scale below · ${del} removes · ${clone} clones · ${esc} clears`;
+  if (selectedWorldObjectId) return `drag gizmo to move object · properties below · ${del} removes · ${clone} clones · ${esc} clears`;
   if (branchStartPointKey) return `click floor to place branch · ${del} removes point · ${esc} clears`;
   if (selectedMapPointKey) return `drag gizmo to move point · ${clone} branches · ${del} removes point · ${esc} clears`;
   if (selectedMapSegmentId) return `adjust segment width · click point to edit branches · ${esc} clears`;
@@ -70,6 +75,7 @@ export default function App() {
   const branchStartPointKey = useStore((s) => s.branchStartPointKey);
   const selectedStart = useStore((s) => s.selectedStart);
   const selectedLandmarkId = useStore((s) => s.selectedLandmarkId);
+  const selectedWorldObjectId = useStore((s) => s.selectedWorldObjectId);
   const canUndo = useStore((s) => s.undoStack.length > 0);
   const canRedo = useStore((s) => s.redoStack.length > 0);
   const [openEditPanel, setOpenEditPanel] = useState<EditPanel>(null);
@@ -82,6 +88,7 @@ export default function App() {
     branchStartPointKey,
     selectedStart,
     selectedLandmarkId,
+    selectedWorldObjectId,
   });
 
   // Load the saved composition library after the authenticated route opens.
@@ -295,6 +302,11 @@ export default function App() {
                     onOpen={() => setOpenEditPanel("map")}
                     onClose={() => setOpenEditPanel(null)}
                   />
+                  <WorldPanel
+                    open={openEditPanel === "world"}
+                    onOpen={() => setOpenEditPanel("world")}
+                    onClose={() => setOpenEditPanel(null)}
+                  />
                   <LoopPanel
                     open={openEditPanel === "loop"}
                     onOpen={() => setOpenEditPanel("loop")}
@@ -315,6 +327,7 @@ export default function App() {
           <PlatformPanel />
           <WallPanel />
           <LandmarkPanel />
+          <WorldObjectPanel />
           {mode === "explore" && (
             <>
               <ARWalkControls map={comp.map} />
