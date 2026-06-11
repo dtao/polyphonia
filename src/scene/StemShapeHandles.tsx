@@ -2,8 +2,7 @@
 // Rendered in Scene.tsx next to TrackGizmo when a shaped stem is selected.
 
 import { ThreeEvent, useThree } from "@react-three/fiber";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { TransformControls } from "@react-three/drei";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { StemShape } from "../composition";
 import { nearestBoundaryPointInMap } from "../map";
@@ -115,10 +114,11 @@ function WallShapeHandles({
   );
 }
 
-// Y-axis rotation ring — drag the arc to set the wall's facing direction.
-// Uses TransformControls (same mechanism as the start-marker rotate mode) so
-// the handle stays fixed while you arc around it, avoiding the grip-loss that
-// a moving arrow cone causes.
+// Y-axis rotation ring — drag left/right to rotate the wall's facing direction.
+// Angle is accumulated from the drag-start position so direction never reverses.
+// Dragging right (positive screen X) rotates clockwise when viewed from above.
+// Window-level pointermove/up listeners ensure the grip is never lost when the
+// pointer strays far from the ring mesh.
 function WallFacingHandle({
   trackId,
   position,
@@ -129,48 +129,77 @@ function WallFacingHandle({
   shape: Extract<StemShape, { kind: "wall" }>;
 }) {
   const setTrackShapeWallFacing = useStore((s) => s.setTrackShapeWallFacing);
-  const [obj, setObj] = useState<THREE.Group | null>(null);
+  const controls = useThree((s) => s.controls as { enabled?: boolean } | undefined);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+  const dragRef = useRef<{ startX: number; startAngle: number } | null>(null);
+  // Refs to window listeners so the cleanup effect can remove them on unmount.
+  const listenersRef = useRef<{ move: (e: PointerEvent) => void; up: () => void } | null>(null);
   const [cx, stemY, cz] = position;
+  const [fx, fz] = shape.facing;
 
-  // Keep the gizmo object's rotation in sync with shape.facing for external
-  // changes (undo/redo). During a drag, TransformControls sets obj.rotation.y
-  // to a continuously growing angle that may exceed ±π. If we naively reset it
-  // to atan2(fx, fz) every time, the angle gets normalised back into (-π, π]
-  // mid-drag, which makes the wall snap and reverse direction. Guard the sync
-  // by comparing the *facing direction* as a unit vector: sin/cos of the current
-  // angle equal sin/cos of atan2(fx, fz) within floating-point epsilon, so
-  // drag-induced store updates read as a no-op while genuine undo/redo changes
-  // (where the stored direction differs from the live rotation) still snap through.
-  useLayoutEffect(() => {
-    if (!obj) return;
-    const [fx, fz] = shape.facing;
-    const cur = obj.rotation.y;
-    if (Math.abs(Math.sin(cur) - fx) > 0.001 || Math.abs(Math.cos(cur) - fz) > 0.001) {
-      obj.rotation.y = Math.atan2(fx, fz);
+  useEffect(() => () => {
+    if (listenersRef.current) {
+      window.removeEventListener("pointermove", listenersRef.current.move);
+      window.removeEventListener("pointerup", listenersRef.current.up);
     }
-  }, [obj, shape.facing]);
+  }, []);
 
-  function handleObjectChange() {
-    if (!obj) return;
-    const a = obj.rotation.y;
-    setTrackShapeWallFacing(trackId, [Math.sin(a), Math.cos(a)]);
+  function onDown(e: ThreeEvent<PointerEvent>) {
+    e.stopPropagation();
+    const startX = e.nativeEvent.clientX;
+    const startAngle = Math.atan2(fx, fz);
+    dragRef.current = { startX, startAngle };
+    setIsDragging(true);
+    if (controls) controls.enabled = false;
+    document.body.style.cursor = "grabbing";
+
+    const move = (ev: PointerEvent) => {
+      if (!dragRef.current) return;
+      // 200 px per radian; right drag = clockwise = decreasing angle.
+      const newAngle = dragRef.current.startAngle - (ev.clientX - dragRef.current.startX) / 200;
+      setTrackShapeWallFacing(trackId, [Math.sin(newAngle), Math.cos(newAngle)]);
+    };
+    const up = () => {
+      dragRef.current = null;
+      setIsDragging(false);
+      if (controls) controls.enabled = true;
+      document.body.style.cursor = "auto";
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      listenersRef.current = null;
+    };
+    listenersRef.current = { move, up };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
   }
 
+  const color = isDragging ? "#ffffff" : isHovered ? "#c8fff4" : HANDLE_COLOR;
+
+  // Two small cones tangent to the ring at 3-o'clock and 9-o'clock, pointing
+  // clockwise, so the rotation direction is visually obvious.
   return (
-    <>
-      <group ref={setObj} position={[cx, stemY, cz]} />
-      {obj && (
-        <TransformControls
-          object={obj}
-          mode="rotate"
-          showX={false}
-          showY={true}
-          showZ={false}
-          size={1.2}
-          onObjectChange={handleObjectChange}
-        />
-      )}
-    </>
+    <group position={[cx, stemY, cz]}>
+      <mesh
+        rotation={[-Math.PI / 2, 0, 0]}
+        onPointerDown={onDown}
+        onPointerOver={(e) => { e.stopPropagation(); setIsHovered(true); document.body.style.cursor = "grab"; }}
+        onPointerOut={() => { setIsHovered(false); if (!isDragging) document.body.style.cursor = "auto"; }}
+      >
+        <torusGeometry args={[1.5, 0.09, 8, 64]} />
+        <meshBasicMaterial color={color} toneMapped={false} />
+      </mesh>
+      {/* CW arrow at 3-o'clock: tangent points in -Z */}
+      <mesh position={[1.5, 0, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <coneGeometry args={[0.12, 0.28, 10]} />
+        <meshBasicMaterial color={color} toneMapped={false} />
+      </mesh>
+      {/* CW arrow at 9-o'clock: tangent points in +Z */}
+      <mesh position={[-1.5, 0, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <coneGeometry args={[0.12, 0.28, 10]} />
+        <meshBasicMaterial color={color} toneMapped={false} />
+      </mesh>
+    </group>
   );
 }
 
