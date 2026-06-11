@@ -243,6 +243,19 @@ function OrbVisual({
   const showFlare = !debugFlag("debugNoFlare");
   const showStarRays = !debugFlag("debugNoStarRays");
 
+  // Stable uniform objects — memoized so R3F's reconciler never resets the
+  // values that useFrame animates each tick.
+  const flareUniforms = useMemo(() => ({
+    color: { value: new THREE.Color(track.color) },
+    opacity: { value: 0.5 },
+    radius: { value: 0.42 },
+  }), [track.color]);
+  const rayUniforms = useMemo(() => ({
+    color: { value: new THREE.Color(track.color) },
+    opacity: { value: 0.38 },
+    radius: { value: 0.22 },
+  }), [track.color]);
+
   // Stale-closure avoidance for the useFrame callback, same pattern as
   // TrackMarker's animateRef.
   const liveRef = useRef({ fade, mode, selected, volume, seed, x, z });
@@ -329,6 +342,10 @@ function OrbVisual({
         <sphereGeometry args={[orbRadius, 24, 16]} />
         <meshBasicMaterial color={track.color} transparent opacity={0.1} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
       </mesh>
+      <mesh ref={core} position={[0, 0, 0]}>
+        <sphereGeometry args={[orbRadius * 0.62, 32, 20]} />
+        <meshBasicMaterial color="white" transparent={preview || fade < 0.999} opacity={preview ? 0 : fade} toneMapped={false} depthWrite={!preview && fade >= 0.999} />
+      </mesh>
       <Billboard position={[0, 0, 0]}>
         {showFlare && (
           <mesh scale={[orbRadius * 5.6, orbRadius * 5.6, 1]}>
@@ -338,11 +355,7 @@ function OrbVisual({
               transparent
               depthWrite={false}
               blending={THREE.AdditiveBlending}
-              uniforms={{
-                color: { value: new THREE.Color(track.color) },
-                opacity: { value: 0.5 },
-                radius: { value: 0.42 },
-              }}
+              uniforms={flareUniforms}
               vertexShader={flareVertexShader}
               fragmentShader={flareFragmentShader}
             />
@@ -356,21 +369,13 @@ function OrbVisual({
               transparent
               depthWrite={false}
               blending={THREE.AdditiveBlending}
-              uniforms={{
-                color: { value: new THREE.Color(track.color) },
-                opacity: { value: 0.38 },
-                radius: { value: 0.22 },
-              }}
+              uniforms={rayUniforms}
               vertexShader={flareVertexShader}
               fragmentShader={starRayFragmentShader}
             />
           </mesh>
         )}
       </Billboard>
-      <mesh ref={core} position={[0, 0, 0]}>
-        <sphereGeometry args={[orbRadius * 0.62, 32, 20]} />
-        <meshBasicMaterial color="white" transparent={preview || fade < 0.999} opacity={preview ? 0 : fade} toneMapped={false} depthWrite={!preview && fade >= 0.999} />
-      </mesh>
       {showPointLight && <pointLight ref={glow} position={[0, 0, 0]} color={track.color} intensity={6} distance={18} />}
     </>
   );
