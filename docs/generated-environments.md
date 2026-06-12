@@ -51,6 +51,13 @@ and stems, moving a stem or path keeps its clearance without regenerating.
 Brush edits are scaled by the same mask so a stroke across a path leaves the
 walkable strip untouched.
 
+Objects respect constraints live too: a path drawn or moved *after*
+generation hides the generated objects it now runs through
+(`objectBlockedByClearZone`, same margin as scatter placement). This is
+display-time suppression, not deletion — the manifest keeps the objects, so
+they return if the path moves away. Hand-placed objects are deliberate and
+never hidden.
+
 ## Determinism and editing
 
 - Scatter is a jittered grid hashed per cell from the seed: same seed → same

@@ -136,6 +136,23 @@ export function scatterObjects(
   return placements;
 }
 
+/**
+ * True when an object sits inside the CURRENT clear zones (same margin the
+ * scatterer uses for placement). Constraints are respected live: paths drawn
+ * or moved after generation suppress the generated objects they run through —
+ * display-time hiding, not deletion, so the objects return if the path moves
+ * away again. User-placed objects are exempt at the call site.
+ */
+export function objectBlockedByClearZone(
+  object: Pick<WorldObjectPlacement, "kind" | "scale">,
+  position: [number, number],
+  sources: FlattenSource[],
+  buffer: number,
+): boolean {
+  const footprint = WORLD_OBJECT_SPECS[object.kind].radius * object.scale;
+  return insideClearZone(sources, buffer, position[0], position[1], 0.5 + footprint);
+}
+
 function pickKind(kinds: KindWeight[], totalWeight: number, roll: number): KindWeight {
   let remaining = roll * totalWeight;
   for (const entry of kinds) {

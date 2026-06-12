@@ -134,6 +134,17 @@ export function generatedGroundHeight(composition: Composition, x: number, z: nu
   return field ? terrainHeightAt(field, x, z) : 0;
 }
 
+/**
+ * The current flatten sources (clear-zone geometry), from the same cache the
+ * field uses, so display-time object suppression stays in step with the
+ * terrain mask.
+ */
+export function flattenSourcesFor(composition: Composition): FlattenSource[] {
+  if (!composition.environment.generated) return [];
+  terrainFieldFor(composition);
+  return cache ? cache.sources : [];
+}
+
 /** Invalidate the cache (tests / composition switches). */
 export function resetTerrainCache(): void {
   cache = null;

@@ -7,7 +7,7 @@ import {
   insideClearZone,
   terrainHeightAt,
 } from "./terrain";
-import { scatterObjects } from "./scatter";
+import { objectBlockedByClearZone, scatterObjects } from "./scatter";
 import {
   classifyObjectEdit,
   classifyTerrainEdit,
@@ -181,6 +181,38 @@ describe("scatter", () => {
   it("generates no objects at density 0 (terrain only)", () => {
     const bare = testEnvironment({ params: { ...testEnvironment().params, density: 0 } });
     expect(scatterObjects(bare, flattenSources(pathMap, [], bare))).toEqual([]);
+  });
+
+  it("flags previously generated objects that a NEW path now runs through", () => {
+    // The world is generated first; the composer then draws a path into open
+    // terrain. Objects placed before the path existed must be recognized as
+    // blocked by the path's clear zone so the scene can hide them — this was
+    // visible as "patches of grass over the path" in meadows.
+    const generated = testEnvironment();
+    const before = scatterObjects(generated, flattenSources(pathMap, [], generated));
+    // A new branch heading off into open terrain, far from the original path.
+    const grown = normalizeMap({
+      ...pathMap,
+      preset: "custom",
+      segments: [...pathMap.segments, { id: "s2", start: [40, 0], end: [40, 40], width: 4 }],
+    });
+    const sources = flattenSources(grown, [], generated);
+    const onNewPath = before.filter((object) =>
+      Math.abs(object.position[0] - 40) < 2 && object.position[2] > 6 && object.position[2] < 38,
+    );
+    expect(onNewPath.length).toBeGreaterThan(0); // the meadow did cover that strip
+    for (const object of onNewPath) {
+      expect(
+        objectBlockedByClearZone(object, [object.position[0], object.position[2]], sources, generated.constraints.buffer),
+        `object ${object.id} at ${object.position}`,
+      ).toBe(true);
+    }
+    // Objects well away from both paths stay visible.
+    const clear = before.find((object) => object.position[0] < -20 && object.position[2] < -20);
+    expect(clear).toBeDefined();
+    expect(
+      objectBlockedByClearZone(clear!, [clear!.position[0], clear!.position[2]], sources, generated.constraints.buffer),
+    ).toBe(false);
   });
 
   it("ignores constraints when the toggles are off", () => {

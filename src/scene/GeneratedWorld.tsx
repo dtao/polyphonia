@@ -4,11 +4,13 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import * as THREE from "three";
 import type { GeneratedEnvironment, WorldObjectPlacement } from "../environment";
 import { loopWrap, useStore } from "../store";
-import { CompositionMap, LoopPreviewTransform, tiledMapTransforms, transformLoopPoint } from "../map";
+import { CompositionMap, LoopPreviewTransform, surfaceHeightAt, tiledMapTransforms, transformLoopPoint } from "../map";
 import { WORLD_OBJECT_SPECS, WorldObjectPart } from "../worldgen/objects";
-import { terrainFieldFor } from "../worldgen/sampler";
-import { TerrainField, flattenSources, terrainHeightAt } from "../worldgen/terrain";
-import { loopEditPoint } from "../worldgen/loop";
+import { flattenSourcesFor, terrainFieldFor } from "../worldgen/sampler";
+import { FlattenSource, TerrainField, flattenAt, flattenSources, terrainHeightAt } from "../worldgen/terrain";
+import { objectBlockedByClearZone } from "../worldgen/scatter";
+import { LOOP_BLEND_BAND, loopEditPoint, loopFieldContext, loopProgress } from "../worldgen/loop";
+import { debugFlag } from "../debug";
 import { valueNoise2 } from "../worldgen/noise";
 import { skyGradient } from "./skyGradient";
 import {
@@ -46,8 +48,59 @@ export function GeneratedWorld({ editMode }: { editMode: boolean }) {
       <ScatterInstances generated={generated} field={field} map={composition.map} editMode={editMode} />
       {editMode && <SelectedWorldObjectGizmo generated={generated} field={field} map={composition.map} />}
       {editMode && <ConstraintZones generated={generated} />}
+      {debugFlag("debugTerrainProbe") && <TerrainProbe field={field} />}
     </group>
   );
+}
+
+// ?debug=1&debugTerrainProbe=1 — once a second, log the terrain state under
+// the viewer: surface vs terrain height, flatten weight/target, loop progress,
+// and any scatter objects nearby (with their suppression status). For
+// diagnosing "terrain/objects covering the path" reports; see
+// docs/investigations/terrain-blobs-on-paths.md.
+function TerrainProbe({ field }: { field: TerrainField }) {
+  const lastLog = useRef(-Infinity);
+  useFrame(({ clock, camera }) => {
+    if (clock.elapsedTime - lastLog.current < 1) return;
+    lastLog.current = clock.elapsedTime;
+    const state = useStore.getState();
+    const generated = state.composition.environment.generated;
+    if (!generated) return;
+    const map = state.composition.map;
+    const x = camera.position.x;
+    const z = camera.position.z;
+    const sources = flattenSourcesFor(state.composition);
+    const { weight, target } = flattenAt(sources, generated.constraints.buffer, x, z);
+    const ctx = loopFieldContext(map);
+    const nearbyObjects = generated.objects
+      .map((object) => ({
+        kind: object.kind,
+        distance: Math.hypot(object.position[0] - x, object.position[2] - z),
+        userPlaced: !!object.userPlaced,
+        suppressed:
+          !object.userPlaced &&
+          objectBlockedByClearZone(object, [object.position[0], object.position[2]], sources, generated.constraints.buffer),
+      }))
+      .filter((entry) => entry.distance < 5)
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, 6)
+      .map((entry) => `${entry.kind}@${entry.distance.toFixed(1)}${entry.userPlaced ? " user" : ""}${entry.suppressed ? " SUPPRESSED" : ""}`);
+    const sample = {
+      at: [Math.round(x * 10) / 10, Math.round(z * 10) / 10],
+      tiling: map.tiling.type,
+      constraints: generated.constraints,
+      surfaceY: Math.round(surfaceHeightAt(map, [x, z]) * 100) / 100,
+      terrainY: Math.round(terrainHeightAt(field, x, z) * 100) / 100,
+      flattenWeight: Math.round(weight * 100) / 100,
+      flattenTarget: Math.round(target * 100) / 100,
+      loopProgress: ctx ? Math.round(loopProgress(ctx, x, z) * 100) / 100 : null,
+      loopBand: ctx ? loopProgress(ctx, x, z) >= 1 - LOOP_BLEND_BAND : null,
+      nearbyObjects,
+    };
+    (window as unknown as { polyTerrainProbe?: unknown }).polyTerrainProbe = sample;
+    console.log("[terrain-probe]", JSON.stringify(sample));
+  });
+  return null;
 }
 
 // Camera-following gradient sky: lighter shade of the authored sky color at
@@ -379,6 +432,7 @@ function buildScatterBatches(
   generated: GeneratedEnvironment,
   field: TerrainField,
   loopCopies: LoopPreviewTransform[],
+  sources: FlattenSource[],
 ): ScatterBatch[] {
   const byKind = new Map<string, WorldObjectPlacement[]>();
   for (const object of generated.objects) {
@@ -416,10 +470,18 @@ function buildScatterBatches(
         ids.push(object.id);
       };
       for (const object of objects) {
+        // Constraints stay respected live: paths drawn or moved AFTER
+        // generation hide the generated objects they now run through (the
+        // manifest keeps them, so they return if the path moves away).
+        // Hand-placed objects are deliberate and never hidden.
+        const blocked = (x: number, z: number) =>
+          objectBlockedByClearZone(object, [x, z], sources, generated.constraints.buffer);
+        if (!object.userPlaced && blocked(object.position[0], object.position[2])) continue;
         push(object, object.position[0], object.position[2], object.yaw);
         for (const copy of loopCopies) {
           const [x, z] = transformLoopPoint(copy, [object.position[0], object.position[2]]);
           if (Math.abs(x - generated.center[0]) > field.size || Math.abs(z - generated.center[1]) > field.size) continue;
+          if (blocked(x, z)) continue;
           push(object, x, z, object.yaw + copy.rotation);
         }
       }
@@ -457,9 +519,10 @@ function ScatterInstances({
         : [],
     [map, generated.center, generated.size],
   );
+  const sources = flattenSourcesFor(useStore((s) => s.composition));
   const batches = useMemo(
-    () => buildScatterBatches(generated, field, loopCopies),
-    [generated, field, loopCopies],
+    () => buildScatterBatches(generated, field, loopCopies, sources),
+    [generated, field, loopCopies, sources],
   );
   return (
     <group>
