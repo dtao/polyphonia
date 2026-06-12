@@ -92,6 +92,45 @@ describe("terrain field", () => {
     expect(terrainHeightAt(field, 500, 500)).toBe(0);
   });
 
+  it("leaves terrain high over buried tunnels and rooms (P31)", () => {
+    const undergroundMap = normalizeMap({
+      preset: "custom",
+      segments: [
+        { id: "surface", start: [-40, 0], end: [0, 0], width: 4 },
+        { id: "tunnel", start: [0, 0], end: [40, 0], width: 4, kind: "tunnel" },
+      ],
+      start: { position: [-40, 0], direction: [1, 0] },
+      elevations: { "0.000,0.000": -20, "40.000,0.000": -20 },
+    });
+    const generated = testEnvironment();
+    const field = buildTerrainField(generated, flattenSources(undergroundMap, [], generated));
+    // Over the buried tunnel's midsection, the landscape keeps its natural
+    // height instead of being dragged down to the corridor.
+    expect(terrainHeightAt(field, 25, 0)).toBeGreaterThan(-5);
+
+    // The same tunnel at the surface still carves as before.
+    const surfaceTunnelMap = normalizeMap({
+      preset: "custom",
+      segments: [{ id: "tunnel", start: [0, 0], end: [40, 0], width: 4, kind: "tunnel" }],
+      start: { position: [0, 0], direction: [1, 0] },
+    });
+    const surfaceField = buildTerrainField(generated, flattenSources(surfaceTunnelMap, [], generated));
+    expect(terrainHeightAt(surfaceField, 20, 0)).toBeCloseTo(-FLATTEN_DROP, 4);
+
+    // A fully buried room keeps the hillside above it too.
+    const buriedRoomMap = normalizeMap({
+      preset: "custom",
+      segments: [{ id: "tunnel", start: [0, 0], end: [30, 0], width: 4, kind: "tunnel" }],
+      rooms: [
+        { id: "chamber", center: [36, 0], rotation: 0, width: 8, depth: 8, height: 3, elevation: -20, entrances: [{ side: "west", width: 3, offset: 0 }] },
+      ],
+      start: { position: [0, 0], direction: [1, 0] },
+      elevations: { "0.000,0.000": -20, "30.000,0.000": -20 },
+    });
+    const roomField = buildTerrainField(generated, flattenSources(buriedRoomMap, [], generated));
+    expect(terrainHeightAt(roomField, 36, 0)).toBeGreaterThan(-5);
+  });
+
   it("applies raise edits away from paths but not across protected zones", () => {
     const generated = testEnvironment();
     const sources = flattenSources(pathMap, [], generated);

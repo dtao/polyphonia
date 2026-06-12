@@ -17,6 +17,7 @@ import type { GeneratedEdit, GeneratedEnvironment } from "../environment";
 import {
   CompositionMap,
   inverseTransformLoopPoint,
+  isTunnelSegment,
   loopPreviewElevationOffset,
   pointElevation,
   mapPointKey,
@@ -25,7 +26,9 @@ import {
   surfaceHeightAt,
   tiledMapTransforms,
   transformLoopPoint,
+  tunnelHeight,
 } from "../map";
+import { DEFAULT_ENCLOSURE_HEIGHT } from "../spatialConstants";
 import type { TrackDef } from "../composition";
 import { fbm2 } from "./noise";
 import { LOOP_BLEND_BAND, LoopFieldContext, canonicalizeLoopPoint, loopProgress } from "./loop";
@@ -66,6 +69,12 @@ const FLATTEN_BLEND = 10;
 const FLATTEN_TARGET_SLOPE = 1.1;
 /** Width of the rim band where terrain falls back to the base level. */
 const RIM_BLEND = 26;
+/**
+ * How far the natural terrain must clear a tunnel/room's ceiling (everywhere
+ * along it) before the structure counts as buried and stops carving the
+ * terrain down (P31).
+ */
+const BURIED_CLEARANCE = 0.75;
 
 export type FlattenSource =
   | { kind: "strip"; a: [number, number]; b: [number, number]; halfWidth: number; ya: number; yb: number }
@@ -97,9 +106,21 @@ export function terrainResolution(size: number): number {
 export function flattenSources(
   map: CompositionMap,
   tracks: Pick<TrackDef, "position">[],
-  generated: Pick<GeneratedEnvironment, "center" | "size" | "constraints">,
+  generated: Pick<GeneratedEnvironment, "center" | "size" | "constraints" | "seed" | "params">,
 ): FlattenSource[] {
   const sources: FlattenSource[] = [];
+  // The natural (un-carved) terrain height — base noise with the rim fade,
+  // before any flattening. Used to detect structures that sit entirely below
+  // the landscape: tunnels and rooms buried this way go *through* the terrain
+  // (P31) instead of dragging it down, so underground corridors and chambers
+  // are possible. Partially exposed structures still carve as before.
+  const naturalHeight = (x: number, z: number): number => {
+    const rim = 1 - smoothstep((Math.max(Math.abs(x - generated.center[0]), Math.abs(z - generated.center[1])) - (generated.size - RIM_BLEND)) / RIM_BLEND);
+    const scale = generated.params.terrainScale;
+    return fbm2(generated.seed, x / scale, z / scale, 4) * generated.params.terrainAmplitude * rim;
+  };
+  const buried = (samples: Array<[number, number]>, top: number): boolean =>
+    samples.every(([x, z]) => naturalHeight(x, z) > top + BURIED_CLEARANCE);
   // The spawn area always stays clear so entering a composition never drops
   // the listener into a tree or against a sudden slope.
   sources.push({
@@ -119,21 +140,44 @@ export function flattenSources(
       for (const segment of map.segments) {
         const a = copy ? transformLoopPoint(copy, segment.start) : segment.start;
         const b = copy ? transformLoopPoint(copy, segment.end) : segment.end;
+        const ya = pointElevation(map, mapPointKey(segment.start)) + lift;
+        const yb = pointElevation(map, mapPointKey(segment.end)) + lift;
+        // A tunnel whose ceiling stays below the natural landscape runs
+        // through it — leave the terrain alone so it reads as underground.
+        if (isTunnelSegment(segment)) {
+          const top = Math.max(ya, yb) + tunnelHeight(map, segment, DEFAULT_ENCLOSURE_HEIGHT);
+          const mid: [number, number] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+          if (buried([a, mid, b], top)) continue;
+        }
         sources.push({
           kind: "strip",
           a,
           b,
           halfWidth: segment.width / 2,
-          ya: pointElevation(map, mapPointKey(segment.start)) + lift,
-          yb: pointElevation(map, mapPointKey(segment.end)) + lift,
+          ya,
+          yb,
         });
       }
       for (const room of map.rooms) {
+        const center = copy ? transformLoopPoint(copy, room.center) : room.center;
+        const radius = Math.hypot(room.width, room.depth) / 2;
+        const y = roomElevation(map, room) + lift;
+        // Same exception for fully buried rooms: underground chambers keep
+        // the hillside above them.
+        const top = y + room.height;
+        const ringSamples: Array<[number, number]> = [
+          center,
+          [center[0] + radius, center[1]],
+          [center[0] - radius, center[1]],
+          [center[0], center[1] + radius],
+          [center[0], center[1] - radius],
+        ];
+        if (buried(ringSamples, top)) continue;
         sources.push({
           kind: "disc",
-          center: copy ? transformLoopPoint(copy, room.center) : room.center,
-          radius: Math.hypot(room.width, room.depth) / 2,
-          y: roomElevation(map, room) + lift,
+          center,
+          radius,
+          y,
         });
       }
       for (const platform of map.platforms) {
