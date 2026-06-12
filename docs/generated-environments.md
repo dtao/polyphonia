@@ -34,12 +34,18 @@ cloud publish all spread the whole composition, so the config rides along, and
 
 `flattenSources` (`src/worldgen/terrain.ts`) collects protected geometry:
 walkable segments/rooms/platforms (including tiled copies), stem positions,
-and always the map start. The terrain field is pinned to the walkable surface
-height inside each zone (+ `buffer`) and blends to free noise over a fixed
-band; the scatterer rejects placements inside the same zones. Because the mask
-is recomputed from the **live** map and stems, moving a stem or path keeps its
-clearance without regenerating. Brush edits are scaled by the same mask so a
-stroke across a path leaves the walkable strip untouched.
+and always the map start. Inside each zone (+ `buffer`) the terrain pins to
+the **lower envelope** of all sources' surface heights (each rising at
+`FLATTEN_TARGET_SLOPE` outside its own clearance), seated `FLATTEN_DROP`
+below — not simply the nearest source's height. The envelope is ≤ every
+nearby walkable surface and is concave inside the corridor, so grid-cell
+interpolation can never cut a chord above the path at elevation kinks (the
+bottom of a ramp) or under a stem disc sitting on a slope. Outside the zone
+it blends to free noise over a fixed band; the scatterer rejects placements
+inside the same zones. Because the mask is recomputed from the **live** map
+and stems, moving a stem or path keeps its clearance without regenerating.
+Brush edits are scaled by the same mask so a stroke across a path leaves the
+walkable strip untouched.
 
 ## Determinism and editing
 
@@ -130,3 +136,6 @@ region as before.
 - `FLATTEN_DROP` (terrain.ts): flattened terrain seats this far below the
   walkable surface it pins to. The map's floors are planes at exactly their
   elevation, so terrain pinned to the same height would z-fight them.
+- `FLATTEN_TARGET_SLOPE` (terrain.ts): rise rate of each source's candidate
+  in the lower-envelope flatten target; must exceed the steepest realistic
+  path slope so ramps regain their height once clear of lower neighbors.

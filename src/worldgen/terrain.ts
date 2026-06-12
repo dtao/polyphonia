@@ -41,6 +41,22 @@ export const START_CLEAR_RADIUS = 5;
 export const FLATTEN_DROP = 0.12;
 /** Width of the band over which terrain blends from flattened to free. */
 const FLATTEN_BLEND = 10;
+/**
+ * How steeply a source's pinned height may rise per unit distance outside its
+ * clearance. The flatten target is the LOWER ENVELOPE over all sources of
+ * (surface height + this slope × distance beyond clearance), not simply the
+ * nearest source's height. Two properties matter:
+ *  - the envelope is ≤ every nearby walkable surface, so terrain pinned to it
+ *    never pokes through a lower path/room/platform under a higher one;
+ *  - inside clear zones the candidates are affine, so the envelope is concave
+ *    there — linear interpolation across terrain grid cells stays BELOW it.
+ *    Pinning to the nearest source instead made triangles cut a chord ABOVE
+ *    the path at concave elevation kinks (the bottom of a ramp), which read
+ *    as patches of terrain covering the path.
+ * Must exceed the steepest realistic path slope so ramps regain their own
+ * height once clear of a lower neighbor.
+ */
+const FLATTEN_TARGET_SLOPE = 1.1;
 /** Width of the rim band where terrain falls back to the base level. */
 const RIM_BLEND = 26;
 
@@ -157,7 +173,8 @@ function stripDistance(source: Extract<FlattenSource, { kind: "strip" }>, x: num
 
 /**
  * How free the terrain is at (x, z): weight 0 = pinned to `target`, 1 = pure
- * noise. The nearest protected source wins the flatten target.
+ * noise. The target is the lower envelope over all protected sources (see
+ * FLATTEN_TARGET_SLOPE), seated FLATTEN_DROP below the walkable surface.
  */
 export function flattenAt(
   sources: FlattenSource[],
@@ -166,7 +183,7 @@ export function flattenAt(
   z: number,
 ): { weight: number; target: number } {
   let weight = 1;
-  let target = 0;
+  let target = Infinity;
   for (const source of sources) {
     let edge: number;
     let y: number;
@@ -179,12 +196,11 @@ export function flattenAt(
       y = source.y;
     }
     const m = smoothstep(edge / FLATTEN_BLEND);
-    if (m < weight) {
-      weight = m;
-      target = y - FLATTEN_DROP;
-    }
+    if (m < weight) weight = m;
+    const candidate = y + Math.max(0, edge) * FLATTEN_TARGET_SLOPE;
+    if (candidate < target) target = candidate;
   }
-  return { weight, target };
+  return { weight, target: target === Infinity ? 0 : target - FLATTEN_DROP };
 }
 
 /** Clearance test for scatter placement: true if (x, z) is too close to protected geometry. */

@@ -17,7 +17,7 @@ import {
 } from "./regen";
 import { applyLoopToField } from "./terrain";
 import { LOOP_BLEND_BAND, loopEditPoint, loopFieldContext, loopProgress } from "./loop";
-import { normalizeMap } from "../map";
+import { normalizeMap, surfaceHeightAt } from "../map";
 import type { TrackDef } from "../composition";
 import type { GeneratedEnvironment, WorldObjectPlacement } from "../environment";
 import { defaultGeneratedParams } from "../environment";
@@ -100,6 +100,28 @@ describe("terrain field", () => {
     const after = buildTerrainField(edited, sources);
     expect(terrainHeightAt(after, 0, 45)).toBeCloseTo(terrainHeightAt(before, 0, 45) + 2, 1);
     expect(terrainHeightAt(after, 20, 0)).toBeCloseTo(-FLATTEN_DROP, 4); // path stays walkable
+  });
+
+  it("never overlaps a ramped path, including at elevation kinks", () => {
+    // A descent into a flat segment: the concave kink at the joint is where
+    // nearest-source pinning let grid-cell chords cut above the path.
+    const rampMap = normalizeMap({
+      preset: "custom",
+      segments: [
+        { id: "a", start: [0, 0], end: [30, 0], width: 4 },
+        { id: "b", start: [30, 0], end: [60, 0], width: 4 },
+      ],
+      start: { position: [0, 0], direction: [1, 0] },
+      elevations: { "0.000,0.000": 6 },
+    });
+    const generated = testEnvironment();
+    const field = buildTerrainField(generated, flattenSources(rampMap, [], generated));
+    for (let x = 2; x <= 58; x += 1.5) {
+      for (const z of [-1.8, 0, 1.8]) {
+        const surface = surfaceHeightAt(rampMap, [x, z]);
+        expect(terrainHeightAt(field, x, z), `at (${x}, ${z})`).toBeLessThan(surface - 0.05);
+      }
+    }
   });
 
   it("is deterministic for the same seed", () => {
