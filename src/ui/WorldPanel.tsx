@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { GENERATED_BIOMES, GeneratedBiome } from "../environment";
-import type { CreatorLandmarkAsset, CreatorMaterialAsset } from "../creatorAssets";
+import { BUILTIN_MATERIALS, type CreatorLandmarkAsset, type CreatorMaterialAsset } from "../creatorAssets";
 import type { RegenerationMode } from "../worldgen/regen";
 import { skyGradient } from "../scene/skyGradient";
 import { CreatorAssetImporter } from "./CreatorAssetImporter";
@@ -40,7 +40,10 @@ export function WorldPanel({ open, onOpen, onClose }: { open: boolean; onOpen: (
   const [regenMode, setRegenMode] = useState<RegenerationMode>("keep-constraints");
   const [regionRadius, setRegionRadius] = useState(24);
   const [importing, setImporting] = useState<"material" | "landmark" | null>(null);
-  const materials = creatorAssets.filter((asset): asset is CreatorMaterialAsset => asset.kind === "material");
+  const materials = [
+    ...BUILTIN_MATERIALS,
+    ...creatorAssets.filter((asset): asset is CreatorMaterialAsset => asset.kind === "material"),
+  ];
   const landmarks = creatorAssets.filter((asset): asset is CreatorLandmarkAsset => asset.kind === "landmark");
 
   if (!open) {

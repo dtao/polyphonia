@@ -66,6 +66,69 @@ export interface CreatorAssetBundle {
   assets: Record<string, StoredAssetPayload>;
 }
 
+// Built-in PBR materials (textures ship in public/environments/, inherited
+// from the retired detail packs). Always available — in the editor, in the
+// viewer, and after export/import — without being stored or uploaded; their
+// ids are stable so manifests can reference them directly.
+export const BUILTIN_MATERIALS: CreatorMaterialAsset[] = [
+  {
+    id: "builtin-cavern-stone",
+    kind: "material",
+    name: "Cavern stone",
+    attribution: { title: "Atlas Cavern", author: "Polyphonia", license: "Project asset" },
+    createdAt: "2026-06-06T00:00:00.000Z",
+    material: {
+      albedo: "/environments/atlas-cavern/textures/stone-albedo.webp",
+      normal: "/environments/atlas-cavern/textures/stone-normal.webp",
+      roughnessMap: "/environments/atlas-cavern/textures/stone-roughness.webp",
+      ao: "/environments/atlas-cavern/textures/stone-ao.webp",
+      repeat: 2.5,
+      normalScale: 0.7,
+      roughness: 0.92,
+      metalness: 0.02,
+      aoIntensity: 0.75,
+    },
+  },
+  {
+    id: "builtin-grove-forest",
+    kind: "material",
+    name: "Forest floor",
+    attribution: { title: "Verdant Grove", author: "Polyphonia", license: "Project asset" },
+    createdAt: "2026-06-06T00:00:00.000Z",
+    material: {
+      albedo: "/environments/verdant-grove/textures/forest-albedo.webp",
+      normal: "/environments/verdant-grove/textures/forest-normal.webp",
+      roughnessMap: "/environments/verdant-grove/textures/forest-roughness.webp",
+      ao: "/environments/verdant-grove/textures/forest-ao.webp",
+      repeat: 3.2,
+      normalScale: 0.7,
+      roughness: 0.96,
+      metalness: 0,
+      aoIntensity: 0.9,
+    },
+  },
+  {
+    id: "builtin-prismatic-crystal",
+    kind: "material",
+    name: "Crystal",
+    attribution: { title: "Prismatic Reach", author: "Polyphonia", license: "Project asset" },
+    createdAt: "2026-06-06T00:00:00.000Z",
+    material: {
+      albedo: "/environments/prismatic-reach/textures/crystal-albedo.webp",
+      normal: "/environments/prismatic-reach/textures/crystal-normal.webp",
+      roughnessMap: "/environments/prismatic-reach/textures/crystal-roughness.webp",
+      ao: "/environments/prismatic-reach/textures/crystal-ao.webp",
+      repeat: 2.1,
+      normalScale: 0.7,
+      roughness: 0.38,
+      metalness: 0.16,
+      aoIntensity: 0.62,
+      emissive: "#183859",
+      emissiveIntensity: 0.34,
+    },
+  },
+];
+
 let registeredAssets: CreatorAsset[] = [];
 
 export function registerCreatorAssets(assets: CreatorAsset[]): void {
@@ -73,7 +136,7 @@ export function registerCreatorAssets(assets: CreatorAsset[]): void {
 }
 
 export function registeredCreatorAssets(): CreatorAsset[] {
-  return registeredAssets;
+  return [...BUILTIN_MATERIALS, ...registeredAssets];
 }
 
 export interface CreatorMaterialImport {
