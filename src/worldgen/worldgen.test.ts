@@ -19,6 +19,9 @@ import {
 import { applyLatticeToField, applyLoopToField } from "./terrain";
 import { LOOP_BLEND_BAND, loopEditPoint, loopFieldContext, loopProgress } from "./loop";
 import { latticeContext, worldEditPoint } from "./lattice";
+import { canonicalFieldPoint, deriveRegion } from "./region";
+import { generatedGroundHeight, resetTerrainCache, terrainFieldFor } from "./sampler";
+import type { Composition } from "../composition";
 import { normalizeMap, surfaceHeightAt } from "../map";
 import type { TrackDef } from "../composition";
 import type { GeneratedEnvironment, WorldObjectPlacement } from "../environment";
@@ -369,6 +372,76 @@ describe("path-loop awareness", () => {
     for (const object of objects) {
       expect(loopProgress(ctx, object.position[0], object.position[2])).toBeLessThan(1 - LOOP_BLEND_BAND / 2);
     }
+  });
+});
+
+describe("region derivation (the world never shows its edge)", () => {
+  const asComposition = (map: ReturnType<typeof normalizeMap>): Composition =>
+    ({ environment: { generated: testEnvironment() }, map, tracks: [] }) as unknown as Composition;
+
+  it("encloses all walkable geometry plus the visible radius on bounded maps", () => {
+    const longMap = normalizeMap({
+      preset: "custom",
+      segments: [{ id: "s1", start: [0, 0], end: [400, 0], width: 4 }],
+      start: { position: [0, 0], direction: [1, 0] },
+    });
+    const region = deriveRegion(longMap, [0, 0]);
+    expect(region.follow).toBe("none");
+    // The far end of the path plus the default fade radius stays inside.
+    expect(Math.abs(400 + 130 - region.center[0])).toBeLessThanOrEqual(region.size);
+    expect(Math.abs(-130 - region.center[0])).toBeLessThanOrEqual(region.size);
+  });
+
+  it("honors an authored visible radius", () => {
+    const wideView = normalizeMap({
+      preset: "custom",
+      segments: [{ id: "s1", start: [0, 0], end: [40, 0], width: 4 }],
+      start: { position: [0, 0], direction: [1, 0] },
+      visibleRadius: { inner: 200, outer: 250 },
+    });
+    expect(deriveRegion(wideView, [0, 0]).size).toBeGreaterThanOrEqual(20 + 250 + 26);
+  });
+
+  it("follows the viewer in quanta on boundless open maps, with identical terrain", () => {
+    const open = normalizeMap({ preset: "open", segments: [], rooms: [], platforms: [] });
+    const near = deriveRegion(open, [3, -5]);
+    const far = deriveRegion(open, [803, 401]);
+    expect(near.follow).toBe("recenter");
+    expect(far.center).not.toEqual(near.center);
+    expect(far.center[0] % 64).toBe(0);
+
+    // The noise is world-anchored: rebuilding around a different center
+    // reproduces the same terrain where the regions overlap.
+    const composition = asComposition(open);
+    resetTerrainCache();
+    const hereA = generatedGroundHeight(composition, 120, 80);
+    resetTerrainCache();
+    terrainFieldFor(composition, [200, 160]); // recentered build
+    const hereB = generatedGroundHeight(composition, 120, 80);
+    expect(hereB).toBeCloseTo(hereA, 4);
+    resetTerrainCache();
+  });
+
+  it("anchors tiled maps to the origin cell and samples repeats canonically", () => {
+    const tiled = normalizeMap({
+      preset: "custom",
+      segments: [],
+      tiling: { type: "square", origin: [0, 0], tileSize: 60 },
+      start: { position: [0, 0], direction: [1, 0] },
+    });
+    const region = deriveRegion(tiled, [500, 500]);
+    expect(region.follow).toBe("lattice");
+    expect(region.center).toEqual([30, 30]); // fundamental cell center, viewer-independent
+
+    const ctx = latticeContext(tiled)!;
+    expect(canonicalFieldPoint(ctx, region.center, 10 + 60 * 5, 5)).toEqual([10, 5]);
+
+    const composition = asComposition(tiled);
+    resetTerrainCache();
+    const here = generatedGroundHeight(composition, 10, 5);
+    const farRepeat = generatedGroundHeight(composition, 10 + 60 * 7, 5 + 60 * 3);
+    expect(farRepeat).toBeCloseTo(here, 4);
+    resetTerrainCache();
   });
 });
 

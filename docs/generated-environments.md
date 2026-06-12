@@ -22,8 +22,14 @@ their stems and paths. Read this before touching `src/worldgen/`,
   terrain is recomputed from `seed` + `params` by a deterministic, hash-based
   value noise (`src/worldgen/noise.ts` — no `Math.sin`/`Math.random`, so a
   published world renders identically in every browser).
-- `center`, `size` — the square region; `center` is the map start at
-  generation time and stays fixed afterward.
+- `center`, `size` — stored for manifest compatibility but IGNORED at
+  runtime: the region is derived live from the map (`worldgen/region.ts`) so
+  the world's edge can never be seen. Bounded maps use the walkable bounding
+  box expanded by the visible radius (growing a path grows the world);
+  square/hex maps anchor to the tiling origin cell and the *mesh* follows
+  the viewer by whole lattice steps (the field is periodic, so sliding it is
+  a visual no-op); boundless open maps recenter the region around the viewer
+  in cell-aligned quanta (world-anchored noise makes rebuilds invisible).
 - `objects: WorldObjectPlacement[]` — baked scatter placements (vestigial:
   see the retirement note above; normalized and preserved, never rendered).
   `position[1]` is an offset above the terrain, not an absolute height.
@@ -130,9 +136,10 @@ translates in a `LATTICE_BLEND_BAND` before each cell edge — exactly periodic
 under both basis vectors (the loop construction generalized to translation
 lattices, without vertical lift). Brush strokes and regional reseeds remap
 into the fundamental cell via `worldEditPoint`, so a sculpted hill appears in
-every copy. The display field carries no rim fade on tiled maps; the region
-edge sits beyond the default fade radius, but a much larger authored
-`visibleRadius` could expose it.
+every copy. The terrain mesh slides by whole lattice steps to follow the
+viewer (`TerrainPatch`'s offset group), so the repeating world is effectively
+infinite; height lookups for points in distant repeats canonicalize via
+`canonicalFieldPoint`.
 
 ## UI
 

@@ -5,11 +5,13 @@ import * as THREE from "three";
 import type { GeneratedEnvironment } from "../environment";
 import type { SurfaceMaterialDefinition } from "../creatorAssets";
 import { materialTextureUrls } from "./SurfaceDressing";
-import { useStore } from "../store";
+import { useStore, viewState } from "../store";
 import { surfaceHeightAt } from "../map";
-import { flattenSourcesFor, terrainFieldFor } from "../worldgen/sampler";
-import { TerrainField, flattenAt, flattenSources, terrainHeightAt } from "../worldgen/terrain";
+import { fieldHeightAtWorld, flattenSourcesFor, terrainFieldFor } from "../worldgen/sampler";
+import { TerrainField, flattenAt, flattenSources } from "../worldgen/terrain";
 import { LOOP_BLEND_BAND, loopFieldContext, loopProgress } from "../worldgen/loop";
+import { LatticeContext, latticeContext, latticeCoords } from "../worldgen/lattice";
+import { deriveRegion } from "../worldgen/region";
 import { debugFlag } from "../debug";
 import { valueNoise2 } from "../worldgen/noise";
 import { skyGradient } from "./skyGradient";
@@ -27,7 +29,21 @@ export function GeneratedWorld({
 }) {
   const composition = useStore((s) => s.composition);
   const generated = composition.environment.generated;
-  const field = terrainFieldFor(composition);
+  // On boundless open maps the region follows the viewer in coarse quanta
+  // (worldgen/region.ts); track the quantized anchor so crossing a quantum
+  // boundary re-renders and rebuilds the field around the new center.
+  const [anchor, setAnchor] = useState<[number, number]>(() => [viewState.x, viewState.z]);
+  const follows = useMemo(
+    () => deriveRegion(composition.map, [viewState.x, viewState.z]).follow === "recenter",
+    [composition.map],
+  );
+  useFrame(() => {
+    if (!follows) return;
+    const next = deriveRegion(useStore.getState().composition.map, [viewState.x, viewState.z]).center;
+    setAnchor((current) => (current[0] === next[0] && current[1] === next[1] ? current : next));
+  });
+  const field = terrainFieldFor(composition, anchor);
+  const lattice = useMemo(() => latticeContext(composition.map), [composition.map]);
   // Stem drags throttle sampler rebuilds (see sampler.ts); nudge one extra
   // render after the throttle window so the terrain settles on the final state.
   const [, bumpSettle] = useState(0);
@@ -40,9 +56,15 @@ export function GeneratedWorld({
     <group>
       <SkyDome skyColor={generated.params.skyColor} skyColor2={generated.params.skyColor2} />
       <MoodLighting generated={generated} />
-      <TerrainPatch generated={generated} field={field} editMode={editMode} groundMaterial={groundMaterial} />
+      <TerrainPatch
+        generated={generated}
+        field={field}
+        lattice={lattice}
+        editMode={editMode}
+        groundMaterial={groundMaterial}
+      />
       {editMode && <ConstraintZones generated={generated} />}
-      {debugFlag("debugTerrainProbe") && <TerrainProbe field={field} />}
+      {debugFlag("debugTerrainProbe") && <TerrainProbe field={field} lattice={lattice} />}
     </group>
   );
 }
@@ -51,7 +73,7 @@ export function GeneratedWorld({
 // the viewer: surface vs terrain height, flatten weight/target, and loop
 // progress. For diagnosing "terrain covering the path" reports; see
 // docs/investigations/terrain-blobs-on-paths.md.
-function TerrainProbe({ field }: { field: TerrainField }) {
+function TerrainProbe({ field, lattice }: { field: TerrainField; lattice: LatticeContext | null }) {
   const lastLog = useRef(-Infinity);
   useFrame(({ clock, camera }) => {
     if (clock.elapsedTime - lastLog.current < 1) return;
@@ -70,7 +92,7 @@ function TerrainProbe({ field }: { field: TerrainField }) {
       tiling: map.tiling.type,
       constraints: generated.constraints,
       surfaceY: Math.round(surfaceHeightAt(map, [x, z]) * 100) / 100,
-      terrainY: Math.round(terrainHeightAt(field, x, z) * 100) / 100,
+      terrainY: Math.round(fieldHeightAtWorld(field, lattice, x, z) * 100) / 100,
       flattenWeight: Math.round(weight * 100) / 100,
       flattenTarget: Math.round(target * 100) / 100,
       loopProgress: ctx ? Math.round(loopProgress(ctx, x, z) * 100) / 100 : null,
@@ -150,11 +172,13 @@ function MoodLighting({ generated }: { generated: GeneratedEnvironment }) {
 function TerrainPatch({
   generated,
   field,
+  lattice,
   editMode,
   groundMaterial,
 }: {
   generated: GeneratedEnvironment;
   field: TerrainField;
+  lattice: LatticeContext | null;
   editMode: boolean;
   groundMaterial?: SurfaceMaterialDefinition;
 }) {
@@ -163,9 +187,28 @@ function TerrainPatch({
     [generated, field, groundMaterial],
   );
   useEffect(() => () => geometry.dispose(), [geometry]);
-  const brush = useTerrainBrush(field, editMode);
+  const brush = useTerrainBrush(field, lattice, editMode);
+  // On square/hex tiled maps the field is exactly lattice-periodic, so the
+  // mesh follows the viewer by whole lattice steps: translating a periodic
+  // mesh is visually a no-op, and the world repeats forever. The offset
+  // wraps ONLY the mesh — the brush cursor below works in world space.
+  const offsetGroup = useRef<THREE.Group>(null);
+  useFrame(() => {
+    const group = offsetGroup.current;
+    if (!group) return;
+    if (!lattice) {
+      group.position.set(0, 0, 0);
+      return;
+    }
+    const [u0, v0] = latticeCoords(lattice, field.center[0], field.center[1]);
+    const [u, v] = latticeCoords(lattice, viewState.x, viewState.z);
+    const di = Math.round(u - u0);
+    const dj = Math.round(v - v0);
+    group.position.set(di * lattice.a[0] + dj * lattice.b[0], 0, di * lattice.a[1] + dj * lattice.b[1]);
+  });
   return (
     <>
+      <group ref={offsetGroup}>
       <mesh
         geometry={geometry}
         receiveShadow
@@ -183,6 +226,7 @@ function TerrainPatch({
           <meshStandardMaterial vertexColors roughness={0.96} metalness={0} />
         )}
       </mesh>
+      </group>
       {brush.cursor}
     </>
   );
@@ -315,7 +359,7 @@ const BRUSH_COLORS = { raise: "#7ee081", lower: "#ffa057", smooth: "#5b8cff" } a
 /** Height delta (raise/lower) or blend strength (smooth) emitted per brush step. */
 const BRUSH_STEP_AMOUNT = 0.55;
 
-function useTerrainBrush(field: TerrainField, editMode: boolean) {
+function useTerrainBrush(field: TerrainField, lattice: LatticeContext | null, editMode: boolean) {
   const controls = useThree((s) => s.controls) as { enabled?: boolean } | null;
   const [cursorAt, setCursorAt] = useState<[number, number] | null>(null);
   const dragging = useRef(false);
@@ -405,7 +449,7 @@ function useTerrainBrush(field: TerrainField, editMode: boolean) {
   const cursor =
     editMode && cursorAt && tool.kind === "terrain" ? (
       <mesh
-        position={[cursorAt[0], terrainHeightAt(field, cursorAt[0], cursorAt[1]) + 0.12, cursorAt[1]]}
+        position={[cursorAt[0], fieldHeightAtWorld(field, lattice, cursorAt[0], cursorAt[1]) + 0.12, cursorAt[1]]}
         rotation={[-Math.PI / 2, 0, 0]}
         renderOrder={5}
       >

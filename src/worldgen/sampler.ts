@@ -27,6 +27,7 @@ import {
 } from "./terrain";
 import { LoopFieldContext, loopFieldContext } from "./loop";
 import { LatticeContext, latticeContext } from "./lattice";
+import { canonicalFieldPoint, deriveRegion, regionResolution } from "./region";
 
 const STEM_REBUILD_THROTTLE_MS = 300;
 
@@ -53,22 +54,34 @@ function editSignature(edit: GeneratedEdit): string {
     : `r:${edit.center[0]},${edit.center[1]}:${edit.radius}:${edit.seed}`;
 }
 
-function baseKey(generated: GeneratedEnvironment): string {
-  return JSON.stringify([generated.seed, generated.params, generated.center, generated.size, generated.constraints]);
+function baseKey(effective: GeneratedEnvironment, resolution: number): string {
+  return JSON.stringify([
+    effective.seed,
+    effective.params,
+    effective.center,
+    effective.size,
+    resolution,
+    effective.constraints,
+  ]);
 }
 
 function tracksKey(composition: Composition): string {
   return composition.tracks.map((track) => `${track.position[0]},${track.position[2]}`).join(";");
 }
 
-export function terrainFieldFor(composition: Composition): TerrainField | null {
+export function terrainFieldFor(composition: Composition, viewer?: [number, number]): TerrainField | null {
   const generated = composition.environment.generated;
   if (!generated) {
     cache = null;
     return null;
   }
   const map = composition.map;
-  const base = baseKey(generated);
+  // The region comes from the live map (and, on boundless open maps, the
+  // viewer), never from the stored center/size — see worldgen/region.ts.
+  const region = deriveRegion(map, viewer ?? [map.start.position[0], map.start.position[1]]);
+  const effective: GeneratedEnvironment = { ...generated, center: region.center, size: region.size };
+  const resolution = regionResolution(region);
+  const base = baseKey(effective, resolution);
   const tracks = tracksKey(composition);
   const signatures = generated.edits.map(editSignature);
 
@@ -85,7 +98,7 @@ export function terrainFieldFor(composition: Composition): TerrainField | null {
       cache.editSignatures.every((signature, i) => signature === signatures[i]);
     if (extendsCache) {
       const partial: GeneratedEnvironment = {
-        ...generated,
+        ...effective,
         edits: generated.edits.slice(cache.editSignatures.length),
       };
       const nextBase = buildIncremental(cache.base, partial, cache.sources);
@@ -101,8 +114,8 @@ export function terrainFieldFor(composition: Composition): TerrainField | null {
     }
   }
 
-  const sources = flattenSources(map, composition.tracks, generated);
-  const baseField = buildTerrainField(generated, sources);
+  const sources = flattenSources(map, composition.tracks, effective);
+  const baseField = buildTerrainField(effective, sources, resolution);
   const loop = loopFieldContext(map);
   const lattice = loop ? null : latticeContext(map);
   const display = deriveDisplay(baseField, loop, lattice);
@@ -143,10 +156,28 @@ function buildIncremental(
   return field;
 }
 
-/** Terrain height under (x, z) for the active composition; 0 when no generated terrain. */
+/**
+ * Terrain height under a world (x, z) for the active composition; 0 when no
+ * generated terrain. Lattice-periodic fields are sampled at the canonical
+ * repeat, and on boundless open maps the queried point doubles as the viewer
+ * so the region follows whoever is asking.
+ */
 export function generatedGroundHeight(composition: Composition, x: number, z: number): number {
-  const field = terrainFieldFor(composition);
-  return field ? terrainHeightAt(field, x, z) : 0;
+  const field = terrainFieldFor(composition, [x, z]);
+  if (!field) return 0;
+  const [cx, cz] = canonicalFieldPoint(latticeContext(composition.map), field.center, x, z);
+  return terrainHeightAt(field, cx, cz);
+}
+
+/** Height lookup against an already-built field, canonicalized for lattices. */
+export function fieldHeightAtWorld(
+  field: TerrainField,
+  lattice: LatticeContext | null,
+  x: number,
+  z: number,
+): number {
+  const [cx, cz] = canonicalFieldPoint(lattice, field.center, x, z);
+  return terrainHeightAt(field, cx, cz);
 }
 
 /**
@@ -154,9 +185,9 @@ export function generatedGroundHeight(composition: Composition, x: number, z: nu
  * field uses, so display-time object suppression stays in step with the
  * terrain mask.
  */
-export function flattenSourcesFor(composition: Composition): FlattenSource[] {
+export function flattenSourcesFor(composition: Composition, viewer?: [number, number]): FlattenSource[] {
   if (!composition.environment.generated) return [];
-  terrainFieldFor(composition);
+  terrainFieldFor(composition, viewer);
   return cache ? cache.sources : [];
 }
 

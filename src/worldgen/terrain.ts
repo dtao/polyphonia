@@ -230,9 +230,9 @@ export function insideClearZone(sources: FlattenSource[], buffer: number, x: num
 export function buildTerrainField(
   generated: Pick<GeneratedEnvironment, "seed" | "params" | "center" | "size" | "edits" | "constraints">,
   sources: FlattenSource[],
+  resolution = terrainResolution(generated.size),
 ): TerrainField {
   const { size, center } = generated;
-  const resolution = terrainResolution(size);
   const verts = resolution + 1;
   const heights = new Float32Array(verts * verts);
   const cell = (size * 2) / resolution;
