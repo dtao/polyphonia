@@ -1,7 +1,7 @@
 import { ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import { environmentBackgroundColor } from "./EnvironmentScene";
 import { RADIAL_FADE_INNER, RADIAL_FADE_OUTER, effectiveFadeInner, effectiveFadeOuter, radialFade } from "./fade";
-import { Line, TransformControls } from "@react-three/drei";
+import { Billboard, Line, Text, TransformControls } from "@react-three/drei";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { TrackDef } from "../composition";
@@ -37,6 +37,7 @@ export function MapScene({
   return (
     <group>
       {editMode && <StartMarker map={map} editMode={editMode} />}
+      {editMode && <TeleportPins map={map} />}
       <ReflectiveUnderfloor segments={map.segments} tracks={tracks} lightTracks={lightTracks} previewFade={previewFade} />
       <WalkableFloor map={map} tracks={lightTracks} editMode={editMode} previewFade={previewFade} />
       <PathDropSkirt map={map} />
@@ -753,6 +754,52 @@ function PathDropSkirt({ map }: { map: CompositionMap }) {
     <mesh geometry={geometry}>
       <meshBasicMaterial color="#182033" transparent opacity={0.7} toneMapped={false} side={THREE.DoubleSide} />
     </mesh>
+  );
+}
+
+// Edit-mode markers for the numbered teleport pins (Shift+0–9 drops one at the
+// view; 0–9 jumps to it). Click a pin to teleport there too — same path as the
+// digit key, via pendingTeleport.
+function TeleportPins({ map }: { map: CompositionMap }) {
+  const pins = map.teleportPins;
+  if (!pins?.length) return null;
+  return (
+    <group>
+      {pins.map((pin) => {
+        const y = surfaceHeightAt(map, pin.position) + 0.08;
+        return (
+          <group
+            key={pin.key}
+            position={[pin.position[0], y, pin.position[1]]}
+            onClick={(e) => {
+              e.stopPropagation();
+              pendingTeleport.value = { x: pin.position[0], z: pin.position[1] };
+            }}
+            onPointerOver={(e) => {
+              e.stopPropagation();
+              document.body.style.cursor = "pointer";
+            }}
+            onPointerOut={() => {
+              document.body.style.cursor = "auto";
+            }}
+          >
+            <mesh rotation={[-Math.PI / 2, 0, 0]}>
+              <circleGeometry args={[0.7, 32]} />
+              <meshBasicMaterial color="#ffd166" transparent opacity={0.22} toneMapped={false} depthWrite={false} />
+            </mesh>
+            <mesh rotation={[-Math.PI / 2, 0, 0]}>
+              <ringGeometry args={[0.66, 0.78, 32]} />
+              <meshBasicMaterial color="#ffd166" transparent opacity={0.85} toneMapped={false} depthWrite={false} />
+            </mesh>
+            <Billboard position={[0, 1.1, 0]}>
+              <Text fontSize={0.7} color="#ffd166" anchorX="center" anchorY="middle">
+                {String(pin.key)}
+              </Text>
+            </Billboard>
+          </group>
+        );
+      })}
+    </group>
   );
 }
 

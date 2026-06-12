@@ -140,7 +140,20 @@ export interface CompositionMap {
     inner: number;
     outer: number;
   };
+  /**
+   * Edit-mode teleport pins: up to ten authored spots keyed by the digit (0–9)
+   * that jumps the edit view straight to them. Positions are XZ; the view
+   * lands at the walkable surface height there.
+   */
+  teleportPins?: TeleportPin[];
 }
+
+export interface TeleportPin {
+  key: number; // 0–9; pressing this digit in Edit mode teleports to the pin
+  position: [number, number];
+}
+
+export const MAX_TELEPORT_PINS = 10;
 
 // Bounds for a composition's custom visible radius. Mirror the debug sliders'
 // ranges (DebugPanel) so authored and tuned values agree; `MIN_VISIBLE_RADIUS_GAP`
@@ -241,6 +254,7 @@ export function normalizeMap(value: Partial<CompositionMap> | undefined): Compos
   map.loop = map.tiling.type === "path-loop" ? map.tiling.pathLoop : undefined;
   const elevations = normalizeElevations(value?.elevations, map.segments);
   const visibleRadius = normalizeVisibleRadius(value?.visibleRadius);
+  const teleportPins = normalizeTeleportPins(value?.teleportPins);
   return {
     ...map,
     // Omit when flat so untiled/older compositions keep an identical shape (and
@@ -249,11 +263,27 @@ export function normalizeMap(value: Partial<CompositionMap> | undefined): Compos
     // Omit when uncustomized for the same reason: compositions that inherit the
     // default radius keep an identical shape and publish hash.
     ...(visibleRadius ? { visibleRadius } : {}),
+    ...(teleportPins.length ? { teleportPins } : {}),
     start: {
       ...map.start,
       position: clampToMap(map, map.start.position),
     },
   };
+}
+
+// Keep only well-formed pins (digit key 0–9, finite XZ position), one per key,
+// sorted by key so manifests have a stable shape.
+function normalizeTeleportPins(value: unknown): TeleportPin[] {
+  if (!Array.isArray(value)) return [];
+  const byKey = new Map<number, TeleportPin>();
+  for (const raw of value) {
+    const pin = raw as Partial<TeleportPin> | null;
+    if (!pin || typeof pin !== "object") continue;
+    if (typeof pin.key !== "number" || !Number.isInteger(pin.key) || pin.key < 0 || pin.key >= MAX_TELEPORT_PINS) continue;
+    if (!isPoint(pin.position)) continue;
+    byKey.set(pin.key, { key: pin.key, position: [pin.position[0], pin.position[1]] });
+  }
+  return [...byKey.values()].sort((a, b) => a.key - b.key);
 }
 
 // Clamp a custom visible radius into range and keep `outer` a band's width above

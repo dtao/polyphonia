@@ -294,6 +294,9 @@ interface StoreState {
   loopProgress: () => { mode: "playing" | "audition"; position: number; duration: number } | null;
   setEnvironment: (environment: Partial<EnvironmentSettings>) => void;
   setMap: (map: Partial<CompositionMap>, options?: { moveViewToStart?: boolean }) => void;
+  // Drop/move teleport pin `key` (0–9) at the current edit view position, or
+  // remove it when it already sits there (toggle).
+  toggleTeleportPinAtView: (key: number) => void;
   undo: () => Promise<void>;
   redo: () => Promise<void>;
 
@@ -1861,6 +1864,16 @@ export const useStore = create<StoreState>((set, get) => ({
         selectedWallId: s.selectedWallId && nextMap.walls.some((wall) => wall.id === s.selectedWallId) ? s.selectedWallId : null,
       };
     }),
+
+  toggleTeleportPinAtView: (key) => {
+    const map = get().composition.map;
+    const position: [number, number] = [viewState.x, viewState.z];
+    const existing = (map.teleportPins ?? []).find((pin) => pin.key === key);
+    const others = (map.teleportPins ?? []).filter((pin) => pin.key !== key);
+    // Pressing the same digit while standing on (or very near) its pin lifts it.
+    const onPin = existing && Math.hypot(existing.position[0] - position[0], existing.position[1] - position[1]) < 1;
+    get().setMap({ teleportPins: onPin ? others : [...others, { key, position }] });
+  },
 
   undo: async () => {
     const s = get();

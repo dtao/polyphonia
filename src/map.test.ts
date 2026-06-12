@@ -132,6 +132,27 @@ describe("map normalization", () => {
     expect(tooSmall.visibleRadius).toEqual({ inner: MIN_VISIBLE_RADIUS, outer: MIN_VISIBLE_RADIUS + MIN_VISIBLE_RADIUS_GAP });
   });
 
+  it("keeps valid teleport pins, one per digit, sorted, and omits when empty", () => {
+    expect(normalizeMap({ preset: "open" })).not.toHaveProperty("teleportPins");
+    expect(normalizeMap({ preset: "open", teleportPins: [] })).not.toHaveProperty("teleportPins");
+
+    const map = normalizeMap({
+      preset: "open",
+      teleportPins: [
+        { key: 3, position: [1, 2] },
+        { key: 0, position: [5, 6] },
+        { key: 3, position: [9, 9] }, // later entry for the same digit wins
+        { key: 12, position: [0, 0] }, // out of range → dropped
+        { key: 1.5, position: [0, 0] }, // non-integer → dropped
+        { key: 4, position: [NaN, 0] as any }, // bad point → dropped
+      ] as any,
+    });
+    expect(map.teleportPins).toEqual([
+      { key: 0, position: [5, 6] },
+      { key: 3, position: [9, 9] },
+    ]);
+  });
+
   it("ignores a non-finite visible radius", () => {
     expect(normalizeMap({ preset: "open", visibleRadius: { inner: NaN, outer: 100 } as any })).not.toHaveProperty("visibleRadius");
   });

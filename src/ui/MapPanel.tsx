@@ -106,6 +106,7 @@ export function MapPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () 
           + Add wall
         </button>
         <div style={hint}>Select a path segment to set its width, or a terminal point to grow the path or attach a room or platform.</div>
+        <div style={hint}>Shift+0–9 drops a numbered teleport pin at the view center; 0–9 jumps straight to it. Shift+digit on a pin lifts it.</div>
       </div>
       <div style={editorGroup}>
         <div style={sectionTitle}>Tiling</div>

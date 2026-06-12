@@ -10,7 +10,7 @@
 // `Player`/`EditControls`: those poll held-key state every frame rather than
 // firing a one-shot command, and their feel is tuned separately.
 
-import { useStore } from "./store";
+import { pendingTeleport, useStore } from "./store";
 
 export type EditPanel = "map" | "loop" | "world" | null;
 
@@ -21,7 +21,9 @@ export type ShortcutId =
   | "clone"
   | "undo"
   | "redo"
-  | "toggle-mode";
+  | "toggle-mode"
+  | "set-teleport-pin"
+  | "teleport-to-pin";
 
 // App-owned callbacks the shortcut actions need. Store state and actions are
 // read directly via `useStore.getState()` inside the handlers, so only the
@@ -47,8 +49,9 @@ export interface Shortcut {
   enabled: (ctx: ShortcutContext) => boolean;
   // Perform the action. Return true if it handled the event (which consumes
   // it via preventDefault); return false to fall through, e.g. a delete with
-  // nothing selected.
-  run: (ctx: ShortcutContext) => boolean;
+  // nothing selected. Receives the matched event for shortcuts whose behavior
+  // depends on which key fired (e.g. the digit of a teleport pin).
+  run: (ctx: ShortcutContext, e: KeyboardEvent) => boolean;
   // Allow firing while a text input/textarea is focused. Defaults to false so
   // typing in a panel field never triggers a command.
   allowInTextField?: boolean;
@@ -225,6 +228,32 @@ export const SHORTCUTS: Shortcut[] = [
     },
   },
   {
+    id: "set-teleport-pin",
+    keys: "Shift+0–9",
+    description: "Drop (or lift) a teleport pin at the current view position",
+    // e.code survives Shift ("Digit5" stays "Digit5"), unlike e.key.
+    match: (e) => e.shiftKey && !hasModifier(e) && !e.altKey && /^Digit\d$/.test(e.code),
+    enabled: () => useStore.getState().mode === "edit",
+    run: (_ctx, e) => {
+      useStore.getState().toggleTeleportPinAtView(Number(e.code.slice(-1)));
+      return true;
+    },
+  },
+  {
+    id: "teleport-to-pin",
+    keys: "0–9",
+    description: "Teleport the edit view to that numbered pin",
+    match: (e) => !e.shiftKey && !hasModifier(e) && !e.altKey && /^Digit\d$/.test(e.code),
+    enabled: () => useStore.getState().mode === "edit",
+    run: (_ctx, e) => {
+      const key = Number(e.code.slice(-1));
+      const pin = useStore.getState().composition.map.teleportPins?.find((p) => p.key === key);
+      if (!pin) return false;
+      pendingTeleport.value = { x: pin.position[0], z: pin.position[1] };
+      return true;
+    },
+  },
+  {
     id: "toggle-mode",
     keys: "Tab",
     description: "Toggle between Explore and Edit",
@@ -245,7 +274,7 @@ export function dispatchShortcut(e: KeyboardEvent, ctx: ShortcutContext): boolea
     if (!sc.match(e)) continue;
     if (textField && !sc.allowInTextField) continue;
     if (!sc.enabled(ctx)) continue;
-    if (sc.run(ctx)) {
+    if (sc.run(ctx, e)) {
       e.preventDefault();
       return true;
     }
