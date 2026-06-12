@@ -16,8 +16,9 @@ import {
   regenerateEnvironment,
   regenerateRegion,
 } from "./regen";
-import { applyLoopToField } from "./terrain";
+import { applyLatticeToField, applyLoopToField } from "./terrain";
 import { LOOP_BLEND_BAND, loopEditPoint, loopFieldContext, loopProgress } from "./loop";
+import { latticeContext, worldEditPoint } from "./lattice";
 import { normalizeMap, surfaceHeightAt } from "../map";
 import type { TrackDef } from "../composition";
 import type { GeneratedEnvironment, WorldObjectPlacement } from "../environment";
@@ -368,6 +369,69 @@ describe("path-loop awareness", () => {
     for (const object of objects) {
       expect(loopProgress(ctx, object.position[0], object.position[2])).toBeLessThan(1 - LOOP_BLEND_BAND / 2);
     }
+  });
+});
+
+describe("square/hex tiled maps", () => {
+  const tiledMap = (type: "square" | "hex") =>
+    normalizeMap({
+      preset: "custom",
+      segments: [],
+      tiling: { type, origin: [0, 0], tileSize: 60 },
+      start: { position: [0, 0], direction: [1, 0] },
+    });
+
+  it("makes the terrain exactly periodic under the square lattice", () => {
+    const map = tiledMap("square");
+    // Hill clear of the start disc's blend band so the brush lands at full strength.
+    const generated = testEnvironment({
+      edits: [{ id: "hill", type: "terrain", mode: "raise", center: [10, 25], radius: 6, amount: 3, at: NOW, level: "major" }],
+    });
+    const ctx = latticeContext(map)!;
+    const display = applyLatticeToField(buildTerrainField(generated, flattenSources(map, [], generated)), ctx);
+    // Sample points whose +60 translates stay inside the field extent (±80).
+    // The tile size is an exact multiple of the grid cell here, so translated
+    // samples land on translated vertices and periodicity is bit-exact.
+    for (const [x, z] of [[10, 5], [-14, -8], [12, -30], [-30, 18]] as const) {
+      const here = terrainHeightAt(display, x, z);
+      expect(terrainHeightAt(display, x + 60, z), `(${x},${z}) +a`).toBeCloseTo(here, 4);
+      expect(terrainHeightAt(display, x, z + 60), `(${x},${z}) +b`).toBeCloseTo(here, 4);
+    }
+    // The sculpted hill exists in the neighboring copies.
+    const plain = applyLatticeToField(
+      buildTerrainField(testEnvironment(), flattenSources(map, [], testEnvironment())),
+      ctx,
+    );
+    expect(terrainHeightAt(display, 70, 25) - terrainHeightAt(plain, 70, 25)).toBeGreaterThan(2);
+  });
+
+  it("makes the terrain exactly periodic under the hex lattice", () => {
+    const map = tiledMap("hex");
+    const generated = testEnvironment();
+    const ctx = latticeContext(map)!;
+    const display = applyLatticeToField(buildTerrainField(generated, flattenSources(map, [], generated)), ctx);
+    const b: [number, number] = [30, (Math.sqrt(3) / 2) * 60];
+    // The hex offset is irrational relative to the grid, so translated samples
+    // interpolate between different vertices; the field function is periodic
+    // but the discretized lookup matches only to resampling tolerance (~cm).
+    for (const [x, z] of [[12, 7], [-20, 18], [15, -25]] as const) {
+      const here = terrainHeightAt(display, x, z);
+      expect(terrainHeightAt(display, x + 60, z), `(${x},${z}) +a`).toBeCloseTo(here, 4);
+      expect(Math.abs(terrainHeightAt(display, x + b[0], z + b[1]) - here), `(${x},${z}) +b`).toBeLessThan(0.05);
+    }
+  });
+
+  it("remaps edits from repeated copies into the fundamental cell", () => {
+    const square = tiledMap("square");
+    expect(worldEditPoint(square, [70, 5])).toEqual([10, 5]);
+    expect(worldEditPoint(square, [-50, 125])).toEqual([10, 5]);
+    expect(worldEditPoint(square, [10, 5])).toEqual([10, 5]);
+    const hex = tiledMap("hex");
+    const mapped = worldEditPoint(hex, [12 + 30, 7 + (Math.sqrt(3) / 2) * 60]);
+    expect(mapped[0]).toBeCloseTo(12, 1);
+    expect(mapped[1]).toBeCloseTo(7, 1);
+    // Non-tiled maps pass through; path-loop maps keep their loop remapping.
+    expect(worldEditPoint(pathMap, [70, 5])).toEqual([70, 5]);
   });
 });
 

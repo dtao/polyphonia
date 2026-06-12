@@ -17,6 +17,7 @@ import type { GeneratedEdit, GeneratedEnvironment } from "../environment";
 import type { CompositionMap } from "../map";
 import {
   applyEditsToField,
+  applyLatticeToField,
   applyLoopToField,
   buildTerrainField,
   flattenSources,
@@ -25,15 +26,17 @@ import {
   FlattenSource,
 } from "./terrain";
 import { LoopFieldContext, loopFieldContext } from "./loop";
+import { LatticeContext, latticeContext } from "./lattice";
 
 const STEM_REBUILD_THROTTLE_MS = 300;
 
 interface CacheEntry {
   /** Fundamental-domain field (noise + flattening + edits). */
   base: TerrainField;
-  /** What the scene samples: base, made loop-invariant on path-loop maps. */
+  /** What the scene samples: base, made tiling-invariant on tiled maps. */
   display: TerrainField;
   loop: LoopFieldContext | null;
+  lattice: LatticeContext | null;
   sources: FlattenSource[];
   map: CompositionMap;
   baseKey: string;
@@ -86,7 +89,7 @@ export function terrainFieldFor(composition: Composition): TerrainField | null {
         edits: generated.edits.slice(cache.editSignatures.length),
       };
       const nextBase = buildIncremental(cache.base, partial, cache.sources);
-      const display = cache.loop ? applyLoopToField(nextBase, cache.loop) : nextBase;
+      const display = deriveDisplay(nextBase, cache.loop, cache.lattice);
       cache = { ...cache, base: nextBase, display, editSignatures: signatures, builtAt: Date.now() };
       return display;
     }
@@ -101,11 +104,13 @@ export function terrainFieldFor(composition: Composition): TerrainField | null {
   const sources = flattenSources(map, composition.tracks, generated);
   const baseField = buildTerrainField(generated, sources);
   const loop = loopFieldContext(map);
-  const display = loop ? applyLoopToField(baseField, loop) : baseField;
+  const lattice = loop ? null : latticeContext(map);
+  const display = deriveDisplay(baseField, loop, lattice);
   cache = {
     base: baseField,
     display,
     loop,
+    lattice,
     sources,
     map,
     baseKey: base,
@@ -114,6 +119,16 @@ export function terrainFieldFor(composition: Composition): TerrainField | null {
     builtAt: Date.now(),
   };
   return display;
+}
+
+function deriveDisplay(
+  base: TerrainField,
+  loop: LoopFieldContext | null,
+  lattice: LatticeContext | null,
+): TerrainField {
+  if (loop) return applyLoopToField(base, loop);
+  if (lattice) return applyLatticeToField(base, lattice);
+  return base;
 }
 
 // Applying only new ops reuses buildTerrainField's edit pass by handing it a

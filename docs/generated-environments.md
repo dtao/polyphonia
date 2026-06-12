@@ -121,8 +121,18 @@ you approach the end loop point.
 - `shade`/`patch` on the display field keep terrain coloring (height ramp and
   patch noise) consistent across the seam despite the lift.
 
-Square/hex tiling is not loop-aware yet; generated worlds there stay a single
-region as before.
+## Square/hex tiled maps (`src/worldgen/lattice.ts`)
+
+Square and hex tilings repeat the map by translations on a lattice, and the
+terrain repeats with them: `applyLatticeToField` canonicalizes every sample
+into the fundamental tile cell and corner-blends toward the neighboring
+translates in a `LATTICE_BLEND_BAND` before each cell edge — exactly periodic
+under both basis vectors (the loop construction generalized to translation
+lattices, without vertical lift). Brush strokes and regional reseeds remap
+into the fundamental cell via `worldEditPoint`, so a sculpted hill appears in
+every copy. The display field carries no rim fade on tiled maps; the region
+edge sits beyond the default fade radius, but a much larger authored
+`visibleRadius` could expose it.
 
 ## UI
 

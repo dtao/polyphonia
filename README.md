@@ -53,8 +53,9 @@ these spatial compositions.
   editor). Composers sculpt the terrain with raise/lower/smooth brushes, then
   **regenerate** with preservation modes — fresh overwrite, fresh around
   stems & paths, preserve major sculpting, preserve all sculpting, or re-roll
-  just a zone around the viewer. On path-loop maps the terrain repeats across
-  the loop seam, so sculpted hills are visible ahead as you approach the wrap.
+  just a zone around the viewer. On tiled maps the terrain repeats with the
+  map — across the path-loop seam (sculpted hills are visible ahead as you
+  approach the wrap) and across square/hex tile boundaries.
   The generated world is visual dressing (the map still owns movement and
   acoustics; on boundless open maps the listener also walks the terrain), and
   it round-trips through export/import and cloud publishing as part of the

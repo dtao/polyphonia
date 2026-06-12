@@ -36,7 +36,7 @@ import {
   regenerateEnvironment,
   regenerateRegion,
 } from "./worldgen/regen";
-import { loopEditPoint } from "./worldgen/loop";
+import { worldEditPoint } from "./worldgen/lattice";
 import { attachmentForPoint, canAddBranchAtPoint, canAddPlatformAtPoint, canAddRoomAtPoint, CompositionMap, entranceDoorwayCenter, entranceLocalCenter, entranceOuterPoint, MAP_PRESETS, MapPlatform, MapRoom, MapWall, RoomAttachment, RoomEntrance, RoomSide, defaultMap, mapPointKey, normalizeMap, platformContains, platformElevation, pointElevation, pointInOriginalTile, roomContains, roomElevation, roomWorldPoint, surfaceHeightAt, WalkableSegment } from "./map";
 import { ArtistIdentity } from "./artist";
 import {
@@ -1151,7 +1151,9 @@ export const useStore = create<StoreState>((set, get) => ({
       generated,
       state.composition.map,
       state.composition.tracks,
-      { center: [viewState.x, viewState.z], radius },
+      // On tiled maps the viewer may stand in a repeated copy; the reseed must
+      // land in the fundamental cell or the display would never sample it.
+      { center: worldEditPoint(state.composition.map, [viewState.x, viewState.z]), radius },
       { seed: newWorldSeed(), editId: newId(), now: new Date().toISOString() },
     );
     set((s) => ({
@@ -1211,10 +1213,10 @@ export const useStore = create<StoreState>((set, get) => ({
         id,
         type: "terrain",
         mode: brush.mode,
-        // On path-loop maps, strokes near/beyond the end seam are stored at
-        // their fundamental-domain spot; the loop transport shows them under
-        // the cursor (see worldgen/loop.ts).
-        center: loopEditPoint(s.composition.map, brush.center),
+        // On tiled maps (path-loop, square, hex), strokes are stored at their
+        // fundamental-domain spot; the tiling transport shows them under the
+        // cursor — and in every repeated copy (worldgen/loop.ts, lattice.ts).
+        center: worldEditPoint(s.composition.map, brush.center),
         radius: brush.radius,
         amount: brush.amount,
         at: new Date().toISOString(),

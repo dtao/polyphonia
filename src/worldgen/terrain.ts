@@ -29,6 +29,7 @@ import {
 import type { TrackDef } from "../composition";
 import { fbm2 } from "./noise";
 import { LOOP_BLEND_BAND, LoopFieldContext, canonicalizeLoopPoint, loopProgress } from "./loop";
+import { LATTICE_BLEND_BAND, LatticeContext, latticeCoords, latticePoint } from "./lattice";
 
 export const STEM_CLEAR_RADIUS = 2.5;
 export const START_CLEAR_RADIUS = 5;
@@ -412,6 +413,56 @@ export function applyLoopToField(base: TerrainField, ctx: LoopFieldContext): Ter
       shade[index] = blended;
       patch[index * 2] = px;
       patch[index * 2 + 1] = pz;
+    }
+  }
+
+  return { center, size, resolution, heights, shade, patch };
+}
+
+/**
+ * Derive the lattice-aware display field for square/hex tiled maps: each
+ * vertex canonicalizes into the fundamental tile cell, and a band before each
+ * far cell edge blends toward the neighboring translate (corner-weighted, so
+ * the result is exactly periodic under both basis vectors). The analogue of
+ * applyLoopToField for translation lattices; no vertical lift is involved.
+ */
+export function applyLatticeToField(base: TerrainField, ctx: LatticeContext): TerrainField {
+  const { center, size, resolution } = base;
+  // A cell that doesn't fit the generated region can't repeat meaningfully —
+  // its neighbors' samples would fall outside the field.
+  if (Math.max(Math.hypot(ctx.a[0], ctx.a[1]), Math.hypot(ctx.b[0], ctx.b[1])) > size) return base;
+  const verts = resolution + 1;
+  const cell = (size * 2) / resolution;
+  const heights = new Float32Array(verts * verts);
+  const shade = new Float32Array(verts * verts);
+  const patch = new Float32Array(verts * verts * 2);
+
+  const sample = (qx: number, qz: number, du: number, dv: number): number =>
+    terrainHeightAt(base, qx - du * ctx.a[0] - dv * ctx.b[0], qz - du * ctx.a[1] - dv * ctx.b[1]);
+
+  for (let iz = 0; iz < verts; iz++) {
+    for (let ix = 0; ix < verts; ix++) {
+      const index = iz * verts + ix;
+      const x = center[0] - size + ix * cell;
+      const z = center[1] - size + iz * cell;
+      const [u, v] = latticeCoords(ctx, x, z);
+      const fu = u - Math.floor(u);
+      const fv = v - Math.floor(v);
+      const [qx, qz] = latticePoint(ctx, fu, fv);
+      const au = smoothstep((fu - (1 - LATTICE_BLEND_BAND)) / LATTICE_BLEND_BAND);
+      const av = smoothstep((fv - (1 - LATTICE_BLEND_BAND)) / LATTICE_BLEND_BAND);
+      const h =
+        (1 - au) * (1 - av) * sample(qx, qz, 0, 0) +
+        au * (1 - av) * sample(qx, qz, 1, 0) +
+        (1 - au) * av * sample(qx, qz, 0, 1) +
+        au * av * sample(qx, qz, 1, 1);
+      heights[index] = h;
+      shade[index] = h;
+      // Patch-noise coords from the dominant corner so coloring repeats too.
+      const du = au > 0.5 ? 1 : 0;
+      const dv = av > 0.5 ? 1 : 0;
+      patch[index * 2] = qx - du * ctx.a[0] - dv * ctx.b[0];
+      patch[index * 2 + 1] = qz - du * ctx.a[1] - dv * ctx.b[1];
     }
   }
 
