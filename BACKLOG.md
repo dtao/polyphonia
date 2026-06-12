@@ -44,14 +44,14 @@ earlier ones.
 - [x] **M5.3 Detail pack picker** — add an Edit-mode panel so composers can choose an optional authored visual pack and quality tier without touching stem placement or audio settings.
 - [x] **M5.4 Map model and presets** — add composition-level walkable maps with Open, Line, and Y presets, visible lighted ground paths, closed route ends, and Explore-mode movement constraints.
 - [x] **M5.5 Composition start point** — each composition stores a start position + facing direction; Edit mode can set or jump to it, and Explore entry begins there.
-- [ ] **M5.6 Map shape editor** — replace preset-only maps with editable route geometry: add/move/delete endpoints, branches, widths, and closed boundaries directly in Edit mode.
+- [x] **M5.6 Map shape editor** — replace preset-only maps with editable route geometry: add/move/delete endpoints, branches, widths, and closed boundaries directly in Edit mode.
 - [ ] **M5.7 Map-aware stem tools** — snap stems to paths, show distance along branches, warn when stems are outside the walkable area, and provide quick distribute-along-path helpers.
-- [ ] **M5.8 Pack-aware ambience** — let detail packs suggest broad acoustic character (dry/soft → low reflections, stone/glass → brighter/longer reflections) using a conservative global reverb/filter path that can be bypassed.
+- [ ] **M5.8 World-aware ambience** — let the generated biome and assigned surface materials suggest broad acoustic character (meadow/soft → dry, low reflections; cavern/stone/crystal → brighter, longer reflections) using a conservative global reverb/filter path that can be bypassed. (Re-scoped from detail packs, which were retired in favor of generated worlds + imported materials.)
 - [x] **M5.9 Occlusion and obstruction pass** — introduce geometry-aware sound shaping between listener and stems (line-of-sight checks against environment/map obstacles; blocked sounds get softer/darker without breaking timing, with room/tunnel/wall thickness affecting dampening strength).
 - [x] **M5.10 Looping space model** — support composition-level spatial tiling (`none`, square, hex, path-loop`) with tile size/origin and compatible map topology so a stem layout can repeat infinitely like the audio loop.
 - [x] **M5.11 Tiled map rendering and audio instances** — render nearby visual tiles/map copies and create/cull nearby virtual stem instances around the listener, bounded by adaptive distance/performance limits so infinite space stays cheap.
 - [ ] **M5.12 Tiling editor aids** — show tile boundaries, mirrored/ghost map copies, and edge-continuity hints in Edit mode so composers can intentionally make square/hex/path layouts that tile cleanly.
-- [ ] **M5.13 Publish/viewer compatibility for maps and environments** — ensure `/c/:id`, `/gallery`, artist pages, export/import, and older manifests all handle environment, map, start, and tiling metadata gracefully.
+- [x] **M5.13 Publish/viewer compatibility for maps and environments** — ensure `/c/:id`, `/gallery`, artist pages, export/import, and older manifests all handle environment, map, start, and tiling metadata gracefully.
 - [ ] **M5.14 Open-world stitching prototype** — explore streaming/culling multiple artists' spaces into neighborhoods once single-composition maps and tiling work.
 - [x] **M5.15 Elevation (the vertical dimension)** — stems drag freely in 3D (gizmo Y unlocked) and branch points carry a height (`map.elevations`), so segments become ramps. The explore player auto-follows the walkable surface, attached rooms inherit their branch point's height, and spatial audio is 3D for free (listener + panners already honor Y).
 - [x] **M5.16a AR/Geo movement experiments** — square/hex tiled maps expose optional listener modes: AR Walk lets Three own an Android WebXR AR session for room-scale pose tracking, while Geo Drive watches GPS movement for car-scale exploration. Both feed existing map wrapping/clamping/audio updates.
@@ -60,6 +60,7 @@ earlier ones.
 - [x] **M5.18 Platforms** - large areas of various shapes (rectangle, hex, circle) - like rooms, they can be connected to path segments; but they have no walls or ceilings.
 - [x] **M5.19 Doors** - entrances can have doors that slide open - can be openable from one side, or from both sides.
 - [x] **M5.20 Standalone walls** - allow composers to create walls in arbitary locations (not necessarily connected to a path segment) to introduce intentional occlusion as part of a composition.
+- [ ] **M5.21 Generated-world objects from imported assets** — bring scattered objects back to generated worlds using high-quality imported GLB assets (per-biome palettes/weights). The constraint-aware scatter engine, locks, and preservation modes are already built and dormant in `src/worldgen/scatter.ts`; this item is the asset sourcing, per-biome configuration UI, and re-enabling rendering through the faded-instance pipeline.
 
 ## Milestone 6 — Authored high-fidelity environments
 
@@ -72,9 +73,9 @@ earlier ones.
 
 ## Milestone 7 — Advanced composition features
 
-- [ ] **M7.1 Stem timing offset** — let each stem shift earlier or later by musical intervals such as 1/16, 1/8, 1/4, and 1/2 notes, while keeping all stems synchronized to the shared audio clock and saved in the composition manifest.
+- [x] **M7.1 Stem timing offset** — let each stem shift earlier or later by musical intervals such as 1/16, 1/8, 1/4, and 1/2 notes, while keeping all stems synchronized to the shared audio clock and saved in the composition manifest.
 - [x] **M7.2 Variable stem durations** - it should be possible for some stems to be 4 bars while other stems are 8 bars in length. In this case the 4-bar stems should automatically loop at 2x the interval of the 8-bar stems.
-- [ ] **M7.3 Stem tails** - if a stem is a bit longer than a whole number multiple of the BPM - for example, slightly longer than 8 bars - it should be looped before the audio ends (but still allowing the remainder to be played), allowing reverb tails to be heard across loop seams.
+- [x] **M7.3 Stem tails** - if a stem is a bit longer than a whole number multiple of the BPM - for example, slightly longer than 8 bars - it should be looped before the audio ends (but still allowing the remainder to be played), allowing reverb tails to be heard across loop seams.
 - [x] **M7.4 Audio playback visualization** - in Edit mode, there should be a visual bar near the bottom of the screen showing the full length of the loop (with beat markers based on BPM) including an indicator of the current position as the audio plays.
 - [x] **M7.5 Stem playback visualization** - in Edit mode, click on stem to reveal a visual meter of the track, similar to the visual bar for the overall composition loop (from M7.4) but for this specific stem - allowing user to indicate where stem sub-loop should begin and end.
 
@@ -105,3 +106,5 @@ earlier ones.
 - [x] P24 Rings visualizing Near and Far properties only appear at 0 elevation - should be aligned with elevation of stems (so they're visible where these attributes are being adjusted).
 - [x] P25 Adding stem should always locate stem where camera is looking - including elevation. Currently it can place the stem on a different surface e.g. if there is a path "above" the camera at a higher elevation.
 - [x] P26 Adding room to another room should always match elevation. Currently when adding a room to another room, it is possible the new room will appear at a different elevation.
+- [ ] P27 Supabase cleanup migration: drop the orphaned `detail_packs` table (and its RLS policies) left behind by the retired detail-pack system. The `environment-assets` bucket stays — creator assets still publish there.
+- [ ] P28 Large authored visible radii vs. generated regions: the bounded-map region derivation accounts for `map.visibleRadius`, but extreme combinations (huge maps near the 560-unit region cap with a large radius) fall back to the rim fade. If composers hit this, expose region size or raise the resolution cap.
