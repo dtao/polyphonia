@@ -151,6 +151,13 @@ export interface CompositionMap {
     outer: number;
   };
   /**
+   * Authored spots where the visible radius differs (M7.7). When any exist,
+   * the effective horizontal band at the listener is the inverse-distance-
+   * weighted blend of the points' bands (overriding `visibleRadius`), so a map
+   * can open wide in one area and close claustrophobically in another.
+   */
+  fadePoints?: FadeRadiusPoint[];
+  /**
    * Edit-mode teleport pins: up to ten authored spots keyed by the digit (0–9)
    * that jumps the edit view straight to them. Positions are XZ; the view
    * lands at the walkable surface height there.
@@ -164,6 +171,44 @@ export interface TeleportPin {
 }
 
 export const MAX_TELEPORT_PINS = 10;
+
+export interface FadeRadiusPoint {
+  id: string;
+  position: [number, number];
+  inner: number;
+  outer: number;
+}
+
+export const MAX_FADE_POINTS = 20;
+
+/**
+ * The effective visible-radius band at a listener position. With fade points
+ * authored, blend their bands by inverse-square distance (standing on a point
+ * gives exactly its band; elsewhere nearer points dominate smoothly). With
+ * none, fall back to the composition's flat `visibleRadius` (null = engine
+ * defaults).
+ */
+export function fadeRadiiAt(
+  map: Pick<CompositionMap, "fadePoints" | "visibleRadius">,
+  point: [number, number],
+): { inner: number; outer: number } | null {
+  const points = map.fadePoints;
+  if (!points?.length) return map.visibleRadius ?? null;
+  let weightSum = 0;
+  let inner = 0;
+  let outer = 0;
+  for (const p of points) {
+    const dSq = (point[0] - p.position[0]) ** 2 + (point[1] - p.position[1]) ** 2;
+    if (dSq < 1e-6) return { inner: p.inner, outer: p.outer };
+    const w = 1 / dSq;
+    weightSum += w;
+    inner += p.inner * w;
+    outer += p.outer * w;
+  }
+  inner /= weightSum;
+  outer /= weightSum;
+  return { inner, outer: Math.max(outer, inner + 1) };
+}
 
 // Bounds for a composition's custom visible radius. Mirror the debug sliders'
 // ranges (DebugPanel) so authored and tuned values agree; `MIN_VISIBLE_RADIUS_GAP`
@@ -268,6 +313,7 @@ export function normalizeMap(value: Partial<CompositionMap> | undefined): Compos
   const elevations = normalizeElevations(value?.elevations, map.segments);
   const visibleRadius = normalizeVisibleRadius(value?.visibleRadius);
   const visibleRadiusVertical = normalizeVerticalVisibleRadius(value?.visibleRadiusVertical);
+  const fadePoints = normalizeFadePoints(value?.fadePoints);
   const teleportPins = normalizeTeleportPins(value?.teleportPins);
   return {
     ...map,
@@ -278,6 +324,7 @@ export function normalizeMap(value: Partial<CompositionMap> | undefined): Compos
     // default radius keep an identical shape and publish hash.
     ...(visibleRadius ? { visibleRadius } : {}),
     ...(visibleRadiusVertical ? { visibleRadiusVertical } : {}),
+    ...(fadePoints.length ? { fadePoints } : {}),
     ...(teleportPins.length ? { teleportPins } : {}),
     start: {
       ...map.start,
@@ -295,6 +342,24 @@ function normalizeVerticalVisibleRadius(value: unknown): { inner: number; outer:
   const inner = clamp(raw.inner as number, MIN_VERTICAL_VISIBLE_RADIUS, MAX_VISIBLE_RADIUS - MIN_VISIBLE_RADIUS_GAP);
   const outer = clamp(raw.outer as number, inner + MIN_VISIBLE_RADIUS_GAP, MAX_VISIBLE_RADIUS);
   return { inner, outer };
+}
+
+// Keep only well-formed fade points (finite position, finite band), clamping
+// each band the same way as the flat visible radius. Capped at MAX_FADE_POINTS.
+function normalizeFadePoints(value: unknown): FadeRadiusPoint[] {
+  if (!Array.isArray(value)) return [];
+  const out: FadeRadiusPoint[] = [];
+  for (const raw of value) {
+    const p = raw as Partial<FadeRadiusPoint> | undefined;
+    if (!p || typeof p !== "object") continue;
+    if (typeof p.id !== "string" || !p.id.trim()) continue;
+    if (!isPoint(p.position)) continue;
+    const band = normalizeVisibleRadius({ inner: p.inner, outer: p.outer });
+    if (!band) continue;
+    if (out.length >= MAX_FADE_POINTS) break;
+    out.push({ id: p.id.trim(), position: [p.position[0], p.position[1]], inner: band.inner, outer: band.outer });
+  }
+  return out;
 }
 
 // Keep only well-formed pins (digit key 0–9, finite XZ position), one per key,

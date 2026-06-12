@@ -14,7 +14,7 @@ import { EnvironmentScene, environmentBackground } from "./EnvironmentScene";
 import { MapScene } from "./MapScene";
 import { DebugSampler } from "./DebugSampler";
 import { ARWalkSession } from "./ARWalkSession";
-import { CompositionMap, LoopPreviewTransform, loopPreviewElevationOffset, tiledMapTransforms, transformLoopPoint } from "../map";
+import { CompositionMap, LoopPreviewTransform, fadeRadiiAt, loopPreviewElevationOffset, tiledMapTransforms, transformLoopPoint } from "../map";
 import { TrackDef } from "../composition";
 import { AudioEngine } from "../audio/AudioEngine";
 import { debugEnabled, debugFlag } from "../debug";
@@ -55,10 +55,13 @@ export function Scene() {
   // every radial-fade consumer (orbs, instances, fog, shaders) picks it up.
   // Clearing it on unmount returns to the engine defaults.
   const visibleRadius = map.visibleRadius;
+  const hasFadePoints = !!map.fadePoints?.length;
   useEffect(() => {
+    // With fade points authored, <FadeRadiusDriver> owns the band per frame.
+    if (hasFadePoints) return;
     setCompositionFadeRadii(visibleRadius?.inner ?? null, visibleRadius?.outer ?? null);
     return () => setCompositionFadeRadii(null, null);
-  }, [visibleRadius?.inner, visibleRadius?.outer]);
+  }, [visibleRadius?.inner, visibleRadius?.outer, hasFadePoints]);
   const visibleRadiusVertical = map.visibleRadiusVertical;
   useEffect(() => {
     setCompositionVerticalFadeRadii(visibleRadiusVertical?.inner ?? null, visibleRadiusVertical?.outer ?? null);
@@ -75,6 +78,7 @@ export function Scene() {
     mode === "explore" && loopPreviewsEnabled && (map.tiling.type !== "none" || isFadeRadiusOverridden());
   return (
     <>
+      {hasFadePoints && <FadeRadiusDriver map={map} />}
       <ARWorldTransform>
         <EnvironmentScene environment={environment} map={map} editMode={mode === "edit"} />
         {mode === "explore" && loopPreviewsEnabled && <TiledMapPreview viewer={viewer} groupRef={previewGroup} />}
@@ -395,6 +399,23 @@ function tileLightTracks(map: CompositionMap, tracks: TrackDef[], viewer: [numbe
         return [{ ...track, position: [x, track.position[1] + loopPreviewElevationOffset(map, preview), z] as [number, number, number] }];
       }),
   ]);
+}
+
+// Per-frame owner of the visible-radius band when the map has authored fade
+// points (M7.7): blends the points' bands at the listener position and feeds
+// the shared fade module, which every consumer (orbs, fog, shaders, lights)
+// already reads. Values are quantized to whole units so the fade listener set
+// only fires while actually crossing a gradient, not every frame.
+function FadeRadiusDriver({ map }: { map: CompositionMap }) {
+  const camera = useThree((s) => s.camera);
+  useEffect(() => () => setCompositionFadeRadii(null, null), []);
+  useFrame(() => {
+    const at: [number, number] = arWalk.active ? [viewState.x, viewState.z] : [camera.position.x, camera.position.z];
+    const radii = fadeRadiiAt(map, at);
+    if (!radii) return;
+    setCompositionFadeRadii(Math.round(radii.inner), Math.round(radii.outer));
+  });
+  return null;
 }
 
 // Structural fade for a whole tiled/looped map copy (see MAP_COPY_FADE_*); not

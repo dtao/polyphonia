@@ -42,6 +42,7 @@ export function MapScene({
     <group>
       {editMode && <StartMarker map={map} editMode={editMode} />}
       {editMode && <TeleportPins map={map} />}
+      {editMode && <FadePointMarkers map={map} />}
       <ReflectiveUnderfloor segments={map.segments} tracks={tracks} lightTracks={lightTracks} previewFade={previewFade} />
       <WalkableFloor map={map} tracks={lightTracks} editMode={editMode} previewFade={previewFade} />
       <PathDropSkirt map={map} />
@@ -769,6 +770,56 @@ function PathDropSkirt({ map }: { map: CompositionMap }) {
     <mesh geometry={geometry}>
       <meshBasicMaterial color="#182033" transparent opacity={0.7} toneMapped={false} side={THREE.DoubleSide} />
     </mesh>
+  );
+}
+
+// Edit-mode markers for authored fade-radius points (M7.7): violet rings at
+// each spot, labeled with the point's full/gone band. Managed from the Map
+// panel ("Fade points"); clicking one teleports the edit view there.
+function FadePointMarkers({ map }: { map: CompositionMap }) {
+  const points = map.fadePoints;
+  if (!points?.length) return null;
+  return (
+    <group>
+      {points.map((point) => {
+        const y = surfaceHeightAt(map, point.position) + 0.08;
+        return (
+          <group
+            key={point.id}
+            position={[point.position[0], y, point.position[1]]}
+            onClick={(e) => {
+              e.stopPropagation();
+              pendingTeleport.value = { x: point.position[0], z: point.position[1] };
+            }}
+            onPointerOver={(e) => {
+              e.stopPropagation();
+              document.body.style.cursor = "pointer";
+            }}
+            onPointerOut={() => {
+              document.body.style.cursor = "auto";
+            }}
+          >
+            <mesh rotation={[-Math.PI / 2, 0, 0]}>
+              <circleGeometry args={[0.55, 32]} />
+              <meshBasicMaterial color="#b78cff" transparent opacity={0.22} toneMapped={false} depthWrite={false} />
+            </mesh>
+            <mesh rotation={[-Math.PI / 2, 0, 0]}>
+              <ringGeometry args={[0.52, 0.62, 32]} />
+              <meshBasicMaterial color="#b78cff" transparent opacity={0.85} toneMapped={false} depthWrite={false} />
+            </mesh>
+            <mesh rotation={[-Math.PI / 2, 0, 0]}>
+              <ringGeometry args={[0.82, 0.9, 32]} />
+              <meshBasicMaterial color="#b78cff" transparent opacity={0.45} toneMapped={false} depthWrite={false} />
+            </mesh>
+            <Billboard position={[0, 1.1, 0]}>
+              <Text fontSize={0.45} color="#b78cff" anchorX="center" anchorY="middle">
+                {`${Math.round(point.inner)}/${Math.round(point.outer)}`}
+              </Text>
+            </Billboard>
+          </group>
+        );
+      })}
+    </group>
   );
 }
 

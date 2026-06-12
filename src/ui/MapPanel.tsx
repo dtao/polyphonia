@@ -1,6 +1,7 @@
-import { canSetLoopEndpoint, clampToMap, CompositionMap, endpointKey, isPointInsideMap, MAP_PRESETS, MAX_VISIBLE_RADIUS, MIN_VERTICAL_VISIBLE_RADIUS, MIN_VISIBLE_RADIUS, MapPreset, MapTilingType, WalkableSegment } from "../map";
+import { canSetLoopEndpoint, clampToMap, CompositionMap, endpointKey, isPointInsideMap, MAP_PRESETS, MAX_FADE_POINTS, MAX_VISIBLE_RADIUS, MIN_VERTICAL_VISIBLE_RADIUS, MIN_VISIBLE_RADIUS, MapPreset, MapTilingType, WalkableSegment } from "../map";
+import { newId } from "../id";
 import { RADIAL_FADE_INNER, RADIAL_FADE_OUTER } from "../scene/fade";
-import { useStore } from "../store";
+import { pendingTeleport, useStore, viewState } from "../store";
 
 const LABELS: Record<MapPreset, string> = {
   open: "Open",
@@ -66,6 +67,21 @@ export function MapPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () 
 
   function resetVisibleRadius() {
     setMap({ visibleRadius: undefined });
+  }
+
+  function addFadePointAtView() {
+    const base = map.visibleRadius ?? { inner: RADIAL_FADE_INNER, outer: RADIAL_FADE_OUTER };
+    const points = [...(map.fadePoints ?? []), { id: newId(), position: [viewState.x, viewState.z] as [number, number], inner: base.inner, outer: base.outer }];
+    setMap({ fadePoints: points });
+  }
+
+  function updateFadePoint(id: string, field: "inner" | "outer", value: number) {
+    if (!Number.isFinite(value)) return;
+    setMap({ fadePoints: (map.fadePoints ?? []).map((p) => (p.id === id ? { ...p, [field]: value } : p)) });
+  }
+
+  function removeFadePoint(id: string) {
+    setMap({ fadePoints: (map.fadePoints ?? []).filter((p) => p.id !== id) });
   }
 
   function customizeVerticalRadius() {
@@ -202,6 +218,62 @@ export function MapPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () 
             </button>
           </>
         )}
+      </div>
+
+      <div style={editorGroup}>
+        <div style={sectionTitle}>Fade points</div>
+        {(map.fadePoints ?? []).map((point, index) => (
+          <div key={point.id} style={{ display: "flex", gap: 6, alignItems: "end", marginTop: index ? 6 : 0 }}>
+            <button
+              style={{ ...actionBtn, padding: "6px 8px" }}
+              onClick={() => {
+                pendingTeleport.value = { x: point.position[0], z: point.position[1] };
+              }}
+              title="Jump the view to this fade point"
+            >
+              ◎{index + 1}
+            </button>
+            <label style={fieldLabel}>
+              Full
+              <input
+                style={numberInput}
+                type="number"
+                min={MIN_VISIBLE_RADIUS}
+                max={MAX_VISIBLE_RADIUS}
+                step={1}
+                value={point.inner}
+                onChange={(e) => updateFadePoint(point.id, "inner", e.currentTarget.valueAsNumber)}
+              />
+            </label>
+            <label style={fieldLabel}>
+              Gone
+              <input
+                style={numberInput}
+                type="number"
+                min={MIN_VISIBLE_RADIUS}
+                max={MAX_VISIBLE_RADIUS}
+                step={1}
+                value={point.outer}
+                onChange={(e) => updateFadePoint(point.id, "outer", e.currentTarget.valueAsNumber)}
+              />
+            </label>
+            <button style={{ ...actionBtn, padding: "6px 9px" }} onClick={() => removeFadePoint(point.id)} title="Remove this fade point">
+              ×
+            </button>
+          </div>
+        ))}
+        <button
+          style={{ ...actionBtn, width: "100%", marginTop: 8 }}
+          onClick={addFadePointAtView}
+          disabled={(map.fadePoints?.length ?? 0) >= MAX_FADE_POINTS}
+        >
+          Add fade point at view
+        </button>
+        <div style={tilingHint}>
+          Spots where the visible radius differs; it blends between them as the
+          listener moves. With any points set, they override the flat radius
+          above.
+        </div>
       </div>
 
       <div style={editorGroup}>

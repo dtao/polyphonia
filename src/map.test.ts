@@ -11,6 +11,7 @@ import {
   clampToMap,
   defaultMap,
   doorOpenAmount,
+  fadeRadiiAt,
   mapPointKey,
   MIN_VERTICAL_VISIBLE_RADIUS,
   normalizeMap,
@@ -144,6 +145,32 @@ describe("map normalization", () => {
       inner: MIN_VERTICAL_VISIBLE_RADIUS,
       outer: MIN_VERTICAL_VISIBLE_RADIUS + MIN_VISIBLE_RADIUS_GAP,
     });
+  });
+
+  it("normalizes fade points and blends their bands by inverse-square distance", () => {
+    expect(normalizeMap({ preset: "open" })).not.toHaveProperty("fadePoints");
+
+    const map = normalizeMap({
+      preset: "open",
+      fadePoints: [
+        { id: "wide", position: [0, 0], inner: 100, outer: 140 },
+        { id: "tight", position: [40, 0], inner: 20, outer: 30 },
+        { id: "", position: [0, 0], inner: 50, outer: 60 }, // dropped: blank id
+        { id: "bad", position: [0, NaN] as any, inner: 50, outer: 60 }, // dropped
+      ],
+    });
+    expect(map.fadePoints).toHaveLength(2);
+
+    // Standing on a point yields exactly its band.
+    expect(fadeRadiiAt(map, [0, 0])).toEqual({ inner: 100, outer: 140 });
+    expect(fadeRadiiAt(map, [40, 0])).toEqual({ inner: 20, outer: 30 });
+    // Midway, the blend is the average (equal weights).
+    const mid = fadeRadiiAt(map, [20, 0])!;
+    expect(mid.inner).toBeCloseTo(60);
+    expect(mid.outer).toBeCloseTo(85);
+    // No fade points → flat visibleRadius (or null for engine defaults).
+    expect(fadeRadiiAt(normalizeMap({ preset: "open" }), [0, 0])).toBeNull();
+    expect(fadeRadiiAt(normalizeMap({ preset: "open", visibleRadius: { inner: 60, outer: 100 } }), [0, 0])).toEqual({ inner: 60, outer: 100 });
   });
 
   it("keeps valid teleport pins, one per digit, sorted, and omits when empty", () => {
