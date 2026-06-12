@@ -150,3 +150,8 @@ region as before.
 - `FLATTEN_TARGET_SLOPE` (terrain.ts): rise rate of each source's candidate
   in the lower-envelope flatten target; must exceed the steepest realistic
   path slope so ramps regain their height once clear of lower neighbors.
+- The flatten-target grid is ERODED (3×3 min) before use: the target field
+  has convex creases, so raw per-vertex sampling let interpolated chords bow
+  above the path between vertices (see
+  docs/investigations/terrain-blobs-on-paths.md). Keep the erosion if you
+  touch the field pipeline.

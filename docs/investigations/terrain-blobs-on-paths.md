@@ -68,9 +68,38 @@ Also worth confirming on a repro: hard-reload so the dev server serves the
 current build, and whether the blobs are smooth ground-colored mounds
 (terrain) or shaped clumps (grass tufts / shrubs — scatter objects).
 
+## Probe result (round 4) — root cause found
+
+User probe while standing by a blob:
+`{"at":[-20.3,1.6],"tiling":"path-loop","constraints":{stems,paths,buffer:3},
+"surfaceY":2.9,"terrainY":2.02,"flattenWeight":0,"flattenTarget":1.85,
+"loopProgress":0.41,"loopBand":false,"nearbyObjects":[]}`
+
+- `nearbyObjects: []` → not scatter objects. Not the loop band, not toggles.
+- **`flattenWeight: 0` with `terrainY` 0.17 ABOVE `flattenTarget`** → at a
+  fully pinned point the mesh exceeded the analytic target. The mesh
+  interpolates between grid vertices, and the target field is NOT concave:
+  the envelope's outward penalty slope (round 2) and clamped strip end caps
+  create convex creases, so bilinear chords across a cell bow upward —
+  through the path floor wherever the local gap is small. Round 1's
+  "concave ⇒ chords stay below" argument was simply wrong once the penalty
+  existed. Grid-aligned synthetic maps hid this (creases landed exactly on
+  vertices); off-grid geometry reproduces +0.20 bows.
+
+## Fix (round 4)
+
+Erode the flatten-target grid (3×3 minimum) before combining with noise:
+every vertex carries at most the lowest target in its neighborhood, so
+interpolated values are conservative regardless of the target field's shape.
+Terrain may seat slightly lower beside slopes; it can no longer bow above
+them. Regression: the geometry-zoo sweep asserts, at interior pinned points
+(off-grid geometry), mesh ≤ pointwise target + 2 cm — fails +0.20 without
+erosion, passes with it.
+
 ## Status
 
-Third fix addresses the only mechanism consistent with all evidence that the
-terrain fixes couldn't touch. Awaiting user verification; the probe exists to
-discriminate the remaining hypotheses (constraints toggled off, stale build,
-or a field defect at coordinates the probes didn't model).
+Field-level root cause identified from the user's probe data and fixed.
+Rounds 1–3 each fixed real but secondary defects (kink chords, collar
+ridges, stale scatter objects). Awaiting user confirmation; if any blob
+remains, the same probe applies — `terrainY` should now stay within ~2 cm
+of `flattenTarget` wherever `flattenWeight` is 0.

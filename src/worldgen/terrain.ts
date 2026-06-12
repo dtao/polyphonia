@@ -241,14 +241,53 @@ export function buildTerrainField(
     return fbm2(seed, x / scale, z / scale, 4) * generated.params.terrainAmplitude;
   };
 
+  // Pass 1: flatten mask per vertex.
+  const weights = new Float32Array(verts * verts);
+  const targets = new Float32Array(verts * verts);
   for (let iz = 0; iz < verts; iz++) {
     for (let ix = 0; ix < verts; ix++) {
       const x = center[0] - size + ix * cell;
       const z = center[1] - size + iz * cell;
-      const rim = 1 - smoothstep((Math.max(Math.abs(x - center[0]), Math.abs(z - center[1])) - (size - RIM_BLEND)) / RIM_BLEND);
       const { weight, target } = flattenAt(sources, generated.constraints.buffer, x, z);
+      weights[iz * verts + ix] = weight;
+      targets[iz * verts + ix] = target;
+    }
+  }
+
+  // Pass 2: erode the target grid (3×3 minimum). The analytic target is NOT
+  // concave — the envelope's outward penalty slope and clamped strip end caps
+  // create convex creases — so interpolating per-vertex samples could bow a
+  // chord ABOVE the true target between vertices, and through the path floor
+  // (seen as terrain blobs on ramped corridors). Taking each vertex's minimum
+  // over its neighborhood makes interpolated values conservative regardless
+  // of the target field's shape: terrain may seat a little lower beside
+  // slopes, never higher.
+  const eroded = targets.slice();
+  for (let iz = 0; iz < verts; iz++) {
+    for (let ix = 0; ix < verts; ix++) {
+      let lowest = targets[iz * verts + ix];
+      for (let dz = -1; dz <= 1; dz++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = ix + dx;
+          const nz = iz + dz;
+          if (nx < 0 || nx > resolution || nz < 0 || nz > resolution) continue;
+          const value = targets[nz * verts + nx];
+          if (value < lowest) lowest = value;
+        }
+      }
+      eroded[iz * verts + ix] = lowest;
+    }
+  }
+
+  // Pass 3: combine with the free noise field.
+  for (let iz = 0; iz < verts; iz++) {
+    for (let ix = 0; ix < verts; ix++) {
+      const index = iz * verts + ix;
+      const x = center[0] - size + ix * cell;
+      const z = center[1] - size + iz * cell;
+      const rim = 1 - smoothstep((Math.max(Math.abs(x - center[0]), Math.abs(z - center[1])) - (size - RIM_BLEND)) / RIM_BLEND);
       const free = noiseHeight(generated.seed, x, z) * rim;
-      heights[iz * verts + ix] = lerp(target, free, weight);
+      heights[index] = lerp(eroded[index], free, weights[index]);
     }
   }
 

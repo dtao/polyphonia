@@ -3,6 +3,7 @@ import { fbm2, hash2, rngFromSeed, valueNoise2 } from "./noise";
 import {
   FLATTEN_DROP,
   buildTerrainField,
+  flattenAt,
   flattenSources,
   insideClearZone,
   terrainHeightAt,
@@ -147,6 +148,66 @@ describe("terrain field", () => {
     }
     for (let x = 2; x <= 29; x += 1.5) {
       expect(terrainHeightAt(field, x, 0)).toBeLessThan(surfaceHeightAt(risingMap, [x, 0]) - 0.05);
+    }
+  });
+
+  it("keeps every corridor unobstructed: dense sweep over a geometry zoo", () => {
+    // Joints, a crest, a descent, a rising terminal spur, and a stem disc
+    // sitting mid-ramp. Interpolated terrain must stay below the walkable
+    // surface EVERYWHERE on the corridors — per-vertex correctness is not
+    // enough (grid-cell chords across convex creases of the flatten target
+    // bowed above ramped paths and showed up as blobs on the walkway).
+    // Deliberately offset from the terrain grid (cell ≈ 2.5) — creases of the
+    // flatten target falling between vertices is where chords bow upward.
+    const zoo = normalizeMap({
+      preset: "custom",
+      segments: [
+        { id: "flat", start: [-38.7, 0.7], end: [1.3, 0.7], width: 4 },
+        { id: "up", start: [1.3, 0.7], end: [31.3, 0.7], width: 4 },
+        { id: "down", start: [31.3, 0.7], end: [61.3, 0.7], width: 4 },
+        { id: "spur", start: [31.3, 0.7], end: [31.3, 30.7], width: 4 },
+      ],
+      start: { position: [-38.7, 0.7], direction: [1, 0] },
+      elevations: { "31.300,0.700": 6, "31.300,30.700": 9 },
+    });
+    const generated = testEnvironment();
+    const stems = [track(15, 0)]; // mid-ramp stem: constant-height disc on a slope
+    const sources = flattenSources(zoo, stems, generated);
+    const field = buildTerrainField(generated, sources);
+    // The invariant the field-level probe checks (terrain-blobs investigation):
+    // in the interior of pinned regions (a grid cell away from the blend
+    // band), the interpolated mesh may not rise above the pointwise flatten
+    // target — chords across the target's convex creases did exactly that
+    // (+0.75 here, +0.17 in the user's probe).
+    const cellSpan = (field.size * 2) / field.resolution;
+    const pinned = (x: number, z: number) => flattenAt(sources, generated.constraints.buffer, x, z).weight === 0;
+    for (let x = -45; x <= 65; x += 0.7) {
+      for (let z = -8; z <= 35; z += 0.7) {
+        if (!pinned(x, z)) continue;
+        if (!pinned(x - cellSpan, z) || !pinned(x + cellSpan, z) || !pinned(x, z - cellSpan) || !pinned(x, z + cellSpan)) continue;
+        const { target } = flattenAt(sources, generated.constraints.buffer, x, z);
+        expect(
+          terrainHeightAt(field, x, z),
+          `pinned point (${x.toFixed(1)}, ${z.toFixed(1)})`,
+        ).toBeLessThanOrEqual(target + 0.02);
+      }
+    }
+    for (const segment of zoo.segments) {
+      const dx = segment.end[0] - segment.start[0];
+      const dz = segment.end[1] - segment.start[1];
+      const length = Math.hypot(dx, dz);
+      const perp: [number, number] = [-dz / length, dx / length];
+      for (let along = 1; along <= length - 1; along += 0.75) {
+        for (const side of [-1.9, 0, 1.9]) {
+          const x = segment.start[0] + (dx / length) * along + perp[0] * side;
+          const z = segment.start[1] + (dz / length) * along + perp[1] * side;
+          const surface = surfaceHeightAt(zoo, [x, z]);
+          expect(
+            terrainHeightAt(field, x, z),
+            `segment ${segment.id} at (${x.toFixed(1)}, ${z.toFixed(1)})`,
+          ).toBeLessThan(surface - 0.03);
+        }
+      }
     }
   });
 
