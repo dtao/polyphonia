@@ -13,9 +13,9 @@ describe("environment normalization", () => {
 
   it("normalizes reusable surface material references", () => {
     expect(normalizeEnvironment({
-      surfaces: { floor: " stone ", wall: "", ceiling: "crystal" },
+      surfaces: { ground: " moss ", floor: " stone ", wall: "", ceiling: "crystal" },
     })).toEqual({
-      surfaces: { floor: "stone", ceiling: "crystal" },
+      surfaces: { ground: "moss", floor: "stone", ceiling: "crystal" },
     });
   });
 

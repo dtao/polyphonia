@@ -1,7 +1,10 @@
+import { useTexture } from "@react-three/drei";
 import { ThreeEvent, useFrame, useThree } from "@react-three/fiber";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { GeneratedEnvironment } from "../environment";
+import type { SurfaceMaterialDefinition } from "../creatorAssets";
+import { materialTextureUrls } from "./SurfaceDressing";
 import { useStore } from "../store";
 import { surfaceHeightAt } from "../map";
 import { flattenSourcesFor, terrainFieldFor } from "../worldgen/sampler";
@@ -15,7 +18,13 @@ import { skyGradient } from "./skyGradient";
 // composition.environment.generated (see src/worldgen/), plus the gradient
 // sky and mood lighting. Terrain is a standard opaque mesh, so the scene fog
 // fades it at the shared radial band for free.
-export function GeneratedWorld({ editMode }: { editMode: boolean }) {
+export function GeneratedWorld({
+  editMode,
+  groundMaterial,
+}: {
+  editMode: boolean;
+  groundMaterial?: SurfaceMaterialDefinition;
+}) {
   const composition = useStore((s) => s.composition);
   const generated = composition.environment.generated;
   const field = terrainFieldFor(composition);
@@ -31,7 +40,7 @@ export function GeneratedWorld({ editMode }: { editMode: boolean }) {
     <group>
       <SkyDome skyColor={generated.params.skyColor} skyColor2={generated.params.skyColor2} />
       <MoodLighting generated={generated} />
-      <TerrainPatch generated={generated} field={field} editMode={editMode} />
+      <TerrainPatch generated={generated} field={field} editMode={editMode} groundMaterial={groundMaterial} />
       {editMode && <ConstraintZones generated={generated} />}
       {debugFlag("debugTerrainProbe") && <TerrainProbe field={field} />}
     </group>
@@ -142,12 +151,17 @@ function TerrainPatch({
   generated,
   field,
   editMode,
+  groundMaterial,
 }: {
   generated: GeneratedEnvironment;
   field: TerrainField;
   editMode: boolean;
+  groundMaterial?: SurfaceMaterialDefinition;
 }) {
-  const geometry = useMemo(() => buildTerrainGeometry(generated, field), [generated, field]);
+  const geometry = useMemo(
+    () => buildTerrainGeometry(generated, field, !!groundMaterial),
+    [generated, field, groundMaterial],
+  );
   useEffect(() => () => geometry.dispose(), [geometry]);
   const brush = useTerrainBrush(field, editMode);
   return (
@@ -161,22 +175,81 @@ function TerrainPatch({
         onPointerLeave={editMode ? brush.onPointerLeave : undefined}
         onClick={editMode ? brush.onClick : undefined}
       >
-        <meshStandardMaterial vertexColors roughness={0.96} metalness={0} />
+        {groundMaterial ? (
+          <Suspense fallback={<meshStandardMaterial vertexColors roughness={0.96} metalness={0} />}>
+            <TerrainGroundMaterial definition={groundMaterial} />
+          </Suspense>
+        ) : (
+          <meshStandardMaterial vertexColors roughness={0.96} metalness={0} />
+        )}
       </mesh>
       {brush.cursor}
     </>
   );
 }
 
-function buildTerrainGeometry(generated: GeneratedEnvironment, field: TerrainField): THREE.BufferGeometry {
+// A high-quality imported material applied to the generated terrain. Textures
+// tile in world space (the geometry carries world-unit UVs; `repeat` scales
+// the tile size) and multiply with the height-palette vertex colors, so the
+// biome tint still reads through. Textures are cloned per definition rather
+// than shared with SurfaceDressing so the repeat settings never fight.
+function TerrainGroundMaterial({ definition }: { definition: SurfaceMaterialDefinition }) {
+  const urls = useMemo(() => materialTextureUrls(definition), [definition]);
+  const loaded = useTexture(urls) as THREE.Texture[];
+  const textureByUrl = useMemo(() => {
+    // World-space tile size: `repeat` means roughly "tiles per slab" on map
+    // surfaces; here it shrinks the tile from a 16-unit base.
+    const tile = 16 / Math.max(definition.repeat, 0.1);
+    return new Map(
+      urls.map((url, index) => {
+        const texture = loaded[index].clone();
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.repeat.set(1 / tile, 1 / tile);
+        if (url === definition.albedo) texture.colorSpace = THREE.SRGBColorSpace;
+        texture.needsUpdate = true;
+        return [url, texture] as const;
+      }),
+    );
+  }, [definition, loaded, urls]);
+  const material = useMemo(() => {
+    const texture = (url: string | undefined) => (url ? textureByUrl.get(url) : undefined);
+    return new THREE.MeshStandardMaterial({
+      map: texture(definition.albedo),
+      normalMap: texture(definition.normal),
+      normalScale: new THREE.Vector2(definition.normalScale ?? 0.7, definition.normalScale ?? 0.7),
+      roughnessMap: texture(definition.roughnessMap),
+      roughness: definition.roughness,
+      metalnessMap: texture(definition.metalnessMap),
+      metalness: definition.metalness,
+      vertexColors: true,
+    });
+  }, [definition, textureByUrl]);
+  useEffect(
+    () => () => {
+      material.dispose();
+      for (const texture of textureByUrl.values()) texture.dispose();
+    },
+    [material, textureByUrl],
+  );
+  return <primitive object={material} attach="material" />;
+}
+
+function buildTerrainGeometry(
+  generated: GeneratedEnvironment,
+  field: TerrainField,
+  textured: boolean,
+): THREE.BufferGeometry {
   const { resolution, size, center, heights } = field;
   const verts = resolution + 1;
   const cell = (size * 2) / resolution;
   const positions = new Float32Array(verts * verts * 3);
   const colors = new Float32Array(verts * verts * 3);
+  const uvs = new Float32Array(verts * verts * 2);
   const palette = generated.params.palette.map((hex) => new THREE.Color(hex));
   const amplitude = Math.max(generated.params.terrainAmplitude, 2);
   const color = new THREE.Color();
+  const white = new THREE.Color("#ffffff");
 
   for (let iz = 0; iz < verts; iz++) {
     for (let ix = 0; ix < verts; ix++) {
@@ -187,6 +260,9 @@ function buildTerrainGeometry(generated: GeneratedEnvironment, field: TerrainFie
       positions[index * 3] = x;
       positions[index * 3 + 1] = h;
       positions[index * 3 + 2] = z;
+      // World-unit UVs; the ground material's texture.repeat sets tile size.
+      uvs[index * 2] = x;
+      uvs[index * 2 + 1] = z;
       // Palette ramp by height with a little patchiness so flats aren't
       // flat-colored. Loop-aware fields supply lift-free shade heights and
       // canonical patch coordinates so colors match across the loop seam.
@@ -197,6 +273,10 @@ function buildTerrainGeometry(generated: GeneratedEnvironment, field: TerrainFie
       const t = Math.min(1, Math.max(0, 0.5 + shadeHeight / (2 * amplitude) + (patch - 0.175)));
       if (t < 0.5) color.lerpColors(palette[0], palette[1], t * 2);
       else color.lerpColors(palette[1], palette[2], (t - 0.5) * 2);
+      // Vertex colors MULTIPLY with a ground texture; the dark biome palette
+      // would crush it, so textured terrain lightens the tint toward white
+      // and keeps the palette as a subtle height-graded wash.
+      if (textured) color.lerp(white, 0.72);
       colors[index * 3] = color.r;
       colors[index * 3 + 1] = color.g;
       colors[index * 3 + 2] = color.b;
@@ -223,6 +303,7 @@ function buildTerrainGeometry(generated: GeneratedEnvironment, field: TerrainFie
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
   geometry.setIndex(new THREE.BufferAttribute(indices, 1));
   geometry.computeVertexNormals();
   return geometry;

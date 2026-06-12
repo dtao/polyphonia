@@ -21,8 +21,12 @@ export interface EnvironmentSettings {
   pack?: EnvironmentPackSelection;
   /** Creator-authored visual instances. They never affect movement or acoustics. */
   landmarks?: EnvironmentLandmarkPlacement[];
-  /** Reusable creator material ids assigned independently to map surfaces. */
+  /**
+   * Reusable creator material ids assigned independently to map surfaces.
+   * `ground` textures the generated terrain (blended with its height palette).
+   */
   surfaces?: {
+    ground?: string;
     floor?: string;
     wall?: string;
     ceiling?: string;
@@ -368,11 +372,17 @@ function normalizeSurfaces(value: EnvironmentSettings["surfaces"]): EnvironmentS
   if (!value || typeof value !== "object") return undefined;
   const surface = (candidate: unknown) =>
     typeof candidate === "string" && candidate.trim() ? candidate.trim() : undefined;
+  const ground = surface(value.ground);
   const floor = surface(value.floor);
   const wall = surface(value.wall);
   const ceiling = surface(value.ceiling);
-  return floor || wall || ceiling
-    ? { ...(floor ? { floor } : {}), ...(wall ? { wall } : {}), ...(ceiling ? { ceiling } : {}) }
+  return ground || floor || wall || ceiling
+    ? {
+        ...(ground ? { ground } : {}),
+        ...(floor ? { floor } : {}),
+        ...(wall ? { wall } : {}),
+        ...(ceiling ? { ceiling } : {}),
+      }
     : undefined;
 }
 

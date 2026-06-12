@@ -79,6 +79,7 @@ export function EnvironmentScene({
   const materials = creatorAssets.filter((asset): asset is CreatorMaterialAsset => asset.kind === "material");
   const landmarks = creatorAssets.filter((asset): asset is CreatorLandmarkAsset => asset.kind === "landmark");
   const materialById = new Map(materials.map((asset) => [asset.id, asset.material]));
+  const ground = environment.surfaces?.ground ? materialById.get(environment.surfaces.ground) : undefined;
   const floor = environment.surfaces?.floor ? materialById.get(environment.surfaces.floor) : undefined;
   const wall = environment.surfaces?.wall ? materialById.get(environment.surfaces.wall) : undefined;
   const ceiling = environment.surfaces?.ceiling ? materialById.get(environment.surfaces.ceiling) : undefined;
@@ -109,7 +110,7 @@ export function EnvironmentScene({
         />
       )}
 
-      {environment.generated && <GeneratedWorld editMode={editMode} />}
+      {environment.generated && <GeneratedWorld editMode={editMode} groundMaterial={ground} />}
 
       {surfaceMaterials && (
         <SurfaceMapDressing map={map} materials={surfaceMaterials} editMode={editMode} />

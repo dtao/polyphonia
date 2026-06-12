@@ -204,7 +204,7 @@ export function WorldPanel({ open, onOpen, onClose }: { open: boolean; onOpen: (
 
       <div style={section}>
         <div style={label}>Materials</div>
-        {(["floor", "wall", "ceiling"] as const).map((surface) => (
+        {(["ground", "floor", "wall", "ceiling"] as const).map((surface) => (
           <label key={surface} style={{ display: "block", marginTop: 6 }}>
             <select
               aria-label={`${surface} material`}
@@ -216,7 +216,9 @@ export function WorldPanel({ open, onOpen, onClose }: { open: boolean; onOpen: (
               }
               style={select}
             >
-              <option value="">{surface[0].toUpperCase() + surface.slice(1)}: default</option>
+              <option value="">
+                {surface === "ground" ? "Terrain ground: palette colors" : `${surface[0].toUpperCase() + surface.slice(1)}: default`}
+              </option>
               {materials.map((asset) => (
                 <option key={asset.id} value={asset.id}>
                   {asset.name}
@@ -228,6 +230,10 @@ export function WorldPanel({ open, onOpen, onClose }: { open: boolean; onOpen: (
         <button style={subtleButton} onClick={() => setImporting("material")}>
           Import material
         </button>
+        <div style={miniHint}>
+          Terrain ground textures the generated landscape (tinted by its height palette); floor/wall/ceiling
+          dress the map geometry.
+        </div>
       </div>
 
       <div style={section}>

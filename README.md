@@ -20,8 +20,9 @@ these spatial compositions.
   for car-scale exploration.
 - **Immersive spaces** — every composition starts from the same neutral visual
   space. The World panel layers visual identity over it: imported PBR
-  materials assigned to floors/walls/ceilings, imported self-contained GLB
-  objects placed directly in the scene, and the generated world below — all
+  materials assigned to the generated terrain and to floors/walls/ceilings,
+  imported self-contained GLB objects placed directly in the scene, and the
+  generated world below — all
   without replacing the map used for movement or acoustics, and all carried
   through export or cloud publishing. Placed objects repeat continuously
   across tiled or path-loop maps.

@@ -132,8 +132,11 @@ visual-world surface:
 - Terrain & sky: biome, generate, relief/feature-size/mood sliders, sky
   gradient colors, ground palette, constraint toggles + zone visualization,
   sculpt brushes, regeneration modes, regional regenerate.
-- Materials: imported PBR materials assigned to map floor/wall/ceiling
-  (rendered by `src/scene/SurfaceDressing.tsx`), with import.
+- Materials: imported PBR materials assigned to the generated terrain
+  (`surfaces.ground` — world-space tiling, multiplied with a whitened height
+  palette so the biome tint reads through; `TerrainGroundMaterial` in
+  GeneratedWorld.tsx) and to map floor/wall/ceiling (rendered by
+  `src/scene/SurfaceDressing.tsx`), with import.
 - Objects: imported GLB landmarks (creator assets) placed at the viewer and
   moved with the gizmo; inspector in `src/ui/LandmarkPanel.tsx`.
 
