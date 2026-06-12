@@ -36,10 +36,11 @@ inferring system behaviour from source alone:
 | Zustand store, undo/redo, non-reactive singletons (`viewState`, etc.) | [state-and-store.md](docs/state-and-store.md) |
 | Audio (stem parameters, loop behaviour, occlusion, spatialization, tiling) | [audio-engine.md](docs/audio-engine.md) |
 | Map objects, movement, elevation, tiling, occlusion geometry | [map-model.md](docs/map-model.md) |
-| Scene rendering, materials, fade/pop-in, environment packs | [scene-and-rendering.md](docs/scene-and-rendering.md) |
+| Scene rendering, materials, fade/pop-in | [scene-and-rendering.md](docs/scene-and-rendering.md) |
+| Generated worlds: terrain, scatter, constraint zones, regeneration modes | [generated-environments.md](docs/generated-environments.md) |
 | Local persistence, export/import, Supabase publishing | [persistence-and-cloud.md](docs/persistence-and-cloud.md) |
 | Editor UI layout, selection model, inspector patterns, direct manipulation | [editing-and-ux-patterns.md](docs/editing-and-ux-patterns.md) |
-| Adding any new system: composition field, map object, UI panel, pack, stem param | [adding-a-new-system.md](docs/adding-a-new-system.md) |
+| Adding any new system: composition field, map object, UI panel, stem param | [adding-a-new-system.md](docs/adding-a-new-system.md) |
 
 ## Commands
 
@@ -122,7 +123,8 @@ experience from automation.
 - **Walkability and acoustics are related but distinct.** Paths, rooms, and
   platforms define where the listener can move. Room/tunnel/door geometry and
   standalone walls shape occlusion; standalone walls do not block movement.
-  Authored packs are visual dressing, not movement or acoustic geometry.
+  Generated terrain, surface materials, and placed objects are visual
+  dressing, not movement or acoustic geometry.
 - **Preserve editing context.** Select new objects immediately, and have growth
   actions select the new endpoint/object so the next likely action is ready.
   Map edits remain undoable and older manifests must normalize into valid

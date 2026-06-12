@@ -109,7 +109,6 @@ export function TrackMarker({
     [preview, track.id],
   );
 
-  const showPointLight = !preview && !debugFlag("debugNoPointLights");
 
   return (
     <group
@@ -132,7 +131,6 @@ export function TrackMarker({
         smoothedLevel={smoothedLevel}
         preview={preview}
         fade={fade}
-        showPointLight={showPointLight}
         floorY={floorY}
         mode={mode}
         selected={selected}
@@ -161,7 +159,6 @@ function StemShapeVisual({
   smoothedLevel,
   preview,
   fade,
-  showPointLight,
   floorY,
   mode,
   selected,
@@ -170,7 +167,6 @@ function StemShapeVisual({
   smoothedLevel: MutableRefObject<number>;
   preview: boolean;
   fade: number;
-  showPointLight: boolean;
   floorY: number;
   mode: string;
   selected: boolean;
@@ -185,7 +181,6 @@ function StemShapeVisual({
         smoothedLevel={smoothedLevel}
         preview={preview}
         fade={fade}
-        showPointLight={showPointLight}
         floorY={floorY}
         mode={mode}
         selected={selected}
@@ -193,13 +188,13 @@ function StemShapeVisual({
     );
   }
   if (kind === "pillar") {
-    return <PillarVisual track={track} smoothedLevel={smoothedLevel} showPointLight={showPointLight} mode={mode} />;
+    return <PillarVisual track={track} smoothedLevel={smoothedLevel} mode={mode} />;
   }
   if (kind === "wall" && shape?.kind === "wall") {
-    return <WallVisual track={track} shape={shape} smoothedLevel={smoothedLevel} showPointLight={showPointLight} mode={mode} />;
+    return <WallVisual track={track} shape={shape} smoothedLevel={smoothedLevel} mode={mode} />;
   }
   if (kind === "river" && shape?.kind === "river") {
-    return <RiverVisual track={track} shape={shape} smoothedLevel={smoothedLevel} showPointLight={showPointLight} mode={mode} />;
+    return <RiverVisual track={track} shape={shape} smoothedLevel={smoothedLevel} mode={mode} />;
   }
   return null;
 }
@@ -211,7 +206,6 @@ function OrbVisual({
   smoothedLevel,
   preview,
   fade,
-  showPointLight,
   floorY,
   mode,
   selected,
@@ -220,7 +214,6 @@ function OrbVisual({
   smoothedLevel: MutableRefObject<number>;
   preview: boolean;
   fade: number;
-  showPointLight: boolean;
   floorY: number;
   mode: string;
   selected: boolean;
@@ -232,7 +225,6 @@ function OrbVisual({
   const flare = useRef<THREE.ShaderMaterial>(null);
   const rays = useRef<THREE.ShaderMaterial>(null);
   const starburst = useRef<THREE.Mesh>(null);
-  const glow = useRef<THREE.PointLight>(null);
   const visibleFade = useRef(preview ? 0 : fade);
 
   const volume = track.volume ?? 1;
@@ -310,22 +302,6 @@ function OrbVisual({
         Math.sin(elapsed * 0.075 + s * 1.7) * 0.85 +
         Math.sin(elapsed * 0.031 + s * 4.1) * 0.55;
     }
-    if (glow.current) {
-      // Cull the point light by the radial fade: drop it from the renderer's
-      // active light set once the stem is beyond the fade band. At that range a
-      // light with reach ~18 only illuminates geometry that is itself faded to
-      // the void, so the cull is visually free — but it removes that light's
-      // per-fragment cost. Intensity is faded to ~0 before `visible` flips, so
-      // the cull never pops. Editing keeps every light so the author sees the
-      // whole scene.
-      const listenerDist = Math.hypot(camera.position.x - px, camera.position.z - pz);
-      const lightFade = currentMode === "edit" ? 1 : radialFade(listenerDist);
-      glow.current.visible = lightFade > 0.002;
-      if (glow.current.visible) {
-        glow.current.intensity = ((isSelected ? 8 : 4.8) + vol * 3.2 + pulse * 44) * renderedFade * lightFade;
-        glow.current.distance = 12 + vol * 8 + pulse * 16;
-      }
-    }
   });
 
   return (
@@ -376,7 +352,6 @@ function OrbVisual({
           </mesh>
         )}
       </Billboard>
-      {showPointLight && <pointLight ref={glow} position={[0, 0, 0]} color={track.color} intensity={6} distance={18} />}
     </>
   );
 }
@@ -390,17 +365,14 @@ const PILLAR_GLOW_RADIUS = PILLAR_RADIUS * 4.5;
 function PillarVisual({
   track,
   smoothedLevel,
-  showPointLight,
   mode,
 }: {
   track: TrackDef;
   smoothedLevel: MutableRefObject<number>;
-  showPointLight: boolean;
   mode: string;
 }) {
   const coreRef = useRef<THREE.Mesh>(null);
   const glowRef = useRef<THREE.Mesh>(null);
-  const lightRef = useRef<THREE.PointLight>(null);
   const color = useMemo(() => new THREE.Color(track.color), [track.color]);
   const volume = track.volume ?? 1;
 
@@ -423,16 +395,7 @@ function PillarVisual({
         const s = 1 + pulse * 0.55;
         glowRef.current.scale.set(s, 1, s);
       }
-    }
-    if (lightRef.current) {
-      const lightFade = mode === "edit" ? 1 : fade;
-      lightRef.current.visible = lightFade > 0.002;
-      if (lightRef.current.visible) {
-        lightRef.current.intensity = (1.5 + volume * 1.2 + pulse * 12) * lightFade;
-        lightRef.current.distance = 7 + volume * 3 + pulse * 7;
-      }
-    }
-  });
+    }  });
 
   return (
     <>
@@ -444,7 +407,6 @@ function PillarVisual({
         <cylinderGeometry args={[PILLAR_RADIUS, PILLAR_RADIUS, PILLAR_HEIGHT, 16]} />
         <meshBasicMaterial color={color} transparent opacity={0.55} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
       </mesh>
-      {showPointLight && <pointLight ref={lightRef} position={[0, 0, 0]} color={track.color} intensity={2} distance={10} />}
     </>
   );
 }
@@ -457,18 +419,15 @@ function WallVisual({
   track,
   shape,
   smoothedLevel,
-  showPointLight,
   mode,
 }: {
   track: TrackDef;
   shape: Extract<StemShape, { kind: "wall" }>;
   smoothedLevel: MutableRefObject<number>;
-  showPointLight: boolean;
   mode: string;
 }) {
   const frontRef = useRef<THREE.Mesh>(null);
   const backRef = useRef<THREE.Mesh>(null);
-  const lightRef = useRef<THREE.PointLight>(null);
   const color = useMemo(() => new THREE.Color(track.color), [track.color]);
   const volume = track.volume ?? 1;
 
@@ -493,16 +452,7 @@ function WallVisual({
     if (backRef.current) {
       backRef.current.visible = visible;
       if (visible) (backRef.current.material as THREE.MeshBasicMaterial).opacity = (0.1 + pulse * 0.15) * fadeSq;
-    }
-    if (lightRef.current) {
-      const lightFade = mode === "edit" ? 1 : fade;
-      lightRef.current.visible = lightFade > 0.002;
-      if (lightRef.current.visible) {
-        lightRef.current.intensity = (1.5 + volume * 1.2 + pulse * 12) * lightFade;
-        lightRef.current.distance = 7 + volume * 3 + pulse * 7;
-      }
-    }
-  });
+    }  });
 
   return (
     <group rotation={rotation}>
@@ -516,7 +466,6 @@ function WallVisual({
         <planeGeometry args={[shape.width, WALL_HEIGHT]} />
         <meshBasicMaterial color={color} transparent opacity={0.1} side={THREE.FrontSide} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
       </mesh>
-      {showPointLight && <pointLight ref={lightRef} position={[0, 0, 0]} color={track.color} intensity={2} distance={10} />}
     </group>
   );
 }
@@ -530,18 +479,15 @@ function RiverVisual({
   track,
   shape,
   smoothedLevel,
-  showPointLight,
   mode,
 }: {
   track: TrackDef;
   shape: Extract<StemShape, { kind: "river" }>;
   smoothedLevel: MutableRefObject<number>;
-  showPointLight: boolean;
   mode: string;
 }) {
   const coreRef = useRef<THREE.Mesh>(null);
   const glowRef = useRef<THREE.Mesh>(null);
-  const lightRef = useRef<THREE.PointLight>(null);
   const color = useMemo(() => new THREE.Color(track.color), [track.color]);
   const volume = track.volume ?? 1;
 
@@ -579,16 +525,7 @@ function RiverVisual({
         const s = 1 + pulse * 0.55;
         glowRef.current.scale.set(s, 1, s);
       }
-    }
-    if (lightRef.current) {
-      const lightFade = mode === "edit" ? 1 : fade;
-      lightRef.current.visible = lightFade > 0.002;
-      if (lightRef.current.visible) {
-        lightRef.current.intensity = (1.5 + volume * 1.2 + pulse * 12) * lightFade;
-        lightRef.current.distance = 7 + volume * 3 + pulse * 7;
-      }
-    }
-  });
+    }  });
 
   return (
     <group position={midpoint} rotation={rotation}>
@@ -600,7 +537,6 @@ function RiverVisual({
         <cylinderGeometry args={[RIVER_RADIUS, RIVER_RADIUS, length, RIVER_SEGMENTS]} />
         <meshBasicMaterial color={color} transparent opacity={0.5} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
       </mesh>
-      {showPointLight && <pointLight ref={lightRef} position={[0, 0, 0]} color={track.color} intensity={2} distance={10} />}
     </group>
   );
 }

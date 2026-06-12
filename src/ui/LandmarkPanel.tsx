@@ -1,4 +1,3 @@
-import { environmentPackById } from "../environmentPacks";
 import { useStore } from "../store";
 
 export function LandmarkPanel() {
@@ -7,9 +6,9 @@ export function LandmarkPanel() {
   const selectedId = useStore((state) => state.selectedLandmarkId);
   const updateLandmark = useStore((state) => state.updateLandmark);
   const deleteLandmark = useStore((state) => state.deleteLandmark);
+  const creatorAssets = useStore((state) => state.creatorAssets);
   const placement = environment.landmarks?.find((landmark) => landmark.id === selectedId);
-  const pack = environmentPackById(environment.pack?.id);
-  const asset = pack?.landmarks.find((landmark) => landmark.id === placement?.assetId);
+  const asset = creatorAssets.find((candidate) => candidate.id === placement?.assetId);
 
   if (mode !== "edit" || !placement) return null;
 

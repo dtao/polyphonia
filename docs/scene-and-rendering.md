@@ -1,7 +1,7 @@
 # Scene and Rendering
 
 **Sources:** `src/scene/`, `src/scene/fade.ts`, `src/scene/Scene.tsx`,
-`src/scene/MapScene.tsx`, `src/scene/Player.tsx`, `src/environmentPacks.ts`
+`src/scene/MapScene.tsx`, `src/scene/Player.tsx`
 
 The 3D world is rendered using React Three Fiber (R3F) inside a `<Canvas>`
 element in `src/App.tsx`. All 3D components live under `src/scene/`.
@@ -11,12 +11,13 @@ element in `src/App.tsx`. All 3D components live under `src/scene/`.
 ```
 <Canvas dpr={[1, 1.5]}>     ← DPR capped; see gotcha below
   <Scene>
-    <EnvironmentScene />    ← base environment mesh + scene fog
-    <AuthoredEnvironmentScene />  ← optional pack-specific geometry
-    <DetailMapDressing />   ← floor tiles, map-following pack dressing
-    <EnvironmentEffects />  ← bloom, SSAO, depth-of-field (pack-dependent)
+    <EnvironmentScene />    ← lights, scene fog, mounts the layers below
+    <GeneratedWorld />      ← generated terrain, gradient sky, mood lighting
+    <SurfaceMapDressing />  ← imported-material shells over map geometry
+    <CreatorLandmarks />    ← imported GLB objects (placed landmarks)
     <MapScene />            ← path/room/platform/wall meshes + edit handles
-    <TrackMarker /> × N     ← glowing orbs for each stem
+    <LightDirector />       ← the ONLY stem point lights (budgeted pool)
+    <TrackMarker /> × N     ← glowing orbs for each stem (no lights)
     <TrackGizmo />          ← transform gizmo on selected stem
     <EditControls />        ← orbit camera for edit mode
     <Player />              ← movement + pointer-lock for explore mode
@@ -142,22 +143,39 @@ Renders and handles editing for all map objects:
 In edit mode it dispatches mouse events to select, drag, and grow map objects.
 In explore mode it still renders geometry but is not interactive.
 
-## Environment packs
+## Visual world layers
 
-`src/environmentPacks.ts` is the runtime registry. Each pack definition
-includes:
-- Asset paths (GLTFs, HDR environments)
-- Quality budgets (polygon counts, shadow settings)
-- Postprocessing config (bloom, SSAO, DoF)
-- Attribution text
+The detail-pack system was retired (its `environment.pack` manifest field is
+still normalized for old compositions but renders nothing). The visual layers
+are now:
 
-`<AuthoredEnvironmentScene>` renders the pack's base geometry.
-`<DetailMapDressing>` places pack-specific dressing along the map paths.
-`<EnvironmentEffects>` activates pack-aware postprocessing passes.
+- The generated world — see
+  [generated-environments.md](generated-environments.md).
+- Imported creator materials applied to map surfaces by
+  `src/scene/SurfaceDressing.tsx` (textured shells over floors, walls,
+  ceilings; see [creator-assets.md](creator-assets.md)).
+- Imported GLB objects placed via `<CreatorLandmarks>`.
 
-The `environment.pack` field in the composition selects the pack + variant +
-quality. The map remains authoritative for movement and acoustics regardless of
-which pack is active.
+All of it is visual only: the map remains authoritative for movement and
+acoustics.
+
+## Point-light budget
+
+Three.js forward rendering evaluates every visible light on every lit
+fragment, so light cost = light count × lit surface area — and generated
+terrain makes the lit surface the whole screen. Stems therefore do NOT own
+point lights. `<LightDirector>` owns a small fixed pool and assigns it per
+frame to the highest-priority light sources (each stem, plus its nearest
+tiled copy), where priority = audio-driven intensity, full inside the
+light's range, falling quadratically beyond it, and zero past the
+radial-fade cutoff. An FPS controller (`lightBudget.ts`) steps the pool
+through `LIGHT_TIERS` (16 → 0) with hysteresis and cooldowns; slot handoffs
+damp intensity so lights never pop, and the pool size only changes on tier
+transitions, keeping shader programs stable.
+
+Do not mount per-object `<pointLight>`s for new features — add candidates to
+the director instead. Debug: `?debug=1` exposes `window.polyLights`
+(fps/tier/pool/active) and `?lightBudget=N` pins the pool size (dev builds).
 
 ## DPR cap
 
@@ -172,7 +190,7 @@ with postprocessing. Do not remove it.
 - `debugFlag("debugNoPointLights")` — disable point lights.
 - `debugFlag("debugNoLoopPreview")` — disable tiled preview copies.
 - `debugFlag("debugNoLoopLights")` — disable echo lights on tiled maps.
-- `debugValue("environmentPack")` — override the active environment pack.
-- `debugValue("environmentQuality")` — override the quality setting.
+- `debugFlag("debugTerrainProbe")` — log generated-terrain state under the
+  viewer once a second.
 - The debug panel includes sliders for `RADIAL_FADE_INNER`/`RADIAL_FADE_OUTER`
   that call `setDebugFadeRadii` in `fade.ts`.

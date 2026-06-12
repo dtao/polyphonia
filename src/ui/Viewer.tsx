@@ -9,7 +9,6 @@ import { TouchControls, isTouchDevice } from "./TouchControls";
 import { AudioLoadingOverlay } from "./AudioLoadingOverlay";
 import { ARWalkControls } from "./ARWalkControls";
 import { GeoWalkControls } from "./GeoWalkControls";
-import { EnvironmentCredits } from "./EnvironmentCredits";
 import { AudioEngine } from "../audio/AudioEngine";
 
 type Status = "loading" | "ready" | "notfound" | "error";
@@ -125,7 +124,6 @@ export function Viewer() {
       </Canvas>
 
       {status === "ready" && entered && touch && <TouchControls />}
-      {status === "ready" && entered && <EnvironmentCredits />}
       {status === "ready" && entered && <ARWalkControls map={comp.map} />}
       {status === "ready" && entered && <GeoWalkControls map={comp.map} />}
 

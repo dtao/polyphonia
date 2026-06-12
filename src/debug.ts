@@ -1,9 +1,7 @@
 import { CompositionMap, containingRoom, loopAdjacentTransforms } from "./map";
 import { TrackDef } from "./composition";
 import { MarkerDebugSnapshot } from "./scene/markerDebug";
-import { resolvedEnvironmentQuality } from "./environmentPacks";
 import type { EnvironmentSettings } from "./environment";
-import type { EnvironmentInstanceDebugSnapshot } from "./scene/environmentInstanceDebug";
 
 export interface DebugSample {
   t: number;
@@ -30,9 +28,7 @@ export interface DebugSample {
     loopPreviews: number;
   };
   environment: {
-    pack?: string;
-    quality?: "low" | "high";
-    instances?: EnvironmentInstanceDebugSnapshot;
+    generatedBiome?: string;
   };
   render?: {
     calls: number;
@@ -104,11 +100,9 @@ export function exportDebugSamples(): void {
       debugNoPointLights: debugFlag("debugNoPointLights"),
       debugNoLoopPreview: debugFlag("debugNoLoopPreview"),
       debugNoLoopLights: debugFlag("debugNoLoopLights"),
-      debugNoEchoLights: debugFlag("debugNoEchoLights"),
       debugNoFlare: debugFlag("debugNoFlare"),
       debugNoStarRays: debugFlag("debugNoStarRays"),
-      debugEnvironmentInstances: debugFlag("debugEnvironmentInstances"),
-      debugEnvironmentNoLod: debugFlag("debugEnvironmentNoLod"),
+      debugTerrainProbe: debugFlag("debugTerrainProbe"),
     },
     samples,
   };
@@ -171,7 +165,6 @@ export function mapDebugSnapshot(map: CompositionMap): DebugSample["map"] {
 
 export function environmentDebugSnapshot(environment: EnvironmentSettings): DebugSample["environment"] {
   return {
-    pack: environment.pack?.id,
-    quality: environment.pack ? resolvedEnvironmentQuality(environment.pack.quality ?? "auto") : undefined,
+    generatedBiome: environment.generated?.biome,
   };
 }

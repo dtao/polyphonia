@@ -1,13 +1,33 @@
-import type { EnvironmentPackMaterial } from "./environmentPacks";
 import {
   resolveStoredAssetReference,
   storeAssetBlob,
   storedAsset,
-  type DetailPackBundleAsset,
-} from "./detailPackStorage";
-import { validateLandmarkGlb } from "./detailPackValidation";
+  type StoredAssetPayload,
+} from "./assetStorage";
+import { validateLandmarkGlb } from "./assetValidation";
 import { newId } from "./id";
 import { CREATOR_ASSET_STORE, databaseRequest } from "./localDatabase";
+
+/**
+ * A PBR surface material built from imported textures. Applied to map
+ * surfaces (floor/wall/ceiling) and the generated terrain. Texture fields are
+ * "asset:<hash>" references at rest, resolved to object URLs for rendering.
+ */
+export interface SurfaceMaterialDefinition {
+  albedo: string;
+  normal?: string;
+  roughnessMap?: string;
+  metalnessMap?: string;
+  ao?: string;
+  emissiveMap?: string;
+  repeat: number;
+  normalScale?: number;
+  roughness: number;
+  metalness: number;
+  aoIntensity?: number;
+  emissive?: string;
+  emissiveIntensity?: number;
+}
 
 export interface CreatorAssetAttribution {
   title: string;
@@ -25,7 +45,7 @@ interface CreatorAssetBase {
 
 export interface CreatorMaterialAsset extends CreatorAssetBase {
   kind: "material";
-  material: EnvironmentPackMaterial;
+  material: SurfaceMaterialDefinition;
 }
 
 export interface CreatorLandmarkAsset extends CreatorAssetBase {
@@ -43,8 +63,71 @@ export type CreatorAsset = CreatorMaterialAsset | CreatorLandmarkAsset;
 export interface CreatorAssetBundle {
   version: 1;
   definitions: CreatorAsset[];
-  assets: Record<string, DetailPackBundleAsset>;
+  assets: Record<string, StoredAssetPayload>;
 }
+
+// Built-in PBR materials (textures ship in public/environments/, inherited
+// from the retired detail packs). Always available — in the editor, in the
+// viewer, and after export/import — without being stored or uploaded; their
+// ids are stable so manifests can reference them directly.
+export const BUILTIN_MATERIALS: CreatorMaterialAsset[] = [
+  {
+    id: "builtin-cavern-stone",
+    kind: "material",
+    name: "Cavern stone",
+    attribution: { title: "Atlas Cavern", author: "Polyphonia", license: "Project asset" },
+    createdAt: "2026-06-06T00:00:00.000Z",
+    material: {
+      albedo: "/environments/atlas-cavern/textures/stone-albedo.webp",
+      normal: "/environments/atlas-cavern/textures/stone-normal.webp",
+      roughnessMap: "/environments/atlas-cavern/textures/stone-roughness.webp",
+      ao: "/environments/atlas-cavern/textures/stone-ao.webp",
+      repeat: 2.5,
+      normalScale: 0.7,
+      roughness: 0.92,
+      metalness: 0.02,
+      aoIntensity: 0.75,
+    },
+  },
+  {
+    id: "builtin-grove-forest",
+    kind: "material",
+    name: "Forest floor",
+    attribution: { title: "Verdant Grove", author: "Polyphonia", license: "Project asset" },
+    createdAt: "2026-06-06T00:00:00.000Z",
+    material: {
+      albedo: "/environments/verdant-grove/textures/forest-albedo.webp",
+      normal: "/environments/verdant-grove/textures/forest-normal.webp",
+      roughnessMap: "/environments/verdant-grove/textures/forest-roughness.webp",
+      ao: "/environments/verdant-grove/textures/forest-ao.webp",
+      repeat: 3.2,
+      normalScale: 0.7,
+      roughness: 0.96,
+      metalness: 0,
+      aoIntensity: 0.9,
+    },
+  },
+  {
+    id: "builtin-prismatic-crystal",
+    kind: "material",
+    name: "Crystal",
+    attribution: { title: "Prismatic Reach", author: "Polyphonia", license: "Project asset" },
+    createdAt: "2026-06-06T00:00:00.000Z",
+    material: {
+      albedo: "/environments/prismatic-reach/textures/crystal-albedo.webp",
+      normal: "/environments/prismatic-reach/textures/crystal-normal.webp",
+      roughnessMap: "/environments/prismatic-reach/textures/crystal-roughness.webp",
+      ao: "/environments/prismatic-reach/textures/crystal-ao.webp",
+      repeat: 2.1,
+      normalScale: 0.7,
+      roughness: 0.38,
+      metalness: 0.16,
+      aoIntensity: 0.62,
+      emissive: "#183859",
+      emissiveIntensity: 0.34,
+    },
+  },
+];
 
 let registeredAssets: CreatorAsset[] = [];
 
@@ -53,7 +136,7 @@ export function registerCreatorAssets(assets: CreatorAsset[]): void {
 }
 
 export function registeredCreatorAssets(): CreatorAsset[] {
-  return registeredAssets;
+  return [...BUILTIN_MATERIALS, ...registeredAssets];
 }
 
 export interface CreatorMaterialImport {
@@ -169,7 +252,7 @@ export async function creatorAssetBundleForIds(ids: string[]): Promise<CreatorAs
   const wanted = new Set(ids);
   const definitions = (await getStoredCreatorAssets()).filter((asset) => wanted.has(asset.id));
   if (!definitions.length) return undefined;
-  const assets: Record<string, DetailPackBundleAsset> = {};
+  const assets: Record<string, StoredAssetPayload> = {};
   for (const reference of [...new Set(definitions.flatMap(creatorAssetReferences))]) {
     if (!reference.startsWith("asset:")) continue;
     const hash = reference.slice("asset:".length);

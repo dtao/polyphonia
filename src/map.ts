@@ -413,7 +413,7 @@ function roomConnectionLocalPoint(room: MapRoom, connection: Extract<SegmentEndp
   return [cx, entrance.offset + (local[1] - originalOffset)];
 }
 
-function hasWalkableBounds(map: Pick<CompositionMap, "segments" | "rooms" | "platforms">): boolean {
+export function hasWalkableBounds(map: Pick<CompositionMap, "segments" | "rooms" | "platforms">): boolean {
   return map.segments.length > 0 || map.rooms.length > 0 || map.platforms.length > 0;
 }
 

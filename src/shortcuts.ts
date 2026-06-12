@@ -12,7 +12,7 @@
 
 import { useStore } from "./store";
 
-export type EditPanel = "environment" | "map" | "loop" | null;
+export type EditPanel = "map" | "loop" | "world" | null;
 
 export type ShortcutId =
   | "toggle-fullscreen"
@@ -174,6 +174,10 @@ export const SHORTCUTS: Shortcut[] = [
       }
       if (s.selectedLandmarkId) {
         s.selectLandmark(null);
+        return true;
+      }
+      if (s.worldTool.kind !== "none") {
+        s.setWorldTool({ kind: "none" });
         return true;
       }
       return false;

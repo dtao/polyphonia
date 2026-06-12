@@ -17,9 +17,26 @@ import { newId } from "./id";
 import {
   EnvironmentLandmarkPlacement,
   EnvironmentSettings,
+  GeneratedBiome,
+  GeneratedConstraints,
+  GeneratedEdit,
+  GeneratedEnvironment,
+  GeneratedEnvironmentParams,
+  TerrainEditMode,
+  WorldObjectKind,
+  WorldObjectPlacement,
   defaultEnvironment,
   normalizeEnvironment,
 } from "./environment";
+import {
+  RegenerationMode,
+  classifyObjectEdit,
+  classifyTerrainEdit,
+  generateEnvironment,
+  regenerateEnvironment,
+  regenerateRegion,
+} from "./worldgen/regen";
+import { worldEditPoint } from "./worldgen/lattice";
 import { attachmentForPoint, canAddBranchAtPoint, canAddPlatformAtPoint, canAddRoomAtPoint, CompositionMap, entranceDoorwayCenter, entranceLocalCenter, entranceOuterPoint, MAP_PRESETS, MapPlatform, MapRoom, MapWall, nearestBoundaryPointInMap, RoomAttachment, RoomEntrance, RoomSide, defaultMap, mapPointKey, normalizeMap, platformContains, platformElevation, pointElevation, pointInOriginalTile, roomContains, roomElevation, roomWorldPoint, surfaceHeightAt, WalkableSegment } from "./map";
 import { ArtistIdentity } from "./artist";
 import {
@@ -34,16 +51,6 @@ import {
   publishComposition,
   unpublish as cloudUnpublish,
 } from "./cloud";
-import {
-  importDetailPackBundle,
-  loadStoredDetailPacks,
-  removeStoredDetailPack,
-} from "./detailPackStorage";
-import {
-  EnvironmentPackDefinition,
-  environmentPackById,
-  registerCustomEnvironmentPacks,
-} from "./environmentPacks";
 import {
   CreatorAsset,
   CreatorLandmarkImport,
@@ -95,7 +102,7 @@ export const pendingTeleport = { value: null as { x: number; z: number } | null 
 export const loopWrap = { generation: 0 };
 
 // Tiled-preview groups whose contents are positioned from React state that lags
-// the camera by a frame (e.g. <DetailMapDressing>'s loop floor shells and
+// the camera by a frame (e.g. <SurfaceMapDressing>'s loop floor shells and
 // environmental-object copies). They live below <EnvironmentScene>, which mounts
 // before <Player>, so they can't run their own after-wrap guard. Instead they
 // register here and <Scene>'s LoopWrapBlipGuard — mounted after <Player> — hides
@@ -133,6 +140,16 @@ export const geoWalk = {
 type Falloff = Pick<TrackDef, "refDistance" | "maxDistance" | "rolloff">;
 
 export type Mode = "explore" | "edit";
+
+// Active tool for sculpting the generated terrain in the 3D view. Transient
+// UI state (not part of the composition); cleared when leaving edit mode.
+export type WorldTool =
+  | { kind: "none" }
+  | { kind: "terrain"; mode: TerrainEditMode; radius: number; amount: number };
+
+function newWorldSeed(): number {
+  return Math.floor(Math.random() * 0xffffffff) | 0;
+}
 export type AudioLoadingState =
   | { status: "idle" }
   | ({ status: "loading" } & AudioLoadProgress)
@@ -147,7 +164,6 @@ interface StoreState {
   publishProgress: PublishProgress | null;
   undoStack: Composition[];
   redoStack: Composition[];
-  customDetailPacks: EnvironmentPackDefinition[];
   creatorAssets: CreatorAsset[];
 
   mode: Mode;
@@ -162,6 +178,8 @@ interface StoreState {
   selectedPlatformId: string | null;
   selectedWallId: string | null;
   selectedLandmarkId: string | null;
+  worldTool: WorldTool; // active generated-environment edit tool (transient UI state)
+  showConstraintZones: boolean; // visualize stem/path clear zones in edit mode
   entered: boolean; // has the user started the experience (left the entry screen)
   viewer: boolean; // read-only shared-link view (no autosave, no editing)
   user: AuthUser | null; // signed-in account (for publishing); null = anonymous
@@ -174,8 +192,6 @@ interface StoreState {
   resetViewToMapStart: () => void;
   setViewer: (viewer: boolean) => void;
   startAudio: () => Promise<void>;
-  importDetailPack: (file: File) => Promise<void>;
-  removeDetailPack: (id: string) => Promise<void>;
   importMaterialAsset: (input: CreatorMaterialImport) => Promise<string>;
   importLandmarkAsset: (input: CreatorLandmarkImport) => Promise<string>;
   removeCreatorAsset: (id: string) => Promise<void>;
@@ -205,6 +221,18 @@ interface StoreState {
   updateLandmark: (id: string, patch: Partial<EnvironmentLandmarkPlacement>) => void;
   deleteLandmark: (id: string) => void;
   duplicateLandmark: (id: string) => void;
+
+  // Generated environment (procedural terrain + scattered objects).
+  generateWorld: (biome: GeneratedBiome, options?: { size?: number }) => void;
+  regenerateWorld: (mode: RegenerationMode) => void;
+  regenerateWorldRegion: (radius: number) => void;
+  clearGeneratedWorld: () => void;
+  setWorldParams: (params: Partial<GeneratedEnvironmentParams>) => void;
+  setWorldConstraints: (constraints: Partial<GeneratedConstraints>) => void;
+  applyTerrainBrush: (brush: { mode: TerrainEditMode; center: [number, number]; radius: number; amount: number }) => string;
+  finishTerrainStroke: (editIds: string[]) => void;
+  setWorldTool: (tool: WorldTool) => void;
+  setShowConstraintZones: (show: boolean) => void;
 
   // Rooms (enclosed spaces on the map).
   selectRoom: (id: string | null) => void;
@@ -738,7 +766,6 @@ export const useStore = create<StoreState>((set, get) => ({
   publishProgress: null,
   undoStack: [],
   redoStack: [],
-  customDetailPacks: [],
   creatorAssets: [],
   mode: "explore",
   selectedId: null,
@@ -752,6 +779,9 @@ export const useStore = create<StoreState>((set, get) => ({
   selectedPlatformId: null,
   selectedWallId: null,
   selectedLandmarkId: null,
+  
+  worldTool: { kind: "none" },
+  showConstraintZones: false,
   entered: false,
   viewer: false,
   user: null,
@@ -763,48 +793,6 @@ export const useStore = create<StoreState>((set, get) => ({
   setEntered: (entered) => set({ entered }),
   resetViewToMapStart: () => moveViewToMapStart(get().composition.map),
   setViewer: (viewer) => set({ viewer }),
-  importDetailPack: async (file) => {
-    const pack = await importDetailPackBundle(file);
-    const customDetailPacks = [
-      ...get().customDetailPacks.filter((candidate) => candidate.id !== pack.id),
-      pack,
-    ];
-    registerCustomEnvironmentPacks(customDetailPacks);
-    set((state) => ({
-      customDetailPacks,
-      ...withHistory(state, `environment:pack:${pack.id}`),
-      composition: {
-        ...touchComposition(state.composition),
-        environment: normalizeEnvironment({
-          ...state.composition.environment,
-          pack: {
-            id: pack.id,
-            variant: pack.variants[0],
-            quality: "auto",
-          },
-        }),
-      },
-    }));
-  },
-  removeDetailPack: async (id) => {
-    await removeStoredDetailPack(id);
-    const customDetailPacks = get().customDetailPacks.filter((pack) => pack.id !== id);
-    registerCustomEnvironmentPacks(customDetailPacks);
-    set((state) => ({
-      customDetailPacks,
-      ...(state.composition.environment.pack?.id === id
-        ? {
-            composition: {
-              ...touchComposition(state.composition),
-              environment: normalizeEnvironment({
-                ...state.composition.environment,
-                pack: undefined,
-              }),
-            },
-          }
-        : {}),
-    }));
-  },
   importMaterialAsset: async (input) => {
     const asset = await importCreatorMaterial(input);
     const creatorAssets = [...get().creatorAssets, asset];
@@ -968,6 +956,7 @@ export const useStore = create<StoreState>((set, get) => ({
         selectedPlatformId: mode === "edit" ? s.selectedPlatformId : null,
         selectedWallId: mode === "edit" ? s.selectedWallId : null,
         selectedLandmarkId: mode === "edit" ? s.selectedLandmarkId : null,
+        worldTool: mode === "edit" ? s.worldTool : ({ kind: "none" } as WorldTool),
       };
     }),
   toggleMode: () => get().setMode(get().mode === "edit" ? "explore" : "edit"),
@@ -1010,6 +999,7 @@ export const useStore = create<StoreState>((set, get) => ({
   selectLandmark: (selectedLandmarkId) =>
     set({
       selectedLandmarkId,
+      
       selectedId: null,
       selectedMapPointKey: null,
       selectedMapSegmentId: null,
@@ -1027,15 +1017,10 @@ export const useStore = create<StoreState>((set, get) => ({
     const creatorAsset = state.creatorAssets.find(
       (asset) => asset.kind === "landmark" && asset.id === assetId,
     );
-    const pack = environmentPackById(state.composition.environment.pack?.id);
-    const packId = pack?.landmarks.some((landmark) => landmark.id === assetId)
-      ? pack.id
-      : undefined;
     const scale = creatorAsset?.kind === "landmark" ? creatorAsset.defaultScale : 1;
     const landmark: EnvironmentLandmarkPlacement = {
       id: newId(),
       assetId,
-      ...(packId ? { packId } : {}),
       position: [x, surfaceHeightAt(state.composition.map, [x, z]), z],
       rotation: [0, 0, 0],
       scale: [scale, scale, scale],
@@ -1050,6 +1035,7 @@ export const useStore = create<StoreState>((set, get) => ({
         }),
       },
       selectedLandmarkId: landmark.id,
+      
       selectedId: null,
       selectedMapPointKey: null,
       selectedMapSegmentId: null,
@@ -1111,6 +1097,7 @@ export const useStore = create<StoreState>((set, get) => ({
         }),
       },
       selectedLandmarkId: copy.id,
+      
       selectedId: null,
       selectedMapPointKey: null,
       selectedMapSegmentId: null,
@@ -1123,6 +1110,165 @@ export const useStore = create<StoreState>((set, get) => ({
       mode: "edit",
     }));
   },
+
+  generateWorld: (biome, options) => {
+    const state = get();
+    const generated = generateEnvironment(biome, state.composition.map, state.composition.tracks, {
+      seed: newWorldSeed(),
+      size: options?.size ?? state.composition.environment.generated?.size,
+      now: new Date().toISOString(),
+    });
+    set((s) => ({
+      ...withHistory(s, "world:generate"),
+      composition: {
+        ...touchComposition(s.composition),
+        environment: normalizeEnvironment({ ...s.composition.environment, generated }),
+      },
+      
+    }));
+  },
+  regenerateWorld: (mode) => {
+    const state = get();
+    const generated = state.composition.environment.generated;
+    if (!generated) return;
+    const next = regenerateEnvironment(generated, state.composition.map, state.composition.tracks, mode, {
+      seed: newWorldSeed(),
+      now: new Date().toISOString(),
+    });
+    set((s) => ({
+      ...withHistory(s, "world:regenerate"),
+      composition: {
+        ...touchComposition(s.composition),
+        environment: normalizeEnvironment({ ...s.composition.environment, generated: next }),
+      },
+    }));
+  },
+  regenerateWorldRegion: (radius) => {
+    const state = get();
+    const generated = state.composition.environment.generated;
+    if (!generated) return;
+    const next = regenerateRegion(
+      generated,
+      state.composition.map,
+      state.composition.tracks,
+      // On tiled maps the viewer may stand in a repeated copy; the reseed must
+      // land in the fundamental cell or the display would never sample it.
+      { center: worldEditPoint(state.composition.map, [viewState.x, viewState.z]), radius },
+      { seed: newWorldSeed(), editId: newId(), now: new Date().toISOString() },
+    );
+    set((s) => ({
+      ...withHistory(s, "world:regenerate-region"),
+      composition: {
+        ...touchComposition(s.composition),
+        environment: normalizeEnvironment({ ...s.composition.environment, generated: next }),
+      },
+    }));
+  },
+  clearGeneratedWorld: () =>
+    set((s) => ({
+      ...withHistory(s, "world:clear"),
+      composition: {
+        ...touchComposition(s.composition),
+        environment: normalizeEnvironment({ ...s.composition.environment, generated: undefined }),
+      },
+      
+      worldTool: { kind: "none" },
+    })),
+  setWorldParams: (params) =>
+    set((s) => {
+      const generated = s.composition.environment.generated;
+      if (!generated) return s;
+      return {
+        ...withHistory(s, `world:params:${Object.keys(params).sort().join(",")}`),
+        composition: {
+          ...touchComposition(s.composition),
+          environment: normalizeEnvironment({
+            ...s.composition.environment,
+            generated: { ...generated, params: { ...generated.params, ...params } },
+          }),
+        },
+      };
+    }),
+  setWorldConstraints: (constraints) =>
+    set((s) => {
+      const generated = s.composition.environment.generated;
+      if (!generated) return s;
+      return {
+        ...withHistory(s, `world:constraints:${Object.keys(constraints).sort().join(",")}`),
+        composition: {
+          ...touchComposition(s.composition),
+          environment: normalizeEnvironment({
+            ...s.composition.environment,
+            generated: { ...generated, constraints: { ...generated.constraints, ...constraints } },
+          }),
+        },
+      };
+    }),
+  applyTerrainBrush: (brush) => {
+    const id = newId();
+    set((s) => {
+      const generated = s.composition.environment.generated;
+      if (!generated) return s;
+      const edit: GeneratedEdit = {
+        id,
+        type: "terrain",
+        mode: brush.mode,
+        // On tiled maps (path-loop, square, hex), strokes are stored at their
+        // fundamental-domain spot; the tiling transport shows them under the
+        // cursor — and in every repeated copy (worldgen/loop.ts, lattice.ts).
+        center: worldEditPoint(s.composition.map, brush.center),
+        radius: brush.radius,
+        amount: brush.amount,
+        at: new Date().toISOString(),
+        level: classifyTerrainEdit(brush.mode, brush.amount, brush.radius),
+      };
+      return {
+        // One undo entry per stroke: brush emissions coalesce under this key.
+        ...withHistory(s, "world:terrain"),
+        composition: {
+          ...touchComposition(s.composition),
+          environment: normalizeEnvironment({
+            ...s.composition.environment,
+            generated: { ...generated, edits: [...generated.edits, edit] },
+          }),
+        },
+      };
+    });
+    return id;
+  },
+  finishTerrainStroke: (editIds) =>
+    set((s) => {
+      const generated = s.composition.environment.generated;
+      if (!generated || !editIds.length) return s;
+      // A long carving stroke is many small ops; classify the stroke by its
+      // cumulative impact so "Preserve major edits" keeps deliberate sculpting.
+      const ids = new Set(editIds);
+      const strokeImpact = generated.edits.reduce(
+        (sum, edit) => (ids.has(edit.id) && edit.type === "terrain" ? sum + Math.abs(edit.amount) * edit.radius : sum),
+        0,
+      );
+      if (strokeImpact < 18) return s;
+      return {
+        ...withHistory(s, "world:terrain"),
+        composition: {
+          ...touchComposition(s.composition),
+          environment: normalizeEnvironment({
+            ...s.composition.environment,
+            generated: {
+              ...generated,
+              edits: generated.edits.map((edit) =>
+                ids.has(edit.id) && edit.type === "terrain" ? { ...edit, level: "major" } : edit,
+              ),
+            },
+          }),
+        },
+      };
+    }),
+  // Picking a tool clears the object selection so brush/place clicks never
+  // fight the inspector; selecting an object clears the tool (see scene).
+  setWorldTool: (worldTool) =>
+    set(worldTool.kind !== "none" ? { worldTool } : { worldTool }),
+  setShowConstraintZones: (showConstraintZones) => set({ showConstraintZones }),
 
   selectRoom: (selectedRoomId) =>
     set({ selectedRoomId, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
@@ -1748,17 +1894,13 @@ export const useStore = create<StoreState>((set, get) => ({
 
   // Load the saved library (or seed/migrate) and resolve the current composition.
   initLibrary: async () => {
-    const [customDetailPacks, creatorAssets] = await Promise.all([
-      loadStoredDetailPacks(),
-      loadCreatorAssets(),
-    ]);
-    registerCustomEnvironmentPacks(customDetailPacks);
+    const creatorAssets = await loadCreatorAssets();
     const { library, currentId } = loadLibrary();
     const current = library.find((c) => c.id === currentId) ?? library[0];
     const composition = current ? await resolveComposition(current) : get().composition;
     moveViewToMapStart(composition.map);
     clearHistoryMarkers();
-    set({ library, composition, customDetailPacks, creatorAssets, undoStack: [], redoStack: [] });
+    set({ library, composition, creatorAssets, undoStack: [], redoStack: [] });
   },
 
   // Switch the current composition. The outgoing one is flushed back into the
@@ -1815,11 +1957,7 @@ export const useStore = create<StoreState>((set, get) => ({
   // Load an exported bundle as a new composition in the library and switch to it.
   importComposition: async (file) => {
     const comp = normalizeComposition(await importBundle(file));
-    const [customDetailPacks, creatorAssets] = await Promise.all([
-      loadStoredDetailPacks(),
-      loadCreatorAssets(),
-    ]);
-    registerCustomEnvironmentPacks(customDetailPacks);
+    const creatorAssets = await loadCreatorAssets();
     const { composition, library } = get();
     revokeBlobUrls(composition);
     const next = upsert(upsert(library, serializeComposition(composition)), serializeComposition(comp));
@@ -1829,7 +1967,6 @@ export const useStore = create<StoreState>((set, get) => ({
       composition: comp,
       selectedId: null,
       selectedLandmarkId: null,
-      customDetailPacks,
       creatorAssets,
       library: next,
       undoStack: [],

@@ -9,15 +9,15 @@ import { EditControls } from "./EditControls";
 import { TrackGizmo } from "./TrackGizmo";
 import { StemShapeHandles } from "./StemShapeHandles";
 import { ListenerSync } from "./ListenerSync";
-import { EnvironmentScene, environmentBackgroundColor } from "./EnvironmentScene";
+import { LightDirector } from "./LightDirector";
+import { EnvironmentScene, environmentBackground } from "./EnvironmentScene";
 import { MapScene } from "./MapScene";
 import { DebugSampler } from "./DebugSampler";
 import { ARWalkSession } from "./ARWalkSession";
 import { CompositionMap, LoopPreviewTransform, loopPreviewElevationOffset, tiledMapTransforms, transformLoopPoint } from "../map";
 import { TrackDef } from "../composition";
 import { AudioEngine } from "../audio/AudioEngine";
-import { debugEnabled, debugFlag, debugValue } from "../debug";
-import { EnvironmentEffects } from "./EnvironmentEffects";
+import { debugEnabled, debugFlag } from "../debug";
 import { effectiveFadeInner, effectiveFadeOuter, isFadeRadiusOverridden, radialFade, setCompositionFadeRadii, subscribeDebugFade } from "./fade";
 
 const VIEWER_SAMPLE_DISTANCE = 0.75;
@@ -68,32 +68,15 @@ export function Scene() {
   // use, in which case base orbs fade too so the radius applies to everything.
   const fadeBaseMarkers =
     mode === "explore" && loopPreviewsEnabled && (map.tiling.type !== "none" || isFadeRadiusOverridden());
-  // Base stems carry their own point light, but preview copies don't (a light
-  // per copy would thrash the renderer's light count). Instead, on tiled maps a
-  // fixed pool of echo lights — one per track — follows each stem's nearest
-  // visible copy so the room beyond a seam lights up as you approach it.
-  const showEchoLights =
-    mode === "explore" && loopPreviewsEnabled && map.tiling.type !== "none" && !debugFlag("debugNoPointLights") && !debugFlag("debugNoEchoLights");
-  const forcedPack = debugValue("environmentPack");
-  const forcedQuality = debugValue("environmentQuality");
-  const renderedEnvironment = forcedPack
-    ? {
-        ...environment,
-        pack: {
-          id: forcedPack,
-          quality: forcedQuality === "low" ? ("low" as const) : ("high" as const),
-        },
-      }
-    : environment;
-
   return (
     <>
       <ARWorldTransform>
-        <EnvironmentScene environment={renderedEnvironment} map={map} editMode={mode === "edit"} />
+        <EnvironmentScene environment={environment} map={map} editMode={mode === "edit"} />
         {mode === "explore" && loopPreviewsEnabled && <TiledMapPreview viewer={viewer} groupRef={previewGroup} />}
         <TileBoundaryOverlay map={map} viewer={viewer} editMode={mode === "edit"} />
         <MapScene map={map} tracks={tracks} lightTracks={mode === "explore" ? tileLights : tracks} editMode={mode === "edit"} />
-        {showEchoLights && <PreviewEchoLights map={map} tracks={tracks} />}
+        {/* All stem point lights live in one budgeted pool — see lightBudget.ts. */}
+        <LightDirector />
 
         {tracks.map((t) => {
           const fade = fadeBaseMarkers ? baseTrackVisibility(t, viewer) : 1;
@@ -122,7 +105,6 @@ export function Scene() {
       {mode === "explore" && loopPreviewsEnabled && <LoopWrapBlipGuard groupRef={previewGroup} />}
       <StemAnimationDriver />
       <ListenerSync />
-      <EnvironmentEffects environment={renderedEnvironment} editMode={mode === "edit"} />
       <ARWalkSession />
       <ARBackdrop />
       <DebugSampler />
@@ -177,7 +159,7 @@ function ARBackdrop() {
     <mesh ref={mesh} renderOrder={-1000} visible={false} frustumCulled={false}>
       <sphereGeometry args={[50, 32, 16]} />
       <meshBasicMaterial
-        color={environmentBackgroundColor}
+        color={environmentBackground(environment)}
         side={THREE.BackSide}
         depthTest={false}
         depthWrite={false}
@@ -298,7 +280,7 @@ function LoopWrapBlipGuard({ groupRef }: { groupRef: React.RefObject<THREE.Group
   const seen = useRef(loopWrap.generation);
   useFrame(() => {
     // Also blank any preview groups registered from below <EnvironmentScene>
-    // (e.g. <DetailMapDressing>'s loop floor shells and environmental objects),
+    // (e.g. <SurfaceMapDressing>'s loop floor shells and environmental objects),
     // which can't host their own after-wrap guard because they mount before
     // <Player>. This component mounts after <Player>, so the generation bump is
     // already recorded when this runs.
@@ -309,64 +291,6 @@ function LoopWrapBlipGuard({ groupRef }: { groupRef: React.RefObject<THREE.Group
     for (const previewGroup of loopPreviewGroups) previewGroup.visible = !wrapped;
   });
   return null;
-}
-
-// A fixed pool of point lights — one per track — that follows each stem's
-// nearest visible preview copy. Base stems light their surroundings via the
-// point light on their <TrackMarker>; preview copies omit that light because a
-// real light per copy would churn the renderer's light count (every change
-// recompiles materials). Keeping the count fixed at one-per-track and just
-// repositioning/dimming them each frame avoids that churn while still lighting
-// the room beyond a seam consistently with how close that copy *looks*.
-function PreviewEchoLights({ map, tracks }: { map: CompositionMap; tracks: TrackDef[] }) {
-  const engine = useStore((s) => s.engine);
-  const lights = useRef<(THREE.PointLight | null)[]>([]);
-  const levels = useRef<number[]>([]);
-  const intensities = useRef<number[]>([]);
-
-  useFrame(({ camera }, dt) => {
-    const listener: [number, number] = arWalk.active ? [viewState.x, viewState.z] : [camera.position.x, camera.position.z];
-    const previews = tiledMapTransforms(map, listener, TILE_PREVIEW_RADIUS);
-    for (let i = 0; i < tracks.length; i++) {
-      const light = lights.current[i];
-      if (!light) continue;
-      const track = tracks[i];
-
-      // The stem's nearest copy, by perceived distance, plus its lifted height.
-      let nearestSq = Infinity;
-      let nearestPos: [number, number, number] | null = null;
-      for (const preview of previews) {
-        const [px, pz] = transformLoopPoint(preview, [track.position[0], track.position[2]]);
-        const distSq = (listener[0] - px) ** 2 + (listener[1] - pz) ** 2;
-        if (distSq < nearestSq) {
-          nearestSq = distSq;
-          nearestPos = [px, track.position[1] + loopPreviewElevationOffset(map, preview), pz];
-        }
-      }
-
-      const fade = nearestPos ? radialFade(Math.sqrt(nearestSq)) : 0;
-      const level = engine?.level(track.id) ?? 0;
-      const pulse = (levels.current[i] = THREE.MathUtils.damp(levels.current[i] ?? 0, level, 14, dt));
-      const volume = track.volume ?? 1;
-      // Match the base orb's point light so a copy lights a room the same way the
-      // real stem would (see TrackMarker's `glow`), scaled by perceived fade.
-      const target = (4.8 + volume * 3.2 + pulse * 44) * fade;
-      // Never toggle `visible`: that drops the light from the renderer's count
-      // and forces a recompile. Damp intensity to ~0 to fade it out in place.
-      light.intensity = intensities.current[i] = THREE.MathUtils.damp(intensities.current[i] ?? 0, target, 10, dt);
-      light.distance = 12 + volume * 8 + pulse * 16;
-      light.color.set(track.color);
-      if (nearestPos) light.position.set(nearestPos[0], nearestPos[1], nearestPos[2]);
-    }
-  });
-
-  return (
-    <group>
-      {tracks.map((track, i) => (
-        <pointLight key={track.id} ref={(l) => (lights.current[i] = l)} color={track.color} intensity={0} distance={18} />
-      ))}
-    </group>
-  );
 }
 
 function tileBoundaryGeometry(map: CompositionMap, viewer: [number, number]): THREE.BufferGeometry | null {

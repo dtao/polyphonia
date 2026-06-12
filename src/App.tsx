@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Scene } from "./scene/Scene";
-import { EnvironmentCredits } from "./ui/EnvironmentCredits";
 import { PropertiesPanel } from "./ui/PropertiesPanel";
 import { MapPointPanel } from "./ui/MapPointPanel";
 import { MapSegmentPanel } from "./ui/MapSegmentPanel";
@@ -10,12 +9,12 @@ import { EntrancePanel } from "./ui/EntrancePanel";
 import { PlatformPanel } from "./ui/PlatformPanel";
 import { WallPanel } from "./ui/WallPanel";
 import { LandmarkPanel } from "./ui/LandmarkPanel";
+import { WorldPanel } from "./ui/WorldPanel";
 import { AddStem } from "./ui/AddStem";
 import { EntryScreen } from "./ui/EntryScreen";
 import { PublishControl } from "./ui/PublishControl";
 import { LoopPanel } from "./ui/LoopPanel";
 import { LoopBar } from "./ui/LoopBar";
-import { EnvironmentPanel } from "./ui/EnvironmentPanel";
 import { MapPanel } from "./ui/MapPanel";
 import { DebugPanel } from "./ui/DebugPanel";
 import { AudioLoadingOverlay } from "./ui/AudioLoadingOverlay";
@@ -236,7 +235,6 @@ export default function App() {
 
       {entered && (
         <>
-          <EnvironmentCredits />
           <div style={hud}>
             <strong>{comp.title}</strong> — {comp.artist}
             <span style={{ opacity: 0.6 }}>
@@ -285,14 +283,14 @@ export default function App() {
               {mode === "edit" && <AddStem />}
               {mode === "edit" && (
                 <>
-                  <EnvironmentPanel
-                    open={openEditPanel === "environment"}
-                    onOpen={() => setOpenEditPanel("environment")}
-                    onClose={() => setOpenEditPanel(null)}
-                  />
                   <MapPanel
                     open={openEditPanel === "map"}
                     onOpen={() => setOpenEditPanel("map")}
+                    onClose={() => setOpenEditPanel(null)}
+                  />
+                  <WorldPanel
+                    open={openEditPanel === "world"}
+                    onOpen={() => setOpenEditPanel("world")}
                     onClose={() => setOpenEditPanel(null)}
                   />
                   <LoopPanel
