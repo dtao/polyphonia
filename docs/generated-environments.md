@@ -40,7 +40,11 @@ the **lower envelope** of all sources' surface heights (each rising at
 below — not simply the nearest source's height. The envelope is ≤ every
 nearby walkable surface and is concave inside the corridor, so grid-cell
 interpolation can never cut a chord above the path at elevation kinks (the
-bottom of a ramp) or under a stem disc sitting on a slope. Outside the zone
+bottom of a ramp) or under a stem disc sitting on a slope. The target is
+additionally capped at the nearest source's own height: the distance
+penalty only arbitrates between sources and must never anchor the blend
+band *above* the local path (that produced collar ridges spilling onto
+rising corridors). Outside the zone
 it blends to free noise over a fixed band; the scatterer rejects placements
 inside the same zones. Because the mask is recomputed from the **live** map
 and stems, moving a stem or path keeps its clearance without regenerating.

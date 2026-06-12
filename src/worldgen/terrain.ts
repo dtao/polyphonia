@@ -55,6 +55,12 @@ const FLATTEN_BLEND = 10;
  *    as patches of terrain covering the path.
  * Must exceed the steepest realistic path slope so ramps regain their own
  * height once clear of a lower neighbor.
+ *
+ * The penalty exists ONLY to arbitrate between sources: the final target is
+ * additionally capped at the nearest source's own surface height. Without
+ * that cap, the blend band around an elevated path anchored at "path height
+ * + penalty" — a collar ridge climbing above the path that read as terrain
+ * spilling onto rising corridors.
  */
 const FLATTEN_TARGET_SLOPE = 1.1;
 /** Width of the rim band where terrain falls back to the base level. */
@@ -183,7 +189,8 @@ export function flattenAt(
   z: number,
 ): { weight: number; target: number } {
   let weight = 1;
-  let target = Infinity;
+  let envelope = Infinity;
+  let nearestY = Infinity;
   for (const source of sources) {
     let edge: number;
     let y: number;
@@ -196,11 +203,15 @@ export function flattenAt(
       y = source.y;
     }
     const m = smoothstep(edge / FLATTEN_BLEND);
-    if (m < weight) weight = m;
+    if (m < weight) {
+      weight = m;
+      nearestY = y;
+    }
     const candidate = y + Math.max(0, edge) * FLATTEN_TARGET_SLOPE;
-    if (candidate < target) target = candidate;
+    if (candidate < envelope) envelope = candidate;
   }
-  return { weight, target: target === Infinity ? 0 : target - FLATTEN_DROP };
+  if (envelope === Infinity) return { weight, target: 0 };
+  return { weight, target: Math.min(envelope, nearestY) - FLATTEN_DROP };
 }
 
 /** Clearance test for scatter placement: true if (x, z) is too close to protected geometry. */

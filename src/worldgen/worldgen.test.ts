@@ -124,6 +124,32 @@ describe("terrain field", () => {
     }
   });
 
+  it("raises no collar above a rising path's blend band", () => {
+    // A segment climbing into open terrain: the envelope's distance penalty
+    // must not anchor the band around it ABOVE the path (terrain spilling
+    // onto rising corridors and ringing the raised terminal point).
+    const risingMap = normalizeMap({
+      preset: "custom",
+      segments: [{ id: "a", start: [0, 0], end: [30, 0], width: 4 }],
+      start: { position: [0, 0], direction: [1, 0] },
+      elevations: { "30.000,0.000": 6 },
+    });
+    const generated = testEnvironment();
+    const field = buildTerrainField(generated, flattenSources(risingMap, [], generated));
+    for (const [x, z] of [
+      [20, 6.5],
+      [25, 6.5],
+      [33, 5],
+      [36, 0],
+    ] as const) {
+      const surface = surfaceHeightAt(risingMap, [x, z]);
+      expect(terrainHeightAt(field, x, z), `at (${x}, ${z})`).toBeLessThan(surface);
+    }
+    for (let x = 2; x <= 29; x += 1.5) {
+      expect(terrainHeightAt(field, x, 0)).toBeLessThan(surfaceHeightAt(risingMap, [x, 0]) - 0.05);
+    }
+  });
+
   it("is deterministic for the same seed", () => {
     const generated = testEnvironment();
     const sources = flattenSources(pathMap, [], generated);
