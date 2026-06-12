@@ -2,9 +2,10 @@
 // Rendered in Scene.tsx next to TrackGizmo when a shaped stem is selected.
 
 import { ThreeEvent, useThree } from "@react-three/fiber";
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { StemShape } from "../composition";
+import { nearestBoundaryPointInMap } from "../map";
 import { useStore } from "../store";
 
 const HANDLE_COLOR = "#8fffe8";
@@ -57,7 +58,9 @@ function RiverEndHandle({
     if (!dragging.current) return;
     e.stopPropagation();
     if (!e.ray.intersectPlane(ground, hit)) return;
-    setTrackShapeRiverEnd(trackId, [hit.x, stemY, hit.z]);
+    const map = useStore.getState().composition.map;
+    const snapped = nearestBoundaryPointInMap(map, [hit.x, hit.z]) ?? [hit.x, hit.z];
+    setTrackShapeRiverEnd(trackId, [snapped[0], stemY, snapped[1]]);
   }
 
   function onUp(e?: ThreeEvent<PointerEvent>) {
@@ -111,7 +114,11 @@ function WallShapeHandles({
   );
 }
 
-// Arrow in the facing direction — drag to rotate the wall.
+// Y-axis rotation ring — drag left/right to rotate the wall's facing direction.
+// Angle is accumulated from the drag-start position so direction never reverses.
+// Dragging right (positive screen X) rotates clockwise when viewed from above.
+// Window-level pointermove/up listeners ensure the grip is never lost when the
+// pointer strays far from the ring mesh.
 function WallFacingHandle({
   trackId,
   position,
@@ -123,59 +130,74 @@ function WallFacingHandle({
 }) {
   const setTrackShapeWallFacing = useStore((s) => s.setTrackShapeWallFacing);
   const controls = useThree((s) => s.controls as { enabled?: boolean } | undefined);
-  const dragging = useRef(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+  const dragRef = useRef<{ startX: number; startAngle: number } | null>(null);
+  // Refs to window listeners so the cleanup effect can remove them on unmount.
+  const listenersRef = useRef<{ move: (e: PointerEvent) => void; up: () => void } | null>(null);
   const [cx, stemY, cz] = position;
-  const ground = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), -stemY), [stemY]);
-  const hit = useMemo(() => new THREE.Vector3(), []);
-
   const [fx, fz] = shape.facing;
-  const arrowOffset = shape.width / 2 + 2;
-  const arrowPos: [number, number, number] = [cx + fx * arrowOffset, stemY, cz + fz * arrowOffset];
+
+  useEffect(() => () => {
+    if (listenersRef.current) {
+      window.removeEventListener("pointermove", listenersRef.current.move);
+      window.removeEventListener("pointerup", listenersRef.current.up);
+    }
+  }, []);
 
   function onDown(e: ThreeEvent<PointerEvent>) {
     e.stopPropagation();
-    dragging.current = true;
+    const startX = e.nativeEvent.clientX;
+    const startAngle = Math.atan2(fx, fz);
+    dragRef.current = { startX, startAngle };
+    setIsDragging(true);
     if (controls) controls.enabled = false;
-    (e.nativeEvent.target as Element | null)?.setPointerCapture?.(e.pointerId);
     document.body.style.cursor = "grabbing";
+
+    const move = (ev: PointerEvent) => {
+      if (!dragRef.current) return;
+      // 200 px per radian; right drag = clockwise = decreasing angle.
+      const newAngle = dragRef.current.startAngle - (ev.clientX - dragRef.current.startX) / 200;
+      setTrackShapeWallFacing(trackId, [Math.sin(newAngle), Math.cos(newAngle)]);
+    };
+    const up = () => {
+      dragRef.current = null;
+      setIsDragging(false);
+      if (controls) controls.enabled = true;
+      document.body.style.cursor = "auto";
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      listenersRef.current = null;
+    };
+    listenersRef.current = { move, up };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
   }
 
-  function onMove(e: ThreeEvent<PointerEvent>) {
-    if (!dragging.current) return;
-    e.stopPropagation();
-    if (!e.ray.intersectPlane(ground, hit)) return;
-    const dx = hit.x - cx, dz = hit.z - cz;
-    const len = Math.hypot(dx, dz);
-    if (len < 0.001) return;
-    setTrackShapeWallFacing(trackId, [dx / len, dz / len]);
-  }
+  const color = isDragging ? "#ffffff" : isHovered ? "#c8fff4" : HANDLE_COLOR;
 
-  function onUp(e?: ThreeEvent<PointerEvent>) {
-    dragging.current = false;
-    if (controls) controls.enabled = true;
-    (e?.nativeEvent.target as Element | null | undefined)?.releasePointerCapture?.(e?.pointerId ?? -1);
-    document.body.style.cursor = "auto";
-  }
-
+  // Two small cones tangent to the ring at 3-o'clock and 9-o'clock, pointing
+  // clockwise, so the rotation direction is visually obvious.
   return (
-    <group onPointerUp={onUp} onPointerCancel={onUp}>
-      {dragging.current && (
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, stemY, 0]} onPointerMove={onMove} onPointerUp={onUp}>
-          <planeGeometry args={[400, 400]} />
-          <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
-        </mesh>
-      )}
+    <group position={[cx, stemY, cz]}>
       <mesh
-        position={arrowPos}
-        rotation={[Math.PI / 2, Math.atan2(fx, fz), 0]}
+        rotation={[-Math.PI / 2, 0, 0]}
         onPointerDown={onDown}
-        onPointerMove={onMove}
-        onPointerUp={onUp}
-        onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "grab"; }}
-        onPointerOut={() => { if (!dragging.current) document.body.style.cursor = "auto"; }}
+        onPointerOver={(e) => { e.stopPropagation(); setIsHovered(true); document.body.style.cursor = "grab"; }}
+        onPointerOut={() => { setIsHovered(false); if (!isDragging) document.body.style.cursor = "auto"; }}
       >
-        <coneGeometry args={[0.45, 1.2, 12]} />
-        <meshBasicMaterial color="#ffcc44" toneMapped={false} />
+        <torusGeometry args={[1.5, 0.09, 8, 64]} />
+        <meshBasicMaterial color={color} toneMapped={false} />
+      </mesh>
+      {/* CW arrow at 3-o'clock: tangent points in -Z */}
+      <mesh position={[1.5, 0, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <coneGeometry args={[0.12, 0.28, 10]} />
+        <meshBasicMaterial color={color} toneMapped={false} />
+      </mesh>
+      {/* CW arrow at 9-o'clock: tangent points in +Z */}
+      <mesh position={[-1.5, 0, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <coneGeometry args={[0.12, 0.28, 10]} />
+        <meshBasicMaterial color={color} toneMapped={false} />
       </mesh>
     </group>
   );

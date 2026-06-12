@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Canvas } from "@react-three/fiber";
 import { Scene } from "../scene/Scene";
@@ -9,6 +9,7 @@ import { TouchControls, isTouchDevice } from "./TouchControls";
 import { AudioLoadingOverlay } from "./AudioLoadingOverlay";
 import { ARWalkControls } from "./ARWalkControls";
 import { GeoWalkControls } from "./GeoWalkControls";
+import { AudioEngine } from "../audio/AudioEngine";
 
 type Status = "loading" | "ready" | "notfound" | "error";
 
@@ -22,25 +23,58 @@ export function Viewer() {
   const audioLoading = useStore((s) => s.audioLoading);
   const user = useStore((s) => s.user);
   const [status, setStatus] = useState<Status>("loading");
+  const [audioReady, setAudioReady] = useState(false);
+  const preloadedEngineRef = useRef<AudioEngine | null>(null);
   const touch = isTouchDevice();
 
   useEffect(() => {
     let cancelled = false;
+    let loadingEngine: AudioEngine | null = null;
+
     // Reset any prior in-tab session and mark this as a read-only view.
     useStore.getState().engine?.dispose();
     useStore.setState({ engine: null, audioLoading: { status: "idle" }, entered: false, selectedId: null, mode: "explore", viewer: true });
+    setAudioReady(false);
+    preloadedEngineRef.current = null;
 
     if (!isSharingConfigured) {
       setStatus("error");
       return;
     }
     fetchPublishedComposition(id!)
-      .then((c) => {
+      .then(async (c) => {
         if (cancelled) return;
         if (!c) return setStatus("notfound");
         moveViewToMapStart(c.map);
         useStore.setState({ composition: c });
         setStatus("ready");
+
+        // Begin preloading audio immediately — fetch + decode work without a
+        // user gesture; only resume() + start() need one (deferred to enter()).
+        const e = new AudioEngine();
+        loadingEngine = e;
+        const total = c.tracks.length;
+        useStore.setState({ audioLoading: { status: "loading", loaded: 0, total, phase: "preparing" } });
+        try {
+          await e.load(c, (progress) => {
+            if (!cancelled) useStore.setState({ audioLoading: { status: "loading", ...progress } });
+          });
+          if (cancelled) {
+            e.dispose();
+            return;
+          }
+          preloadedEngineRef.current = e;
+          loadingEngine = null;
+          useStore.setState({ audioLoading: { status: "idle" } });
+          setAudioReady(true);
+        } catch (err) {
+          if (!cancelled) {
+            const message = err instanceof Error ? err.message : "Audio couldn't be loaded.";
+            useStore.setState({ audioLoading: { status: "error", message } });
+          } else {
+            e.dispose();
+          }
+        }
       })
       .catch((e) => {
         console.error(e);
@@ -49,17 +83,34 @@ export function Viewer() {
 
     return () => {
       cancelled = true;
+      loadingEngine?.dispose();
+      preloadedEngineRef.current?.dispose();
+      preloadedEngineRef.current = null;
       useStore.getState().engine?.dispose();
       useStore.setState({ engine: null, audioLoading: { status: "idle" }, entered: false, viewer: false });
     };
   }, [id]);
 
   function enter() {
-    if (useStore.getState().engine) return;
+    const preloaded = preloadedEngineRef.current;
+    if (!preloaded || useStore.getState().engine) return;
+    preloadedEngineRef.current = null;
     useStore.getState().resetViewToMapStart();
-    useStore.getState().setEntered(true);
-    void useStore.getState().startAudio().catch((e) => console.error("Failed to start audio", e));
+    preloaded.ctx.resume()
+      .then(() => {
+        preloaded.start();
+        useStore.setState({ engine: preloaded });
+        useStore.getState().setEntered(true);
+      })
+      .catch((e) => console.error("Failed to start audio", e));
   }
+
+  const loadingPercent =
+    audioLoading.status === "loading" && audioLoading.total > 0
+      ? Math.min(100, Math.max(6, (audioLoading.loaded / audioLoading.total) * 100))
+      : audioLoading.status === "loading"
+      ? 6
+      : 0;
 
   return (
     <>
@@ -90,13 +141,39 @@ export function Viewer() {
               {comp.artist}
             </div>
           )}
-          <button id="enter-btn" style={button} onClick={enter}>
+          {audioLoading.status === "loading" && (
+            <div style={loadingBlock}>
+              <div style={loadingLabel}>
+                Loading music… {Math.round(loadingPercent)}%
+              </div>
+              <div style={meter}>
+                <div style={{ ...meterFill, width: `${loadingPercent}%` }} />
+              </div>
+            </div>
+          )}
+          {audioLoading.status === "error" && (
+            <div style={{ color: "#ff9b8f", fontSize: 13 }}>{audioLoading.message ?? "Audio couldn't be loaded."}</div>
+          )}
+          <button
+            id="enter-btn"
+            style={{ ...button, ...(audioReady ? null : buttonDisabled) }}
+            onClick={enter}
+            disabled={!audioReady}
+          >
             ▶ Enter
           </button>
           <p style={{ opacity: 0.45, fontSize: 13 }}>
             {touch ? "Joystick to move · drag to look around" : "WASD to move · mouse to look · Esc to release cursor"}
           </p>
         </div>
+      )}
+
+      {/* Home link in the corner — pre-enter it floats above the overlay; post-enter
+          it sits above the HUD text since the HUD is pointer-events:none */}
+      {(status === "ready" || status === "loading") && (
+        <Link to="/" style={entered ? homeLinkEntered : homeLink}>
+          ← Polyphonia
+        </Link>
       )}
 
       {status === "ready" && entered && engine && (
@@ -131,7 +208,8 @@ export function Viewer() {
           </Link>
         </div>
       )}
-      <AudioLoadingOverlay loading={audioLoading} />
+      {/* Only show the full-screen audio overlay post-enter (pre-enter progress is inline) */}
+      {entered && <AudioLoadingOverlay loading={audioLoading} />}
     </>
   );
 }
@@ -159,9 +237,59 @@ const button: React.CSSProperties = {
   cursor: "pointer",
 };
 
-const hud: React.CSSProperties = {
+const buttonDisabled: React.CSSProperties = {
+  opacity: 0.4,
+  cursor: "default",
+};
+
+const loadingBlock: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 6,
+  width: 220,
+};
+
+const loadingLabel: React.CSSProperties = {
+  fontSize: 12,
+  color: "rgba(255,255,255,0.58)",
+  textTransform: "uppercase",
+  letterSpacing: 0.3,
+};
+
+const meter: React.CSSProperties = {
+  height: 6,
+  overflow: "hidden",
+  borderRadius: 999,
+  background: "rgba(255,255,255,0.16)",
+};
+
+const meterFill: React.CSSProperties = {
+  height: "100%",
+  borderRadius: 999,
+  background: "linear-gradient(90deg, #56e0c0, #ffd166, #5b8cff)",
+  transition: "width 180ms ease",
+};
+
+const homeLink: React.CSSProperties = {
   position: "absolute",
   top: 14,
+  left: 14,
+  color: "rgba(255,255,255,0.55)",
+  fontFamily: "system-ui, sans-serif",
+  fontSize: 13,
+  textDecoration: "none",
+  zIndex: 10,
+  pointerEvents: "auto",
+};
+
+// Same position when entered — sits just above the HUD (which is offset below it).
+const homeLinkEntered: React.CSSProperties = {
+  ...homeLink,
+};
+
+const hud: React.CSSProperties = {
+  position: "absolute",
+  top: 36,
   left: 14,
   color: "rgba(255,255,255,0.8)",
   fontFamily: "system-ui, sans-serif",
