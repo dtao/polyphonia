@@ -38,7 +38,15 @@ these spatial compositions.
   wall thickness controls, so thin barriers lightly darken sound while thick
   barriers heavily damp it. Each composition can also set its own **visible
   radius** in the Map panel — how far the world stays fully visible around the
-  listener before fading out — or inherit the default.
+  listener before fading out — or inherit the default. Visibility can vary:
+  a separate **vertical visibility** band fades objects far above or below the
+  listener independently of the horizontal circle, and **fade points** placed
+  on the map carry their own radius, blending as the listener moves so a
+  composition can open wide and then close in claustrophobically. Tunnels and
+  rooms that sit entirely below the generated landscape pass *through* it
+  (the hillside stays overhead) instead of dragging the terrain down, and the
+  translucent **reflective floor** under the map is editable in the World
+  panel — move its elevation, stack several, dim them, or remove them.
 - **Edit** — an overhead edit mode to place tracks in space (drag gizmo), and a
   properties panel to rename, recolor, set volume, tune distance falloff, or
   point a stem like a directional speaker with configurable beam width and
@@ -109,6 +117,10 @@ Audio quality can be A/B tested with `audioQuality=full` or
 ### Controls
 
 - **Explore:** `WASD` move · mouse look · click the scene to look · `Esc` frees the cursor.
+  If the composition has a recorded **auto-pilot route** (Map panel → Record
+  route: it captures your Explore movement and camera), the toolbar shows
+  **▶ Auto-pilot** — the experience rides the route hands-free, and any
+  movement input takes control back.
   On square/hex tiled maps, **AR Walk** can use Android WebXR pose tracking as the movement source; it renders the Polyphonia environment (not the live camera passthrough) so the space is fully immersive while you physically walk. **Geo Drive** uses device GPS as the movement source for driving; movement direction sets listener facing, and 100 real-world feet maps to 1 Polyphonia unit.
 - **Edit** (toggle with the button or `Tab`): `WASD` pan · `Q`/`E` lower/raise
   elevation · drag to orbit/turn · scroll to zoom · click a pillar to select, then drag the gizmo to
@@ -131,7 +143,8 @@ Audio quality can be A/B tested with `audioQuality=full` or
   cone on the ground while selected. Selected walls use the same three-axis move
   gizmo as stems, with endpoint handles for reshaping. Selected path points use
   that three-axis gizmo too, moving connected branches in X/Z and setting ramp
-  elevation on Y.
+  elevation on Y. `Shift+0–9` drops a numbered **teleport pin** at the view
+  center and `0–9` jumps straight back to it (Shift+digit on a pin lifts it).
 
 ## Sharing setup (optional)
 
