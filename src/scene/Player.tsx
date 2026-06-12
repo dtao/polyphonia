@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { useStore, viewState, touchMove, arWalk, geoWalk, loopWrap } from "../store";
+import { autopilotCapture, useStore, viewState, touchMove, arWalk, geoWalk, loopWrap } from "../store";
+import { sampleAutopilotRoute } from "../composition";
 import { MapSupport, mapSupportAt, stepOnMap, surfaceHeightOnSupport, wrapLoopPosition } from "../map";
 import { generatedGroundHeight } from "../worldgen/sampler";
 import { EYE_HEIGHT } from "../spatialConstants";
@@ -28,6 +29,13 @@ export function Player() {
   const look = useRef({ yaw: 0, pitch: 0, targetYaw: 0, targetPitch: 0, locked: false });
   const euler = useRef(new THREE.Euler(0, 0, 0, "YXZ"));
   const support = useRef<MapSupport | null>(null);
+  const autopilotPlaying = useStore((s) => s.autopilotPlaying);
+  const playback = useRef({ elapsed: 0 });
+
+  // Restart the route clock whenever playback (re)starts.
+  useEffect(() => {
+    playback.current.elapsed = 0;
+  }, [autopilotPlaying]);
 
   // Drop in at the shared ground position and facing direction (both preserved
   // across mode switches), at eye height and horizontal.
@@ -207,10 +215,43 @@ export function Player() {
       if (keys.current["KeyS"]) moveForward -= 1;
       if (keys.current["KeyD"]) moveStrafe += 1;
       if (keys.current["KeyA"]) moveStrafe -= 1;
-      if (moveForward) camera.position.addScaledVector(forward.current, speed * moveForward);
-      if (moveStrafe) camera.position.addScaledVector(right.current, speed * moveStrafe);
+      const route = autopilotPlaying ? useStore.getState().composition.autopilot : undefined;
+      if (route) {
+        // Auto-pilot: follow the recorded route, camera included. Any movement
+        // input hands control back to the listener.
+        if (moveForward || moveStrafe) {
+          useStore.getState().stopAutopilotPlayback();
+        } else {
+          const p = playback.current;
+          p.elapsed += dt;
+          const at = sampleAutopilotRoute(route, p.elapsed);
+          if (at.jump && Math.hypot(at.x - camera.position.x, at.z - camera.position.z) > 4) {
+            // A recorded teleport (e.g. a loop wrap): snap, and hide tiled
+            // previews for the frame like a live wrap does.
+            loopWrap.generation++;
+            support.current = null;
+          }
+          camera.position.x = at.x;
+          camera.position.z = at.z;
+          look.current.yaw = look.current.targetYaw = at.yaw;
+          look.current.pitch = look.current.targetPitch = at.pitch;
+          euler.current.set(look.current.pitch, look.current.yaw, 0, "YXZ");
+          camera.quaternion.setFromEuler(euler.current);
+          camera.getWorldDirection(forward.current);
+          forward.current.y = 0;
+          forward.current.normalize();
+          if (p.elapsed >= route.duration) useStore.getState().stopAutopilotPlayback();
+        }
+      } else {
+        if (moveForward) camera.position.addScaledVector(forward.current, speed * moveForward);
+        if (moveStrafe) camera.position.addScaledVector(right.current, speed * moveStrafe);
+      }
     }
-    const wrapped = wrapLoopPosition(map, previous, [camera.position.x, camera.position.z]);
+    // During auto-pilot the recorded positions are already canonical (wraps
+    // were applied while recording), so skip live wrap detection — a recorded
+    // jump would otherwise read as a giant step.
+    const autopiloting = autopilotPlaying && !!useStore.getState().composition.autopilot;
+    const wrapped = autopiloting ? null : wrapLoopPosition(map, previous, [camera.position.x, camera.position.z]);
     if (wrapped) {
       // Signal the teleport so <Scene> can hide tiled previews for this frame:
       // they're built from React state that still reflects the pre-wrap camera.
@@ -226,8 +267,8 @@ export function Player() {
       forward.current.y = 0;
       forward.current.normalize();
     }
-    const step = wrapped
-      ? { position: [camera.position.x, camera.position.z] as [number, number], support: support.current ?? mapSupportAt(map, [camera.position.x, camera.position.z], null) }
+    const step = wrapped || autopiloting
+      ? { position: [camera.position.x, camera.position.z] as [number, number], support: (wrapped ? support.current : null) ?? mapSupportAt(map, [camera.position.x, camera.position.z], support.current) }
       : stepOnMap(map, previous, [camera.position.x, camera.position.z], support.current);
     support.current = step.support;
     camera.position.x = step.position[0];
@@ -259,6 +300,23 @@ export function Player() {
     } else if (len > 0 && !arWalk.active) {
       viewState.fx = forward.current.x / len;
       viewState.fz = forward.current.z / len;
+    }
+
+    // Auto-pilot recording: capture the explore camera ~10×/s. The clock only
+    // advances while this frame loop runs, so time spent back in Edit mode
+    // doesn't stretch the route.
+    if (useStore.getState().autopilotRecording) {
+      autopilotCapture.elapsed += dt;
+      const last = autopilotCapture.samples[autopilotCapture.samples.length - 1];
+      if (!last || autopilotCapture.elapsed - last.t >= 0.1) {
+        autopilotCapture.samples.push({
+          t: autopilotCapture.elapsed,
+          x: camera.position.x,
+          z: camera.position.z,
+          yaw: look.current.yaw,
+          pitch: look.current.pitch,
+        });
+      }
     }
   });
 

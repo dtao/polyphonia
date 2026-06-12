@@ -71,6 +71,9 @@ export default function App() {
   const selectedLandmarkId = useStore((s) => s.selectedLandmarkId);
   const canUndo = useStore((s) => s.undoStack.length > 0);
   const canRedo = useStore((s) => s.redoStack.length > 0);
+  const autopilotRoute = useStore((s) => s.composition.autopilot);
+  const autopilotPlaying = useStore((s) => s.autopilotPlaying);
+  const autopilotRecording = useStore((s) => s.autopilotRecording);
   const [openEditPanel, setOpenEditPanel] = useState<EditPanel>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const hudHint = hudShortcutHint({
@@ -246,6 +249,28 @@ export default function App() {
           {!locked && (
             <>
               <div style={toolbar}>
+                {mode === "explore" && autopilotRecording && (
+                  <button
+                    style={recordingBtn}
+                    onClick={() => useStore.getState().stopAutopilotRecording(true)}
+                    title="Stop recording and save the auto-pilot route"
+                  >
+                    ■ Stop recording
+                  </button>
+                )}
+                {mode === "explore" && !autopilotRecording && autopilotRoute && (
+                  <button
+                    style={modeBtn}
+                    onClick={() =>
+                      autopilotPlaying
+                        ? useStore.getState().stopAutopilotPlayback()
+                        : useStore.getState().startAutopilotPlayback()
+                    }
+                    title={autopilotPlaying ? "Stop the auto-pilot ride (moving also stops it)" : "Ride the recorded route hands-free"}
+                  >
+                    {autopilotPlaying ? "■ Stop auto-pilot" : "▶ Auto-pilot"}
+                  </button>
+                )}
                 <button style={exitBtn} onClick={exit} title="Stop and return to the start screen">
                   ⏏ Exit
                 </button>
@@ -403,6 +428,16 @@ const historyBtn: React.CSSProperties = {
 const disabledBtn: React.CSSProperties = {
   opacity: 0.35,
   cursor: "default",
+};
+
+const recordingBtn: React.CSSProperties = {
+  padding: "8px 16px",
+  fontSize: 14,
+  borderRadius: 999,
+  border: "1px solid rgba(255,107,107,0.55)",
+  background: "rgba(255,77,77,0.25)",
+  color: "white",
+  cursor: "pointer",
 };
 
 const exitBtn: React.CSSProperties = {

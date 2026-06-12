@@ -110,6 +110,89 @@ export interface TrackDef {
 export const audioAssetKey = (track: Pick<TrackDef, "id" | "audioAssetId">): string =>
   track.audioAssetId ?? track.id;
 
+// One captured moment of an auto-pilot route: seconds since the route began,
+// the listener's XZ position, and the camera's yaw/pitch. Surface height is
+// derived at playback time so routes stay valid when elevations are retuned.
+export interface AutopilotSample {
+  t: number;
+  x: number;
+  z: number;
+  yaw: number;
+  pitch: number;
+}
+
+export interface AutopilotRoute {
+  duration: number;
+  samples: AutopilotSample[];
+}
+
+export const MAX_AUTOPILOT_SAMPLES = 12000; // ~20 min at 10 Hz
+
+// Consecutive samples further apart than this are a recorded teleport (e.g. a
+// path-loop wrap): playback snaps instead of sweeping across the map.
+export const AUTOPILOT_JUMP_DISTANCE = 8;
+
+export function normalizeAutopilot(value: unknown): AutopilotRoute | undefined {
+  const route = value as Partial<AutopilotRoute> | undefined;
+  if (!route || typeof route !== "object" || !Array.isArray(route.samples)) return undefined;
+  const samples: AutopilotSample[] = [];
+  for (const raw of route.samples) {
+    const s = raw as Partial<AutopilotSample> | undefined;
+    if (!s || typeof s !== "object") continue;
+    if (![s.t, s.x, s.z, s.yaw, s.pitch].every((v) => typeof v === "number" && Number.isFinite(v))) continue;
+    if (samples.length >= MAX_AUTOPILOT_SAMPLES) break;
+    samples.push({ t: s.t!, x: s.x!, z: s.z!, yaw: s.yaw!, pitch: s.pitch! });
+  }
+  samples.sort((a, b) => a.t - b.t);
+  if (samples.length < 2) return undefined;
+  const duration =
+    typeof route.duration === "number" && Number.isFinite(route.duration)
+      ? Math.max(route.duration, samples[samples.length - 1].t)
+      : samples[samples.length - 1].t;
+  if (duration <= 0) return undefined;
+  return { duration, samples };
+}
+
+/**
+ * Interpolated route state at `t` seconds. Position/look lerp between the
+ * surrounding samples (yaw is recorded unwrapped, so plain lerp is correct);
+ * `jump` flags a recorded teleport, where playback should snap rather than
+ * interpolate. Clamps to the route's ends.
+ */
+export function sampleAutopilotRoute(
+  route: AutopilotRoute,
+  t: number,
+): { x: number; z: number; yaw: number; pitch: number; jump: boolean } {
+  const samples = route.samples;
+  const first = samples[0];
+  const last = samples[samples.length - 1];
+  if (t <= first.t) return { x: first.x, z: first.z, yaw: first.yaw, pitch: first.pitch, jump: false };
+  if (t >= last.t) return { x: last.x, z: last.z, yaw: last.yaw, pitch: last.pitch, jump: false };
+  let lo = 0;
+  let hi = samples.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (samples[mid].t <= t) lo = mid;
+    else hi = mid;
+  }
+  const a = samples[lo];
+  const b = samples[hi];
+  const jump = Math.hypot(b.x - a.x, b.z - a.z) > AUTOPILOT_JUMP_DISTANCE;
+  if (jump) {
+    // Hold the pre-teleport sample until its time passes, then snap.
+    const at = t - a.t < b.t - t ? a : b;
+    return { x: at.x, z: at.z, yaw: at.yaw, pitch: at.pitch, jump: true };
+  }
+  const f = (t - a.t) / (b.t - a.t || 1);
+  return {
+    x: a.x + (b.x - a.x) * f,
+    z: a.z + (b.z - a.z) * f,
+    yaw: a.yaw + (b.yaw - a.yaw) * f,
+    pitch: a.pitch + (b.pitch - a.pitch) * f,
+    jump: false,
+  };
+}
+
 export interface Composition {
   id: string;
   title: string;
@@ -149,6 +232,12 @@ export interface Composition {
    * a couple of bars so genuinely longer stems are not folded in half.
    */
   loopTail?: boolean;
+  /**
+   * Recorded auto-pilot route (M7.6): the author's movement and camera over
+   * time, captured in Explore mode. Playback walks the listener along it,
+   * including look direction. Absent = no route authored.
+   */
+  autopilot?: AutopilotRoute;
   /** Visual/acoustic environment metadata. */
   environment: EnvironmentSettings;
   /** Authored walkable area and simple boundary geometry. */
@@ -240,6 +329,9 @@ export function normalizeComposition(comp: Composition): Composition {
     tracks: comp.tracks.map(normalizeTrack),
   };
   delete (normalized as { bars?: number }).bars;
+  const autopilot = normalizeAutopilot(comp.autopilot);
+  if (autopilot) normalized.autopilot = autopilot;
+  else delete normalized.autopilot;
   return normalized;
 }
 

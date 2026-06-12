@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   compositionRevision,
   defaultComposition,
+  normalizeAutopilot,
   normalizeComposition,
+  sampleAutopilotRoute,
   touchComposition,
 } from "./composition";
 
@@ -284,5 +286,60 @@ describe("composition compatibility and revisions", () => {
       dispersion: 0,
       outsideGain: 0,
     });
+  });
+});
+
+describe("auto-pilot routes", () => {
+  const route = {
+    duration: 2,
+    samples: [
+      { t: 0, x: 0, z: 0, yaw: 0, pitch: 0 },
+      { t: 1, x: 4, z: 0, yaw: 1, pitch: 0.2 },
+      { t: 2, x: 4, z: 4, yaw: 1, pitch: 0.2 },
+    ],
+  };
+
+  it("normalizes valid routes and drops malformed ones", () => {
+    expect(normalizeAutopilot(route)).toEqual(route);
+    expect(normalizeAutopilot(undefined)).toBeUndefined();
+    expect(normalizeAutopilot({ duration: 5, samples: [] })).toBeUndefined();
+    expect(normalizeAutopilot({ duration: 5, samples: [route.samples[0]] })).toBeUndefined();
+    // Bad samples are dropped; out-of-order ones are sorted; duration covers
+    // the last sample.
+    expect(
+      normalizeAutopilot({
+        duration: 0.5,
+        samples: [route.samples[1], route.samples[0], { t: NaN, x: 0, z: 0, yaw: 0, pitch: 0 }],
+      }),
+    ).toEqual({ duration: 1, samples: [route.samples[0], route.samples[1]] });
+  });
+
+  it("keeps a normalized route on the composition and strips invalid ones", () => {
+    const withRoute = normalizeComposition({ ...defaultComposition, autopilot: route });
+    expect(withRoute.autopilot).toEqual(route);
+    const withBad = normalizeComposition({ ...defaultComposition, autopilot: { duration: 1, samples: [] } as any });
+    expect(withBad).not.toHaveProperty("autopilot");
+  });
+
+  it("interpolates position and look along the route, clamping at the ends", () => {
+    expect(sampleAutopilotRoute(route, -1)).toMatchObject({ x: 0, z: 0, yaw: 0 });
+    expect(sampleAutopilotRoute(route, 0.5)).toMatchObject({ x: 2, z: 0, yaw: 0.5, pitch: 0.1, jump: false });
+    expect(sampleAutopilotRoute(route, 1.5)).toMatchObject({ x: 4, z: 2, jump: false });
+    expect(sampleAutopilotRoute(route, 99)).toMatchObject({ x: 4, z: 4 });
+  });
+
+  it("flags recorded teleports instead of sweeping across them", () => {
+    const wrap = {
+      duration: 2,
+      samples: [
+        { t: 0, x: 0, z: 0, yaw: 0, pitch: 0 },
+        { t: 1, x: 0, z: -40, yaw: 0, pitch: 0 }, // recorded loop wrap
+        { t: 2, x: 2, z: -40, yaw: 0, pitch: 0 },
+      ],
+    };
+    const before = sampleAutopilotRoute(wrap, 0.4);
+    expect(before).toMatchObject({ x: 0, z: 0, jump: true });
+    const after = sampleAutopilotRoute(wrap, 0.6);
+    expect(after).toMatchObject({ x: 0, z: -40, jump: true });
   });
 });

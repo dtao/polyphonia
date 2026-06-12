@@ -20,6 +20,11 @@ const TILING_LABELS: Record<MapTilingType, string> = {
 export function MapPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () => void; onClose: () => void }) {
   const map = useStore((s) => s.composition.map);
   const tracks = useStore((s) => s.composition.tracks);
+  const autopilot = useStore((s) => s.composition.autopilot);
+  const autopilotRecording = useStore((s) => s.autopilotRecording);
+  const startAutopilotRecording = useStore((s) => s.startAutopilotRecording);
+  const stopAutopilotRecording = useStore((s) => s.stopAutopilotRecording);
+  const clearAutopilot = useStore((s) => s.clearAutopilot);
   const setMap = useStore((s) => s.setMap);
   const addWall = useStore((s) => s.addWall);
   const setTrackPosition = useStore((s) => s.setTrackPosition);
@@ -215,6 +220,42 @@ export function MapPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () 
             </div>
             <button style={{ ...actionBtn, width: "100%", marginTop: 8 }} onClick={customizeVisibleRadius}>
               Customize
+            </button>
+          </>
+        )}
+      </div>
+
+      <div style={editorGroup}>
+        <div style={sectionTitle}>Auto-pilot route</div>
+        {autopilotRecording ? (
+          <>
+            <div style={hint}>Recording — you'll be dropped into Explore; walk the route (camera included). Stop from the toolbar there, or here.</div>
+            <button style={{ ...actionBtn, width: "100%", marginTop: 8 }} onClick={() => stopAutopilotRecording(true)}>
+              ■ Stop &amp; save route
+            </button>
+            <button style={{ ...actionBtn, width: "100%", marginTop: 6 }} onClick={() => stopAutopilotRecording(false)}>
+              Cancel recording
+            </button>
+          </>
+        ) : autopilot ? (
+          <>
+            <div style={tilingHint}>
+              Route recorded — {Math.round(autopilot.duration)}s, {autopilot.samples.length} samples. Hit ▶ Auto-pilot in Explore to ride it.
+            </div>
+            <button style={{ ...actionBtn, width: "100%", marginTop: 8 }} onClick={startAutopilotRecording}>
+              ● Re-record route
+            </button>
+            <button style={{ ...actionBtn, width: "100%", marginTop: 6 }} onClick={clearAutopilot}>
+              Remove route
+            </button>
+          </>
+        ) : (
+          <>
+            <div style={tilingHint}>
+              Record yourself walking the map (movement and camera); listeners can then hit Play and ride the route hands-free.
+            </div>
+            <button style={{ ...actionBtn, width: "100%", marginTop: 8 }} onClick={startAutopilotRecording}>
+              ● Record route
             </button>
           </>
         )}

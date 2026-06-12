@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import * as THREE from "three";
-import { Composition, StemDirectivity, StemShape, TrackDef, audioAssetKey, compositionRevision, defaultComposition, normalizeComposition, touchComposition } from "./composition";
+import { AutopilotSample, Composition, StemDirectivity, StemShape, TrackDef, audioAssetKey, compositionRevision, defaultComposition, normalizeAutopilot, normalizeComposition, touchComposition } from "./composition";
 import { AudioEngine, AudioLoadProgress } from "./audio/AudioEngine";
 import {
   SerializedComposition,
@@ -93,6 +93,12 @@ export const viewState = { x: 0, y: 0, z: 0, focusY: 0, fx: 0, fz: -1 };
 // Set by MapScene when the user double-clicks a path/room/platform in edit mode.
 // EditControls consumes this in useFrame to shift the orbit pivot there.
 export const pendingTeleport = { value: null as { x: number; z: number } | null };
+
+// Auto-pilot recording buffer (M7.6). <Player> appends a sample every ~100ms of
+// Explore-mode movement while `autopilotRecording` is on; kept outside React so
+// recording never re-renders. `stopAutopilotRecording` folds it into the
+// composition.
+export const autopilotCapture = { elapsed: 0, samples: [] as AutopilotSample[] };
 
 // Bumped each time <Player> wraps the listener across a path-loop seam (a
 // teleport). Tiled map previews are derived from React state that lags the
@@ -297,6 +303,15 @@ interface StoreState {
   // Drop/move teleport pin `key` (0–9) at the current edit view position, or
   // remove it when it already sits there (toggle).
   toggleTeleportPinAtView: (key: number) => void;
+  // Auto-pilot (M7.6): record the Explore camera into autopilotCapture, save
+  // the route onto the composition, and play it back as automated movement.
+  autopilotRecording: boolean;
+  autopilotPlaying: boolean;
+  startAutopilotRecording: () => void;
+  stopAutopilotRecording: (save?: boolean) => void;
+  clearAutopilot: () => void;
+  startAutopilotPlayback: () => void;
+  stopAutopilotPlayback: () => void;
   undo: () => Promise<void>;
   redo: () => Promise<void>;
 
@@ -1864,6 +1879,44 @@ export const useStore = create<StoreState>((set, get) => ({
         selectedWallId: s.selectedWallId && nextMap.walls.some((wall) => wall.id === s.selectedWallId) ? s.selectedWallId : null,
       };
     }),
+
+  autopilotRecording: false,
+  autopilotPlaying: false,
+
+  startAutopilotRecording: () => {
+    autopilotCapture.elapsed = 0;
+    autopilotCapture.samples = [];
+    set({ autopilotRecording: true, autopilotPlaying: false });
+    // Recording captures the Explore camera; jump straight there so walking
+    // the route can start immediately.
+    if (get().mode !== "explore") get().setMode("explore");
+  },
+
+  stopAutopilotRecording: (save = true) => {
+    const route = normalizeAutopilot({ duration: autopilotCapture.elapsed, samples: autopilotCapture.samples });
+    set((s) => {
+      if (!save || !route) return { autopilotRecording: false };
+      return {
+        ...withHistory(s, "autopilot:record"),
+        composition: touchComposition({ ...s.composition, autopilot: route }),
+        autopilotRecording: false,
+      };
+    });
+  },
+
+  clearAutopilot: () =>
+    set((s) => {
+      const composition = touchComposition({ ...s.composition });
+      delete composition.autopilot;
+      return { ...withHistory(s, "autopilot:clear"), composition, autopilotPlaying: false };
+    }),
+
+  startAutopilotPlayback: () => {
+    if (!get().composition.autopilot) return;
+    set({ autopilotPlaying: true, autopilotRecording: false });
+  },
+
+  stopAutopilotPlayback: () => set({ autopilotPlaying: false }),
 
   toggleTeleportPinAtView: (key) => {
     const map = get().composition.map;
