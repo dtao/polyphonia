@@ -147,4 +147,12 @@ describe("generated environment normalization", () => {
     });
     expect(generated?.center).toEqual([0, 0]);
   });
+
+  it("keeps a valid zenith sky color and drops invalid ones", () => {
+    const params = (skyColor2: unknown) =>
+      normalizeGenerated({ biome: "meadow", seed: 5, params: { skyColor2 } })?.params;
+    expect(params("#7a1d2e")?.skyColor2).toBe("#7a1d2e");
+    expect(params("red")?.skyColor2).toBeUndefined();
+    expect(params(undefined)?.skyColor2).toBeUndefined();
+  });
 });

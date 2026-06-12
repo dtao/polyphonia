@@ -92,12 +92,13 @@ fresh region seed.
   per-instance visibility routes through `radialFade` per the AGENTS.md rule.
   Instance picking maps `event.instanceId` through the per-refill
   `visibleIds` array.
-- The biome mood adds lights and a camera-following gradient sky dome: both
-  shades derive from the single authored sky color (`skyGradient.ts` —
-  lighter horizon, darker zenith). The horizon shade is the canonical
-  background: `environmentBackground` feeds it to the fog, scene background,
-  and AR backdrop, which must all stay identical so fog-faded geometry
-  dissolves into the dome at eye level.
+- The biome mood adds lights and a camera-following gradient sky dome
+  (`skyGradient.ts`): with one authored sky color both shades derive from it
+  (lighter horizon, darker zenith); an optional second color (`skyColor2`)
+  makes the gradient run exactly horizon → zenith. The horizon shade is the
+  canonical background: `environmentBackground` feeds it to the fog, scene
+  background, and AR backdrop, which must all stay identical so fog-faded
+  geometry dissolves into the dome at eye level.
 - Movement: the world is visual-only on bounded maps (terrain flattens to the
   walkable surfaces anyway). On maps with **no walkable bounds**, `Player`
   rides `generatedGroundHeight` so hills are actually walkable.

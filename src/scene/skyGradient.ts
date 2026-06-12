@@ -1,14 +1,16 @@
 import * as THREE from "three";
 
-// Generated environments show a vertical sky gradient derived from the single
-// authored sky color: a lighter shade of the same hue at the horizon rising to
-// a darker shade at the zenith. The composer picks one color; both shades are
-// derived so the mood control stays a single swatch.
+// Generated environments show a vertical sky gradient. With one authored
+// color, both shades derive from it: a lighter shade of the same hue at the
+// horizon rising to a darker shade at the zenith. With a second color set,
+// the gradient runs exactly skyColor (horizon) → skyColor2 (zenith), so a
+// composer can fade deep blue into deep red.
 //
 // The HORIZON shade is the canonical "background" color: scene fog and the
 // scene/AR background must use it (see EnvironmentScene's FogSync) so geometry
 // fading out at the radial band dissolves into the sky exactly at eye level.
-export function skyGradient(skyColor: string): { horizon: string; zenith: string } {
+export function skyGradient(skyColor: string, skyColor2?: string): { horizon: string; zenith: string } {
+  if (skyColor2) return { horizon: skyColor, zenith: skyColor2 };
   const hsl = { h: 0, s: 0, l: 0 };
   new THREE.Color(skyColor).getHSL(hsl);
   const horizon = new THREE.Color().setHSL(hsl.h, Math.min(1, hsl.s * 1.05), Math.min(0.62, hsl.l * 1.5 + 0.13));

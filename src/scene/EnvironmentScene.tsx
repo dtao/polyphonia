@@ -60,8 +60,8 @@ export const environmentBackgroundColor = "#030407";
 // That color is the gradient sky's HORIZON shade — the dome (GeneratedWorld's
 // SkyDome) meets the fog at eye level, so distant geometry dissolves into it.
 export function environmentBackground(environment: EnvironmentSettings): string {
-  const skyColor = environment.generated?.params.skyColor;
-  return skyColor ? skyGradient(skyColor).horizon : environmentBackgroundColor;
+  const params = environment.generated?.params;
+  return params ? skyGradient(params.skyColor, params.skyColor2).horizon : environmentBackgroundColor;
 }
 
 export function EnvironmentScene({

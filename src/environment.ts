@@ -67,8 +67,13 @@ export interface GeneratedEnvironmentParams {
   moodAmbient: number;
   /** 0..1 directional "sun"/key light level. */
   moodSun: number;
-  /** Background/fog color while this environment is active. */
+  /** Sky color at the horizon (also the fog/background color while active). */
   skyColor: string;
+  /**
+   * Optional sky color at the zenith. When absent, the gradient's two shades
+   * are derived from skyColor (lighter horizon, darker top).
+   */
+  skyColor2?: string;
   /** Terrain vertex-color ramp, low → high elevation. */
   palette: [string, string, string];
 }
@@ -275,6 +280,7 @@ function normalizeGeneratedParams(
   const palette = defaults.palette.map((fallback, i) =>
     normalizeColor(Array.isArray(value?.palette) ? value.palette[i] : undefined, fallback),
   ) as [string, string, string];
+  const skyColor2 = normalizeColor(value?.skyColor2, "");
   return {
     density: clampNumber(value?.density, 0, 1, defaults.density),
     terrainAmplitude: clampNumber(value?.terrainAmplitude, 0, 20, defaults.terrainAmplitude),
@@ -282,6 +288,7 @@ function normalizeGeneratedParams(
     moodAmbient: clampNumber(value?.moodAmbient, 0, 1, defaults.moodAmbient),
     moodSun: clampNumber(value?.moodSun, 0, 1, defaults.moodSun),
     skyColor: normalizeColor(value?.skyColor, defaults.skyColor),
+    ...(skyColor2 ? { skyColor2 } : {}),
     palette,
   };
 }

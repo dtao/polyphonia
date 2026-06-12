@@ -7,6 +7,7 @@ import {
 } from "../environment";
 import { WORLD_OBJECT_SPECS } from "../worldgen/objects";
 import type { RegenerationMode } from "../worldgen/regen";
+import { skyGradient } from "../scene/skyGradient";
 import { useStore, WorldTool } from "../store";
 
 const BIOME_LABELS: Record<GeneratedBiome, string> = {
@@ -94,7 +95,34 @@ export function WorldPanel({ open, onOpen, onClose }: { open: boolean; onOpen: (
                 value={generated.params.skyColor}
                 onChange={(event) => setWorldParams({ skyColor: event.target.value })}
                 style={colorInput}
+                title={generated.params.skyColor2 ? "Sky at the horizon" : "Sky color (shades derived automatically)"}
               />
+              {generated.params.skyColor2 ? (
+                <>
+                  <input
+                    type="color"
+                    value={generated.params.skyColor2}
+                    onChange={(event) => setWorldParams({ skyColor2: event.target.value })}
+                    style={colorInput}
+                    title="Sky at the top"
+                  />
+                  <button
+                    style={miniButton}
+                    onClick={() => setWorldParams({ skyColor2: undefined })}
+                    title="Back to automatic shading from one color"
+                  >
+                    auto
+                  </button>
+                </>
+              ) : (
+                <button
+                  style={miniButton}
+                  onClick={() => setWorldParams({ skyColor2: skyGradient(generated.params.skyColor).zenith })}
+                  title="Fade to a separate color at the top of the sky"
+                >
+                  ＋top
+                </button>
+              )}
               <span style={colorLabel}>Ground</span>
               {generated.params.palette.map((color, index) => (
                 <input
@@ -420,6 +448,17 @@ const colorInput: React.CSSProperties = {
   borderRadius: 4,
   background: "transparent",
   cursor: "pointer",
+};
+
+const miniButton: React.CSSProperties = {
+  padding: "3px 7px",
+  borderRadius: 5,
+  border: "1px solid rgba(255,255,255,0.18)",
+  background: "rgba(255,255,255,0.07)",
+  color: "rgba(255,255,255,0.75)",
+  cursor: "pointer",
+  fontSize: 10,
+  whiteSpace: "nowrap",
 };
 
 const toolRow: React.CSSProperties = {

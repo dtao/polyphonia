@@ -42,7 +42,7 @@ export function GeneratedWorld({ editMode }: { editMode: boolean }) {
   if (!generated || !field) return null;
   return (
     <group>
-      <SkyDome skyColor={generated.params.skyColor} />
+      <SkyDome skyColor={generated.params.skyColor} skyColor2={generated.params.skyColor2} />
       <MoodLighting generated={generated} />
       <TerrainPatch generated={generated} field={field} editMode={editMode} />
       <ScatterInstances generated={generated} field={field} map={composition.map} editMode={editMode} />
@@ -103,13 +103,14 @@ function TerrainProbe({ field }: { field: TerrainField }) {
   return null;
 }
 
-// Camera-following gradient sky: lighter shade of the authored sky color at
-// the horizon, darker at the zenith (both derived in skyGradient.ts — the
-// composer picks one color). The horizon shade doubles as the fog/background
-// color, so geometry fading at the radial band dissolves into the dome
-// seamlessly. Drawn first with depth disabled, like the AR backdrop, so the
-// world always renders over it; fog must not affect it.
-function SkyDome({ skyColor }: { skyColor: string }) {
+// Camera-following gradient sky. One authored color derives both shades
+// (lighter horizon, darker zenith); an optional second color makes the
+// gradient run exactly horizon → zenith (see skyGradient.ts). The horizon
+// shade doubles as the fog/background color, so geometry fading at the
+// radial band dissolves into the dome seamlessly. Drawn first with depth
+// disabled, like the AR backdrop, so the world always renders over it; fog
+// must not affect it.
+function SkyDome({ skyColor, skyColor2 }: { skyColor: string; skyColor2?: string }) {
   const camera = useThree((state) => state.camera);
   const mesh = useRef<THREE.Mesh>(null);
   const material = useMemo(
@@ -141,10 +142,10 @@ void main() {
     [],
   );
   useEffect(() => {
-    const { horizon, zenith } = skyGradient(skyColor);
+    const { horizon, zenith } = skyGradient(skyColor, skyColor2);
     (material.uniforms.horizonColor.value as THREE.Color).set(horizon);
     (material.uniforms.zenithColor.value as THREE.Color).set(zenith);
-  }, [material, skyColor]);
+  }, [material, skyColor, skyColor2]);
   useEffect(() => () => material.dispose(), [material]);
   useFrame(() => mesh.current?.position.copy(camera.position));
   return (
