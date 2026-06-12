@@ -6,7 +6,7 @@ import { StemShape, TrackDef } from "../composition";
 import { isPointInsideMap, surfaceHeightAt } from "../map";
 import { markerAnimateFns, markerObjects, useStore } from "../store";
 import { UNDERFLOOR_HEIGHT } from "./mapHeights";
-import { radialFade } from "./fade";
+import { radialFade, verticalFadeAtY } from "./fade";
 import { debugFlag } from "../debug";
 import { unregisterMarkerDebug, updateMarkerDebug } from "./markerDebug";
 import { useShallow } from "zustand/react/shallow";
@@ -377,9 +377,9 @@ function PillarVisual({
   const volume = track.volume ?? 1;
 
   useFrame(({ camera }) => {
-    const [x, , z] = track.position;
+    const [x, y, z] = track.position;
     const dist = Math.hypot(camera.position.x - x, camera.position.z - z);
-    const fade = radialFade(dist);
+    const fade = radialFade(dist) * verticalFadeAtY(y);
     const visible = fade > 0.002;
     const pulse = smoothedLevel.current;
     const fadeSq = fade * fade;
@@ -438,9 +438,9 @@ function WallVisual({
   }, [shape.facing]);
 
   useFrame(({ camera }) => {
-    const [x, , z] = track.position;
+    const [x, y, z] = track.position;
     const dist = Math.hypot(camera.position.x - x, camera.position.z - z);
-    const fade = radialFade(dist);
+    const fade = radialFade(dist) * verticalFadeAtY(y);
     const visible = fade > 0.002;
     const pulse = smoothedLevel.current;
     const fadeSq = fade * fade;
@@ -509,7 +509,7 @@ function RiverVisual({
   useFrame(({ camera }) => {
     const midX = x + midpoint.x, midZ = z + midpoint.z;
     const dist = Math.hypot(camera.position.x - midX, camera.position.z - midZ);
-    const fade = radialFade(dist);
+    const fade = radialFade(dist) * verticalFadeAtY(stemY + midpoint.y);
     const visible = fade > 0.002;
     const pulse = smoothedLevel.current;
     const fadeSq = fade * fade;

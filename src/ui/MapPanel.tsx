@@ -1,4 +1,4 @@
-import { canSetLoopEndpoint, clampToMap, CompositionMap, endpointKey, isPointInsideMap, MAP_PRESETS, MAX_VISIBLE_RADIUS, MIN_VISIBLE_RADIUS, MapPreset, MapTilingType, WalkableSegment } from "../map";
+import { canSetLoopEndpoint, clampToMap, CompositionMap, endpointKey, isPointInsideMap, MAP_PRESETS, MAX_VISIBLE_RADIUS, MIN_VERTICAL_VISIBLE_RADIUS, MIN_VISIBLE_RADIUS, MapPreset, MapTilingType, WalkableSegment } from "../map";
 import { RADIAL_FADE_INNER, RADIAL_FADE_OUTER } from "../scene/fade";
 import { useStore } from "../store";
 
@@ -66,6 +66,20 @@ export function MapPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () 
 
   function resetVisibleRadius() {
     setMap({ visibleRadius: undefined });
+  }
+
+  function customizeVerticalRadius() {
+    setMap({ visibleRadiusVertical: { inner: 20, outer: 40 } });
+  }
+
+  function setVerticalRadius(field: "inner" | "outer", value: number) {
+    if (!Number.isFinite(value)) return;
+    const current = map.visibleRadiusVertical ?? { inner: 20, outer: 40 };
+    setMap({ visibleRadiusVertical: { ...current, [field]: value } });
+  }
+
+  function resetVerticalRadius() {
+    setMap({ visibleRadiusVertical: undefined });
   }
 
   if (!open) {
@@ -184,6 +198,58 @@ export function MapPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () 
               Customize how far the world stays visible around the listener.
             </div>
             <button style={{ ...actionBtn, width: "100%", marginTop: 8 }} onClick={customizeVisibleRadius}>
+              Customize
+            </button>
+          </>
+        )}
+      </div>
+
+      <div style={editorGroup}>
+        <div style={sectionTitle}>Vertical visibility</div>
+        {map.visibleRadiusVertical ? (
+          <>
+            <div style={{ ...numericGrid, gridTemplateColumns: "1fr 1fr" }}>
+              <label style={fieldLabel}>
+                Full
+                <input
+                  style={numberInput}
+                  type="number"
+                  min={MIN_VERTICAL_VISIBLE_RADIUS}
+                  max={MAX_VISIBLE_RADIUS}
+                  step={1}
+                  value={map.visibleRadiusVertical.inner}
+                  onChange={(e) => setVerticalRadius("inner", e.currentTarget.valueAsNumber)}
+                />
+              </label>
+              <label style={fieldLabel}>
+                Gone
+                <input
+                  style={numberInput}
+                  type="number"
+                  min={MIN_VERTICAL_VISIBLE_RADIUS}
+                  max={MAX_VISIBLE_RADIUS}
+                  step={1}
+                  value={map.visibleRadiusVertical.outer}
+                  onChange={(e) => setVerticalRadius("outer", e.currentTarget.valueAsNumber)}
+                />
+              </label>
+            </div>
+            <div style={tilingHint}>
+              How far you can see up/down, independent of the radius around you.
+              Scene fog stays horizontal, so distant opaque terrain above/below
+              dims rather than fully fogging.
+            </div>
+            <button style={{ ...actionBtn, width: "100%", marginTop: 8 }} onClick={resetVerticalRadius}>
+              Reset (no vertical limit)
+            </button>
+          </>
+        ) : (
+          <>
+            <div style={tilingHint}>
+              No vertical limit — you can see all the way up and down. Customize
+              to fade objects far above or below the listener.
+            </div>
+            <button style={{ ...actionBtn, width: "100%", marginTop: 8 }} onClick={customizeVerticalRadius}>
               Customize
             </button>
           </>

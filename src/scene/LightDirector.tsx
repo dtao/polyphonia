@@ -5,7 +5,7 @@ import { arWalk, useStore, viewState } from "../store";
 import { TrackDef } from "../composition";
 import { CompositionMap, loopPreviewElevationOffset, tiledMapTransforms, transformLoopPoint } from "../map";
 import { debugEnabled, debugFlag, debugValue } from "../debug";
-import { effectiveFadeOuter, radialFade } from "./fade";
+import { effectiveFadeOuter, radialFade, verticalFadeAtY } from "./fade";
 import { LIGHT_TIERS, LightCandidate, adaptLightTier, selectLights } from "./lightBudget";
 
 // One light pool for the whole scene. Stems no longer own point lights;
@@ -163,7 +163,7 @@ function gatherCandidates(
       : 1.5 + volume * 1.2 + pulse * 12;
     const range = orb ? 12 + volume * 8 + pulse * 16 : 7 + volume * 3 + pulse * 7;
 
-    const baseFade = radialFade(Math.hypot(listener[0] - track.position[0], listener[1] - track.position[2]));
+    const baseFade = radialFade(Math.hypot(listener[0] - track.position[0], listener[1] - track.position[2])) * verticalFadeAtY(track.position[1]);
     if (baseFade > 0.002) {
       candidates.push({
         id: track.id,
@@ -187,7 +187,7 @@ function gatherCandidates(
           nearest = [px, track.position[1] + loopPreviewElevationOffset(map, preview), pz];
         }
       }
-      const copyFade = nearest ? radialFade(Math.sqrt(nearestSq)) : 0;
+      const copyFade = nearest ? radialFade(Math.sqrt(nearestSq)) * verticalFadeAtY(nearest[1]) : 0;
       if (nearest && copyFade > 0.002) {
         candidates.push({
           id: `${track.id}:copy`,

@@ -12,6 +12,7 @@ import {
   defaultMap,
   doorOpenAmount,
   mapPointKey,
+  MIN_VERTICAL_VISIBLE_RADIUS,
   normalizeMap,
   pointInOriginalTile,
   roomElevation,
@@ -130,6 +131,19 @@ describe("map normalization", () => {
 
     const tooSmall = normalizeMap({ preset: "open", visibleRadius: { inner: 1, outer: 2 } });
     expect(tooSmall.visibleRadius).toEqual({ inner: MIN_VISIBLE_RADIUS, outer: MIN_VISIBLE_RADIUS + MIN_VISIBLE_RADIUS_GAP });
+  });
+
+  it("normalizes the vertical visible radius independently and omits when absent", () => {
+    expect(normalizeMap({ preset: "open" })).not.toHaveProperty("visibleRadiusVertical");
+    const map = normalizeMap({ preset: "open", visibleRadiusVertical: { inner: 10, outer: 25 } });
+    expect(map.visibleRadiusVertical).toEqual({ inner: 10, outer: 25 });
+    expect(map).not.toHaveProperty("visibleRadius");
+
+    const tight = normalizeMap({ preset: "open", visibleRadiusVertical: { inner: 0, outer: 1 } });
+    expect(tight.visibleRadiusVertical).toEqual({
+      inner: MIN_VERTICAL_VISIBLE_RADIUS,
+      outer: MIN_VERTICAL_VISIBLE_RADIUS + MIN_VISIBLE_RADIUS_GAP,
+    });
   });
 
   it("keeps valid teleport pins, one per digit, sorted, and omits when empty", () => {

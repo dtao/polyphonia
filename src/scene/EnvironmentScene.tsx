@@ -14,7 +14,7 @@ import { CreatorLandmarks } from "./CreatorLandmarks";
 import { GeneratedWorld } from "./GeneratedWorld";
 import { skyGradient } from "./skyGradient";
 import { SurfaceMapDressing } from "./SurfaceDressing";
-import { RADIAL_FADE_INNER, RADIAL_FADE_OUTER, effectiveFadeInner, effectiveFadeOuter } from "./fade";
+import { RADIAL_FADE_INNER, RADIAL_FADE_OUTER, effectiveFadeInner, effectiveFadeOuter, setFadeViewerY } from "./fade";
 
 // Own scene.fog imperatively. A JSX `<fog attach="fog">` here attaches to the
 // nearest parent Object3D — which is the <ARWorldTransform> group, NOT the scene
@@ -27,6 +27,7 @@ import { RADIAL_FADE_INNER, RADIAL_FADE_OUTER, effectiveFadeInner, effectiveFade
 // outer ring exactly like everything else.
 function FogSync({ background }: { background: string }) {
   const scene = useThree((s) => s.scene);
+  const camera = useThree((s) => s.camera);
   useEffect(() => {
     const previousFog = scene.fog;
     const previousBackground = scene.background;
@@ -43,6 +44,9 @@ function FogSync({ background }: { background: string }) {
     };
   }, [scene, background]);
   useFrame(() => {
+    // Per-object vertical fades (verticalFadeAtY) read the viewer's height from
+    // the fade module; record it here once per frame.
+    setFadeViewerY(camera.position.y);
     const fog = scene.fog;
     if (!(fog instanceof THREE.Fog)) return;
     const far = effectiveFadeOuter();

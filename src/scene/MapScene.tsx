@@ -1,6 +1,6 @@
 import { ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import { environmentBackgroundColor } from "./EnvironmentScene";
-import { RADIAL_FADE_INNER, RADIAL_FADE_OUTER, effectiveFadeInner, effectiveFadeOuter, radialFade } from "./fade";
+import { RADIAL_FADE_INNER, RADIAL_FADE_OUTER, effectiveFadeInner, effectiveFadeOuter, effectiveVerticalFadeInner, effectiveVerticalFadeOuter, radialFade, verticalFadeAtY } from "./fade";
 import { Billboard, Line, Text, TransformControls } from "@react-three/drei";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -12,6 +12,10 @@ import { DEFAULT_ENCLOSURE_HEIGHT } from "../spatialConstants";
 import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 
 const MAX_TRACK_LIGHTS = 64;
+
+// Uniform sentinel for "no vertical visibility band": far beyond any
+// reachable |Δy| (ELEVATION_LIMIT is ±100), so the vertical smoothstep is 0.
+const NO_VERTICAL_FADE = 1e6;
 
 export function MapScene({
   map,
@@ -423,7 +427,7 @@ function Platform({ platform, map, editMode, selected, tracks, previewFade }: { 
     const base = selected ? 0.95 : 0.6;
     const fade = editMode
       ? 1
-      : radialFade(Math.hypot(camera.position.x - platform.center[0], camera.position.z - platform.center[1]));
+      : radialFade(Math.hypot(camera.position.x - platform.center[0], camera.position.z - platform.center[1])) * verticalFadeAtY(elevationY);
     if (line.material) {
       line.material.transparent = true;
       line.material.opacity = base * fade;
@@ -1633,6 +1637,8 @@ function PathMaterial({ tracks, editMode, selected, previewFade }: { tracks: Tra
       fadeColor: { value: new THREE.Color(environmentBackgroundColor) },
       fadeInner: { value: RADIAL_FADE_INNER },
       fadeOuter: { value: RADIAL_FADE_OUTER },
+      vFadeInner: { value: NO_VERTICAL_FADE },
+      vFadeOuter: { value: NO_VERTICAL_FADE },
     }),
     [],
   );
@@ -1661,6 +1667,8 @@ function PathMaterial({ tracks, editMode, selected, previewFade }: { tracks: Tra
     // distance, fully gone at the outer radius. See fade.ts / radialFade.
     u.fadeInner.value = effectiveFadeInner();
     u.fadeOuter.value = effectiveFadeOuter();
+    u.vFadeInner.value = effectiveVerticalFadeInner() ?? NO_VERTICAL_FADE;
+    u.vFadeOuter.value = effectiveVerticalFadeOuter() ?? NO_VERTICAL_FADE;
     if (scene.fog instanceof THREE.Fog) u.fadeColor.value.copy(scene.fog.color);
   });
 
@@ -1696,6 +1704,8 @@ function ReflectiveUnderfloorMaterial({ tracks, previewFade }: { tracks: TrackDe
       fadeColor: { value: new THREE.Color(environmentBackgroundColor) },
       fadeInner: { value: RADIAL_FADE_INNER },
       fadeOuter: { value: RADIAL_FADE_OUTER },
+      vFadeInner: { value: NO_VERTICAL_FADE },
+      vFadeOuter: { value: NO_VERTICAL_FADE },
     }),
     [],
   );
@@ -1721,6 +1731,8 @@ function ReflectiveUnderfloorMaterial({ tracks, previewFade }: { tracks: TrackDe
     }
     u.fadeInner.value = effectiveFadeInner();
     u.fadeOuter.value = effectiveFadeOuter();
+    u.vFadeInner.value = effectiveVerticalFadeInner() ?? NO_VERTICAL_FADE;
+    u.vFadeOuter.value = effectiveVerticalFadeOuter() ?? NO_VERTICAL_FADE;
     if (scene.fog instanceof THREE.Fog) u.fadeColor.value.copy(scene.fog.color);
   });
 
@@ -1910,10 +1922,12 @@ function findPoint(map: CompositionMap, key: string): [number, number] | null {
 
 const pathVertexShader = `
   varying vec2 vWorld;
+  varying float vWorldY;
 
   void main() {
     vec4 worldPosition = modelMatrix * vec4(position, 1.0);
     vWorld = worldPosition.xz;
+    vWorldY = worldPosition.y;
     gl_Position = projectionMatrix * viewMatrix * worldPosition;
   }
 `;
@@ -1931,7 +1945,10 @@ const pathFragmentShader = `
   uniform vec3 fadeColor;
   uniform float fadeInner;
   uniform float fadeOuter;
+  uniform float vFadeInner;
+  uniform float vFadeOuter;
   varying vec2 vWorld;
+  varying float vWorldY;
 
   void main() {
     vec3 color = baseColor * floorStrength;
@@ -1949,20 +1966,25 @@ const pathFragmentShader = `
     }
 
     color += baseColor * min(lightTotal, 1.0) * 0.08;
-    // Camera-centered radial fade to the void color (matches radialFade).
+    // Camera-centered radial fade to the void color (matches radialFade), with
+    // an independent vertical band (matches verticalFadeAtY; vFade* default to
+    // a huge value = no vertical limit).
     float radial = smoothstep(fadeInner, fadeOuter, distance(vWorld, cameraPosition.xz));
+    radial = max(radial, smoothstep(vFadeInner, vFadeOuter, abs(vWorldY - cameraPosition.y)));
     gl_FragColor = vec4(mix(color, fadeColor, radial), opacity);
   }
 `;
 
 const reflectiveFloorVertexShader = `
   varying vec2 vWorld;
+  varying float vWorldY;
   varying vec2 vUv;
 
   void main() {
     vUv = uv;
     vec4 worldPosition = modelMatrix * vec4(position, 1.0);
     vWorld = worldPosition.xz;
+    vWorldY = worldPosition.y;
     gl_Position = projectionMatrix * viewMatrix * worldPosition;
   }
 `;
@@ -1979,7 +2001,10 @@ const reflectiveFloorFragmentShader = `
   uniform vec3 fadeColor;
   uniform float fadeInner;
   uniform float fadeOuter;
+  uniform float vFadeInner;
+  uniform float vFadeOuter;
   varying vec2 vWorld;
+  varying float vWorldY;
   varying vec2 vUv;
 
   float hash(vec2 p) {
@@ -2020,8 +2045,10 @@ const reflectiveFloorFragmentShader = `
     vec3 sheen = vec3(0.12, 0.16, 0.19) * (0.08 + brushed * 0.18 + min(glowTotal, 1.0) * 0.15);
     color += sheen;
     float alpha = edgeFade * (0.72 + min(glowTotal, 1.0) * 0.22);
-    // Camera-centered radial fade to the void color (matches radialFade).
+    // Camera-centered radial fade to the void color (matches radialFade), plus
+    // the optional vertical band (matches verticalFadeAtY).
     float radial = smoothstep(fadeInner, fadeOuter, distance(vWorld, cameraPosition.xz));
+    radial = max(radial, smoothstep(vFadeInner, vFadeOuter, abs(vWorldY - cameraPosition.y)));
     gl_FragColor = vec4(mix(color, fadeColor, radial), alpha * opacity * (1.0 - radial));
   }
 `;

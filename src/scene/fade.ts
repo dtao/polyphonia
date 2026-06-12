@@ -22,6 +22,14 @@ let _debugInner: number | null = null;
 let _debugOuter: number | null = null;
 let _compInner: number | null = null;
 let _compOuter: number | null = null;
+// Optional vertical band (P29): when authored, objects also fade with their
+// |Δy| from the viewer, independently of the horizontal circle. null = no
+// vertical limit (the historical behavior — fades are purely planar).
+let _compVerticalInner: number | null = null;
+let _compVerticalOuter: number | null = null;
+// The viewer's world y, written once per frame by FogSync so per-object fades
+// (which often only have planar viewer coordinates) can compute Δy cheaply.
+let _viewerY = 0;
 const _fadeListeners = new Set<() => void>();
 
 export function setDebugFadeRadii(inner: number | null, outer: number | null): void {
@@ -40,6 +48,30 @@ export function setCompositionFadeRadii(inner: number | null, outer: number | nu
   _fadeListeners.forEach((fn) => fn());
 }
 
+// Apply a composition's authored vertical visibility band (or nulls to clear —
+// no vertical limit). Driven from Scene like setCompositionFadeRadii.
+export function setCompositionVerticalFadeRadii(inner: number | null, outer: number | null): void {
+  if (_compVerticalInner === inner && _compVerticalOuter === outer) return;
+  _compVerticalInner = inner;
+  _compVerticalOuter = outer;
+  _fadeListeners.forEach((fn) => fn());
+}
+
+export function setFadeViewerY(y: number): void {
+  _viewerY = y;
+}
+
+export function effectiveVerticalFadeInner(): number | null { return _compVerticalInner; }
+export function effectiveVerticalFadeOuter(): number | null { return _compVerticalOuter; }
+
+// 1 (fully visible) .. 0 (invisible) for an object's world y against the
+// viewer's y. 1 when no vertical band is authored. Multiply with the planar
+// radialFade — the bands are independent, so visibility is the product.
+export function verticalFadeAtY(y: number): number {
+  if (_compVerticalInner === null || _compVerticalOuter === null) return 1;
+  return 1 - THREE.MathUtils.smoothstep(Math.abs(y - _viewerY), _compVerticalInner, _compVerticalOuter);
+}
+
 export function subscribeDebugFade(fn: () => void): () => void {
   _fadeListeners.add(fn);
   return () => { _fadeListeners.delete(fn); };
@@ -53,7 +85,14 @@ export function effectiveFadeOuter(): number { return _debugOuter ?? _compOuter 
 // radial fade to renderables that normally don't distance-fade (base stem orbs on
 // non-tiled maps), so the active radius applies to *everything*.
 export function isFadeRadiusOverridden(): boolean {
-  return _debugInner !== null || _debugOuter !== null || _compInner !== null || _compOuter !== null;
+  return (
+    _debugInner !== null ||
+    _debugOuter !== null ||
+    _compInner !== null ||
+    _compOuter !== null ||
+    _compVerticalInner !== null ||
+    _compVerticalOuter !== null
+  );
 }
 
 // 1 (fully visible) .. 0 (invisible) for a distance from the viewer. Defaults to

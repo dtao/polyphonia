@@ -141,6 +141,16 @@ export interface CompositionMap {
     outer: number;
   };
   /**
+   * Optional vertical counterpart to `visibleRadius` (P29): how far the player
+   * can see along the y axis, independent of the horizontal circle. Objects
+   * are fully visible within `inner` of the viewer's height and gone beyond
+   * `outer`. Absent = no vertical limit (the historical behavior).
+   */
+  visibleRadiusVertical?: {
+    inner: number;
+    outer: number;
+  };
+  /**
    * Edit-mode teleport pins: up to ten authored spots keyed by the digit (0–9)
    * that jumps the edit view straight to them. Positions are XZ; the view
    * lands at the walkable surface height there.
@@ -161,6 +171,9 @@ export const MAX_TELEPORT_PINS = 10;
 export const MIN_VISIBLE_RADIUS = 20;
 export const MAX_VISIBLE_RADIUS = 250;
 export const MIN_VISIBLE_RADIUS_GAP = 5;
+// The vertical band may be much tighter than the horizontal one (a few units
+// reads as "you can barely see the floor below you").
+export const MIN_VERTICAL_VISIBLE_RADIUS = 2;
 
 export type MapSupport =
   | { kind: "open" }
@@ -254,6 +267,7 @@ export function normalizeMap(value: Partial<CompositionMap> | undefined): Compos
   map.loop = map.tiling.type === "path-loop" ? map.tiling.pathLoop : undefined;
   const elevations = normalizeElevations(value?.elevations, map.segments);
   const visibleRadius = normalizeVisibleRadius(value?.visibleRadius);
+  const visibleRadiusVertical = normalizeVerticalVisibleRadius(value?.visibleRadiusVertical);
   const teleportPins = normalizeTeleportPins(value?.teleportPins);
   return {
     ...map,
@@ -263,12 +277,24 @@ export function normalizeMap(value: Partial<CompositionMap> | undefined): Compos
     // Omit when uncustomized for the same reason: compositions that inherit the
     // default radius keep an identical shape and publish hash.
     ...(visibleRadius ? { visibleRadius } : {}),
+    ...(visibleRadiusVertical ? { visibleRadiusVertical } : {}),
     ...(teleportPins.length ? { teleportPins } : {}),
     start: {
       ...map.start,
       position: clampToMap(map, map.start.position),
     },
   };
+}
+
+// Like normalizeVisibleRadius but for the vertical band, which allows a much
+// smaller minimum so composers can author tight "ceiling/floor" visibility.
+function normalizeVerticalVisibleRadius(value: unknown): { inner: number; outer: number } | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = value as { inner?: unknown; outer?: unknown };
+  if (!Number.isFinite(raw.inner) || !Number.isFinite(raw.outer)) return undefined;
+  const inner = clamp(raw.inner as number, MIN_VERTICAL_VISIBLE_RADIUS, MAX_VISIBLE_RADIUS - MIN_VISIBLE_RADIUS_GAP);
+  const outer = clamp(raw.outer as number, inner + MIN_VISIBLE_RADIUS_GAP, MAX_VISIBLE_RADIUS);
+  return { inner, outer };
 }
 
 // Keep only well-formed pins (digit key 0–9, finite XZ position), one per key,

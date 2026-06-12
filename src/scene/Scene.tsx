@@ -18,7 +18,7 @@ import { CompositionMap, LoopPreviewTransform, loopPreviewElevationOffset, tiled
 import { TrackDef } from "../composition";
 import { AudioEngine } from "../audio/AudioEngine";
 import { debugEnabled, debugFlag } from "../debug";
-import { effectiveFadeInner, effectiveFadeOuter, isFadeRadiusOverridden, radialFade, setCompositionFadeRadii, subscribeDebugFade } from "./fade";
+import { effectiveFadeInner, effectiveFadeOuter, isFadeRadiusOverridden, radialFade, setCompositionFadeRadii, setCompositionVerticalFadeRadii, subscribeDebugFade, verticalFadeAtY } from "./fade";
 
 const VIEWER_SAMPLE_DISTANCE = 0.75;
 const TILE_PREVIEW_RADIUS = 180;
@@ -59,6 +59,11 @@ export function Scene() {
     setCompositionFadeRadii(visibleRadius?.inner ?? null, visibleRadius?.outer ?? null);
     return () => setCompositionFadeRadii(null, null);
   }, [visibleRadius?.inner, visibleRadius?.outer]);
+  const visibleRadiusVertical = map.visibleRadiusVertical;
+  useEffect(() => {
+    setCompositionVerticalFadeRadii(visibleRadiusVertical?.inner ?? null, visibleRadiusVertical?.outer ?? null);
+    return () => setCompositionVerticalFadeRadii(null, null);
+  }, [visibleRadiusVertical?.inner, visibleRadiusVertical?.outer]);
   const loopPreviewsEnabled = !debugFlag("debugNoLoopPreview");
   const tileLights = loopPreviewsEnabled ? tileLightTracks(map, tracks, viewer) : tracks;
   // On tiled/looped maps the canonical "base" stems are just one copy of the
@@ -400,10 +405,10 @@ function previewMapVisibility(preview: { anchor: [number, number] }, viewer: [nu
 }
 
 function baseTrackVisibility(track: TrackDef, viewer: [number, number]): number {
-  return radialFade(Math.hypot(viewer[0] - track.position[0], viewer[1] - track.position[2]));
+  return radialFade(Math.hypot(viewer[0] - track.position[0], viewer[1] - track.position[2])) * verticalFadeAtY(track.position[1]);
 }
 
 function previewTrackVisibility(preview: LoopPreviewTransform, track: TrackDef, viewer: [number, number]): number {
   const [x, z] = transformLoopPoint(preview, [track.position[0], track.position[2]]);
-  return radialFade(Math.hypot(viewer[0] - x, viewer[1] - z));
+  return radialFade(Math.hypot(viewer[0] - x, viewer[1] - z)) * verticalFadeAtY(track.position[1] + (preview.elevationOffset ?? 0));
 }
