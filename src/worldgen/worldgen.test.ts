@@ -92,6 +92,27 @@ describe("terrain field", () => {
     expect(terrainHeightAt(field, 500, 500)).toBe(0);
   });
 
+  it("never pokes terrain above a deep path, even on coarse grids (P32)", () => {
+    // A corridor at -35: weight blending against ~0-height noise lifts
+    // near-clearance vertices by metres, so chords from pinned in-strip
+    // vertices crossed above the floor before weights were eroded.
+    const deepMap = normalizeMap({
+      preset: "custom",
+      segments: [{ id: "a", start: [-60, 0], end: [60, 0], width: 7.5 }],
+      start: { position: [-60, 0], direction: [1, 0] },
+      elevations: { "-60.000,0.000": -35, "60.000,0.000": -35 },
+    });
+    // size 200 → resolution caps at 128 → cell ≈ 3.1, larger than the buffer.
+    const generated = testEnvironment({ size: 200 });
+    const field = buildTerrainField(generated, flattenSources(deepMap, [], generated));
+    for (let x = -58; x <= 58; x += 0.7) {
+      for (const z of [-3.5, -1.8, 0, 1.8, 3.5]) {
+        const surface = surfaceHeightAt(deepMap, [x, z]);
+        expect(terrainHeightAt(field, x, z), `at (${x}, ${z})`).toBeLessThan(surface - 0.05);
+      }
+    }
+  });
+
   it("leaves terrain high over buried tunnels and rooms (P31)", () => {
     const undergroundMap = normalizeMap({
       preset: "custom",

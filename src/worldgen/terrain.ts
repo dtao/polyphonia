@@ -307,10 +307,21 @@ export function buildTerrainField(
   // over its neighborhood makes interpolated values conservative regardless
   // of the target field's shape: terrain may seat a little lower beside
   // slopes, never higher.
+  // The WEIGHT field is eroded the same way (P32): a vertex one cell outside
+  // the clearance carries a small nonzero weight, and on deep maps even a few
+  // percent of free noise lifts it by metres (weight × |target − noise| scales
+  // with depth). The triangle chord from a pinned in-strip vertex to that
+  // lifted neighbor then rises above the path floor's FLATTEN_DROP margin
+  // while still hanging over the walkable strip — the "sliver of terrain over
+  // the path" seen around −35. With weights eroded, every vertex adjacent to a
+  // pinned vertex is pinned too, so every triangle touching the strip has all
+  // corners on the (eroded) target, regardless of depth or grid cell size.
   const eroded = targets.slice();
+  const erodedWeights = weights.slice();
   for (let iz = 0; iz < verts; iz++) {
     for (let ix = 0; ix < verts; ix++) {
       let lowest = targets[iz * verts + ix];
+      let lowestWeight = weights[iz * verts + ix];
       for (let dz = -1; dz <= 1; dz++) {
         for (let dx = -1; dx <= 1; dx++) {
           const nx = ix + dx;
@@ -318,9 +329,12 @@ export function buildTerrainField(
           if (nx < 0 || nx > resolution || nz < 0 || nz > resolution) continue;
           const value = targets[nz * verts + nx];
           if (value < lowest) lowest = value;
+          const weight = weights[nz * verts + nx];
+          if (weight < lowestWeight) lowestWeight = weight;
         }
       }
       eroded[iz * verts + ix] = lowest;
+      erodedWeights[iz * verts + ix] = lowestWeight;
     }
   }
 
@@ -332,7 +346,7 @@ export function buildTerrainField(
       const z = center[1] - size + iz * cell;
       const rim = 1 - smoothstep((Math.max(Math.abs(x - center[0]), Math.abs(z - center[1])) - (size - RIM_BLEND)) / RIM_BLEND);
       const free = noiseHeight(generated.seed, x, z) * rim;
-      heights[index] = lerp(eroded[index], free, weights[index]);
+      heights[index] = lerp(eroded[index], free, erodedWeights[index]);
     }
   }
 
