@@ -1,33 +1,20 @@
-import { TransformControls } from "@react-three/drei";
 import { ThreeEvent, useFrame, useThree } from "@react-three/fiber";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import type { GeneratedEnvironment, WorldObjectPlacement } from "../environment";
-import { loopWrap, useStore } from "../store";
-import { CompositionMap, LoopPreviewTransform, surfaceHeightAt, tiledMapTransforms, transformLoopPoint } from "../map";
-import { WORLD_OBJECT_SPECS, WorldObjectPart } from "../worldgen/objects";
+import type { GeneratedEnvironment } from "../environment";
+import { useStore } from "../store";
+import { surfaceHeightAt } from "../map";
 import { flattenSourcesFor, terrainFieldFor } from "../worldgen/sampler";
-import { FlattenSource, TerrainField, flattenAt, flattenSources, terrainHeightAt } from "../worldgen/terrain";
-import { objectBlockedByClearZone } from "../worldgen/scatter";
-import { LOOP_BLEND_BAND, loopEditPoint, loopFieldContext, loopProgress } from "../worldgen/loop";
+import { TerrainField, flattenAt, flattenSources, terrainHeightAt } from "../worldgen/terrain";
+import { LOOP_BLEND_BAND, loopFieldContext, loopProgress } from "../worldgen/loop";
 import { debugFlag } from "../debug";
 import { valueNoise2 } from "../worldgen/noise";
 import { skyGradient } from "./skyGradient";
-import {
-  createFadedInstancedMesh,
-  disposeFadedInstancedMesh,
-  ENVIRONMENT_INSTANCE_UPDATE_INTERVAL,
-  finishInstanceFadeUpdate,
-  setInstanceFade,
-} from "./fadedInstances";
-import { effectiveFadeOuter, radialFade, subscribeDebugFade } from "./fade";
 
-// Procedurally generated world: a terrain heightfield plus instanced scatter
-// objects, both derived from composition.environment.generated (see
-// src/worldgen/). Terrain is a standard opaque mesh, so the scene fog fades it
-// at the shared radial band for free; scatter objects are GPU-instanced and
-// therefore route their visibility through radialFade per the AGENTS.md
-// convention, reusing the same faded-instance machinery as authored packs.
+// Procedurally generated world: a sculptable terrain heightfield derived from
+// composition.environment.generated (see src/worldgen/), plus the gradient
+// sky and mood lighting. Terrain is a standard opaque mesh, so the scene fog
+// fades it at the shared radial band for free.
 export function GeneratedWorld({ editMode }: { editMode: boolean }) {
   const composition = useStore((s) => s.composition);
   const generated = composition.environment.generated;
@@ -45,8 +32,6 @@ export function GeneratedWorld({ editMode }: { editMode: boolean }) {
       <SkyDome skyColor={generated.params.skyColor} skyColor2={generated.params.skyColor2} />
       <MoodLighting generated={generated} />
       <TerrainPatch generated={generated} field={field} editMode={editMode} />
-      <ScatterInstances generated={generated} field={field} map={composition.map} editMode={editMode} />
-      {editMode && <SelectedWorldObjectGizmo generated={generated} field={field} map={composition.map} />}
       {editMode && <ConstraintZones generated={generated} />}
       {debugFlag("debugTerrainProbe") && <TerrainProbe field={field} />}
     </group>
@@ -54,9 +39,8 @@ export function GeneratedWorld({ editMode }: { editMode: boolean }) {
 }
 
 // ?debug=1&debugTerrainProbe=1 — once a second, log the terrain state under
-// the viewer: surface vs terrain height, flatten weight/target, loop progress,
-// and any scatter objects nearby (with their suppression status). For
-// diagnosing "terrain/objects covering the path" reports; see
+// the viewer: surface vs terrain height, flatten weight/target, and loop
+// progress. For diagnosing "terrain covering the path" reports; see
 // docs/investigations/terrain-blobs-on-paths.md.
 function TerrainProbe({ field }: { field: TerrainField }) {
   const lastLog = useRef(-Infinity);
@@ -72,19 +56,6 @@ function TerrainProbe({ field }: { field: TerrainField }) {
     const sources = flattenSourcesFor(state.composition);
     const { weight, target } = flattenAt(sources, generated.constraints.buffer, x, z);
     const ctx = loopFieldContext(map);
-    const nearbyObjects = generated.objects
-      .map((object) => ({
-        kind: object.kind,
-        distance: Math.hypot(object.position[0] - x, object.position[2] - z),
-        userPlaced: !!object.userPlaced,
-        suppressed:
-          !object.userPlaced &&
-          objectBlockedByClearZone(object, [object.position[0], object.position[2]], sources, generated.constraints.buffer),
-      }))
-      .filter((entry) => entry.distance < 5)
-      .sort((a, b) => a.distance - b.distance)
-      .slice(0, 6)
-      .map((entry) => `${entry.kind}@${entry.distance.toFixed(1)}${entry.userPlaced ? " user" : ""}${entry.suppressed ? " SUPPRESSED" : ""}`);
     const sample = {
       at: [Math.round(x * 10) / 10, Math.round(z * 10) / 10],
       tiling: map.tiling.type,
@@ -95,7 +66,6 @@ function TerrainProbe({ field }: { field: TerrainField }) {
       flattenTarget: Math.round(target * 100) / 100,
       loopProgress: ctx ? Math.round(loopProgress(ctx, x, z) * 100) / 100 : null,
       loopBand: ctx ? loopProgress(ctx, x, z) >= 1 - LOOP_BLEND_BAND : null,
-      nearbyObjects,
     };
     (window as unknown as { polyTerrainProbe?: unknown }).polyTerrainProbe = sample;
     console.log("[terrain-probe]", JSON.stringify(sample));
@@ -258,7 +228,7 @@ function buildTerrainGeometry(generated: GeneratedEnvironment, field: TerrainFie
   return geometry;
 }
 
-// --- Terrain brush / object placement tools ---------------------------------
+// --- Terrain brushes ----------------------------------------------------------
 
 const BRUSH_COLORS = { raise: "#7ee081", lower: "#ffa057", smooth: "#5b8cff" } as const;
 /** Height delta (raise/lower) or blend strength (smooth) emitted per brush step. */
@@ -326,7 +296,7 @@ function useTerrainBrush(field: TerrainField, editMode: boolean) {
   const onPointerMove = useCallback(
     (event: ThreeEvent<PointerEvent>) => {
       const tool = useStore.getState().worldTool;
-      if (tool.kind === "terrain" || tool.kind === "place") {
+      if (tool.kind === "terrain") {
         setCursorAt([event.point.x, event.point.z]);
       } else {
         setCursorAt((current) => (current ? null : current));
@@ -340,13 +310,7 @@ function useTerrainBrush(field: TerrainField, editMode: boolean) {
 
   const onClick = useCallback((event: ThreeEvent<MouseEvent>) => {
     const state = useStore.getState();
-    const tool = state.worldTool;
-    if (tool.kind === "place") {
-      event.stopPropagation();
-      state.addWorldObject(tool.objectKind, [event.point.x, event.point.z]);
-      return;
-    }
-    if (tool.kind !== "none") return;
+    if (state.worldTool.kind !== "none") return;
     // The terrain blankets the floor, so clicking it would otherwise swallow
     // the "click empty space clears selection" gesture. Treat a non-drag click
     // on bare ground as empty space.
@@ -358,17 +322,15 @@ function useTerrainBrush(field: TerrainField, editMode: boolean) {
 
   const tool = worldTool;
   const cursor =
-    editMode && cursorAt && (tool.kind === "terrain" || tool.kind === "place") ? (
+    editMode && cursorAt && tool.kind === "terrain" ? (
       <mesh
         position={[cursorAt[0], terrainHeightAt(field, cursorAt[0], cursorAt[1]) + 0.12, cursorAt[1]]}
         rotation={[-Math.PI / 2, 0, 0]}
         renderOrder={5}
       >
-        <ringGeometry
-          args={tool.kind === "terrain" ? [tool.radius * 0.93, tool.radius, 48] : [0.65, 0.8, 32]}
-        />
+        <ringGeometry args={[tool.radius * 0.93, tool.radius, 48]} />
         <meshBasicMaterial
-          color={tool.kind === "terrain" ? BRUSH_COLORS[tool.mode] : "#8fffe8"}
+          color={BRUSH_COLORS[tool.mode]}
           transparent
           opacity={0.75}
           depthWrite={false}
@@ -378,325 +340,6 @@ function useTerrainBrush(field: TerrainField, editMode: boolean) {
     ) : null;
 
   return { onPointerDown, onPointerMove, onPointerLeave, onClick, cursor };
-}
-
-// --- Scatter objects ---------------------------------------------------------
-
-interface ScatterBatch {
-  key: string;
-  geometry: THREE.BufferGeometry;
-  material: THREE.Material;
-  matrices: THREE.Matrix4[];
-  colors: THREE.Color[];
-  /** Object id per instance slot, parallel to matrices (selection/deletion). */
-  ids: string[];
-}
-
-const PART_GEOMETRIES: Record<WorldObjectPart["shape"], () => THREE.BufferGeometry> = {
-  cone: () => new THREE.ConeGeometry(1, 1, 7),
-  cylinder: () => new THREE.CylinderGeometry(1, 1, 1, 7),
-  sphere: () => new THREE.SphereGeometry(1, 9, 7),
-  icosahedron: () => new THREE.IcosahedronGeometry(1, 0),
-  octahedron: () => new THREE.OctahedronGeometry(1, 0),
-};
-
-const geometryCache = new Map<WorldObjectPart["shape"], THREE.BufferGeometry>();
-function partGeometry(shape: WorldObjectPart["shape"]): THREE.BufferGeometry {
-  let geometry = geometryCache.get(shape);
-  if (!geometry) {
-    geometry = PART_GEOMETRIES[shape]();
-    geometryCache.set(shape, geometry);
-  }
-  return geometry;
-}
-
-const materialCache = new Map<string, THREE.MeshStandardMaterial>();
-function partMaterial(part: WorldObjectPart): THREE.MeshStandardMaterial {
-  const key = `${part.shape}:${part.emissive ?? ""}:${part.emissiveIntensity ?? 0}:${part.tintable ? "tint" : part.color}`;
-  let material = materialCache.get(key);
-  if (!material) {
-    material = new THREE.MeshStandardMaterial({
-      // Tintable parts carry their color per instance (instanceColor), so the
-      // base material stays white; fixed parts bake the color into the material.
-      color: part.tintable ? "#ffffff" : part.color,
-      roughness: 0.88,
-      metalness: 0,
-      flatShading: part.shape === "icosahedron" || part.shape === "octahedron",
-      ...(part.emissive ? { emissive: part.emissive, emissiveIntensity: part.emissiveIntensity ?? 0.4 } : {}),
-    });
-    materialCache.set(key, material);
-  }
-  return material;
-}
-
-function buildScatterBatches(
-  generated: GeneratedEnvironment,
-  field: TerrainField,
-  loopCopies: LoopPreviewTransform[],
-  sources: FlattenSource[],
-): ScatterBatch[] {
-  const byKind = new Map<string, WorldObjectPlacement[]>();
-  for (const object of generated.objects) {
-    const list = byKind.get(object.kind);
-    if (list) list.push(object);
-    else byKind.set(object.kind, [object]);
-  }
-  const batches: ScatterBatch[] = [];
-  const quaternion = new THREE.Quaternion();
-  const up = new THREE.Vector3(0, 1, 0);
-  for (const [kind, objects] of byKind) {
-    const spec = WORLD_OBJECT_SPECS[kind as WorldObjectPlacement["kind"]];
-    spec.parts.forEach((part, partIndex) => {
-      const matrices: THREE.Matrix4[] = [];
-      const colors: THREE.Color[] = [];
-      const ids: string[] = [];
-      const push = (object: WorldObjectPlacement, x: number, z: number, yaw: number) => {
-        // Display-field height: by loop invariance a copy's spot already
-        // carries the right lift, so the object always sits on visible terrain.
-        const baseY = terrainHeightAt(field, x, z) + object.position[1];
-        quaternion.setFromAxisAngle(up, yaw);
-        const offset = new THREE.Vector3(...part.offset)
-          .multiplyScalar(object.scale)
-          .applyQuaternion(quaternion);
-        matrices.push(
-          new THREE.Matrix4().compose(
-            new THREE.Vector3(x + offset.x, baseY + offset.y, z + offset.z),
-            quaternion,
-            new THREE.Vector3(part.scale[0] * object.scale, part.scale[1] * object.scale, part.scale[2] * object.scale),
-          ),
-        );
-        colors.push(new THREE.Color(part.tintable && object.tint ? object.tint : part.color));
-        // Copies share the base object's id: clicking the tree beyond the loop
-        // seam selects (and edits) the one object it is a view of.
-        ids.push(object.id);
-      };
-      for (const object of objects) {
-        // Constraints stay respected live: paths drawn or moved AFTER
-        // generation hide the generated objects they now run through (the
-        // manifest keeps them, so they return if the path moves away).
-        // Hand-placed objects are deliberate and never hidden.
-        const blocked = (x: number, z: number) =>
-          objectBlockedByClearZone(object, [x, z], sources, generated.constraints.buffer);
-        if (!object.userPlaced && blocked(object.position[0], object.position[2])) continue;
-        push(object, object.position[0], object.position[2], object.yaw);
-        for (const copy of loopCopies) {
-          const [x, z] = transformLoopPoint(copy, [object.position[0], object.position[2]]);
-          if (Math.abs(x - generated.center[0]) > field.size || Math.abs(z - generated.center[1]) > field.size) continue;
-          if (blocked(x, z)) continue;
-          push(object, x, z, object.yaw + copy.rotation);
-        }
-      }
-      batches.push({
-        key: `${kind}:${partIndex}`,
-        geometry: partGeometry(part.shape),
-        material: partMaterial(part),
-        matrices,
-        colors,
-        ids,
-      });
-    });
-  }
-  return batches;
-}
-
-function ScatterInstances({
-  generated,
-  field,
-  map,
-  editMode,
-}: {
-  generated: GeneratedEnvironment;
-  field: TerrainField;
-  map: CompositionMap;
-  editMode: boolean;
-}) {
-  // Path-loop maps repeat the scattered objects across the seam, like stems
-  // do. The chain is anchored at the region center (not the viewer), so the
-  // matrices are static; per-frame visibility is the refill's job.
-  const loopCopies = useMemo(
-    () =>
-      map.tiling.type === "path-loop"
-        ? tiledMapTransforms(map, generated.center, generated.size + 180)
-        : [],
-    [map, generated.center, generated.size],
-  );
-  const sources = flattenSourcesFor(useStore((s) => s.composition));
-  const batches = useMemo(
-    () => buildScatterBatches(generated, field, loopCopies, sources),
-    [generated, field, loopCopies, sources],
-  );
-  return (
-    <group>
-      {batches.map((batch) => (
-        <ScatterBatchMesh key={batch.key} batch={batch} editMode={editMode} />
-      ))}
-    </group>
-  );
-}
-
-function ScatterBatchMesh({ batch, editMode }: { batch: ScatterBatch; editMode: boolean }) {
-  const camera = useThree((state) => state.camera);
-  const mesh = useMemo(
-    () => createFadedInstancedMesh(batch.geometry, batch.material, Math.max(1, batch.matrices.length)),
-    [batch],
-  );
-  const visibleIds = useRef<string[]>([]);
-  const position = useMemo(() => new THREE.Vector3(), []);
-  const lastUpdate = useRef(-Infinity);
-
-  const refill = useCallback(() => {
-    let count = 0;
-    const cullAt = effectiveFadeOuter();
-    const ids: string[] = [];
-    for (let i = 0; i < batch.matrices.length; i++) {
-      const matrix = batch.matrices[i];
-      position.setFromMatrixPosition(matrix);
-      const distance = position.distanceTo(camera.position);
-      if (distance > cullAt) continue;
-      const fade = radialFade(distance);
-      if (fade <= 0.002) continue;
-      mesh.setMatrixAt(count, matrix);
-      mesh.setColorAt(count, batch.colors[i]);
-      setInstanceFade(mesh, count, fade);
-      ids.push(batch.ids[i]);
-      count++;
-    }
-    visibleIds.current = ids;
-    mesh.count = count;
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    finishInstanceFadeUpdate(mesh);
-    mesh.computeBoundingSphere();
-  }, [batch, camera, mesh, position]);
-
-  useEffect(() => {
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    return () => disposeFadedInstancedMesh(mesh);
-  }, [mesh]);
-  useLayoutEffect(() => {
-    refill();
-  }, [refill]);
-  useEffect(() => subscribeDebugFade(() => {
-    lastUpdate.current = -Infinity;
-  }), []);
-  const seenWrap = useRef(loopWrap.generation);
-  useFrame(({ clock }) => {
-    // On a loop wrap the camera teleports; refill immediately so loop copies'
-    // fades match the new position instead of lagging a frame.
-    const wrapped = seenWrap.current !== loopWrap.generation;
-    seenWrap.current = loopWrap.generation;
-    if (!wrapped && clock.elapsedTime - lastUpdate.current < ENVIRONMENT_INSTANCE_UPDATE_INTERVAL) return;
-    lastUpdate.current = clock.elapsedTime;
-    refill();
-  });
-
-  const onClick = useCallback(
-    (event: ThreeEvent<MouseEvent>) => {
-      if (event.instanceId === undefined) return;
-      const id = visibleIds.current[event.instanceId];
-      if (!id) return;
-      const state = useStore.getState();
-      const tool = state.worldTool;
-      if (tool.kind === "delete") {
-        event.stopPropagation();
-        state.deleteWorldObject(id);
-      } else if (tool.kind === "none") {
-        event.stopPropagation();
-        state.selectWorldObject(id);
-      }
-    },
-    [],
-  );
-
-  return <primitive object={mesh} onClick={editMode ? onClick : undefined} />;
-}
-
-// --- Selection gizmo ---------------------------------------------------------
-
-function SelectedWorldObjectGizmo({
-  generated,
-  field,
-  map,
-}: {
-  generated: GeneratedEnvironment;
-  field: TerrainField;
-  map: CompositionMap;
-}) {
-  const selectedId = useStore((s) => s.selectedWorldObjectId);
-  const object = generated.objects.find((candidate) => candidate.id === selectedId);
-  const group = useRef<THREE.Group>(null);
-  const dragStart = useRef<[number, number] | null>(null);
-  const [ready, setReady] = useState(false);
-  useLayoutEffect(() => setReady(!!group.current && !!object), [object]);
-  if (!object) return null;
-
-  const spec = WORLD_OBJECT_SPECS[object.kind];
-  const baseY = terrainHeightAt(field, object.position[0], object.position[2]) + object.position[1];
-  const ringRadius = Math.max(0.8, spec.radius * object.scale * 1.3);
-
-  const commitFromGizmo = () => {
-    const target = group.current;
-    if (!target) return;
-    const terrain = terrainHeightAt(field, target.position.x, target.position.z);
-    useStore.getState().updateWorldObject(object.id, {
-      position: [
-        Math.round(target.position.x * 100) / 100,
-        Math.max(-4, Math.round((target.position.y - terrain) * 100) / 100),
-        Math.round(target.position.z * 100) / 100,
-      ],
-    });
-  };
-
-  // A drag commits incrementally (so the object follows live), which would
-  // classify every step as a minor nudge. Measure the whole drag against its
-  // start and upgrade the edit level once at release.
-  const onDragStart = () => {
-    dragStart.current = [object.position[0], object.position[2]];
-  };
-  const onDragEnd = () => {
-    const start = dragStart.current;
-    const target = group.current;
-    dragStart.current = null;
-    if (!start || !target) return;
-    if (Math.hypot(target.position.x - start[0], target.position.z - start[1]) >= 3) {
-      useStore.getState().markWorldObjectEdit(object.id, "major");
-    }
-    // On path-loop maps, an object dropped near/beyond the end seam is stored
-    // at its fundamental-domain spot (remapping mid-drag would yank the gizmo
-    // away from the cursor); its loop copy keeps it visible where it was
-    // dropped.
-    const mapped = loopEditPoint(map, [target.position.x, target.position.z]);
-    if (mapped[0] !== target.position.x || mapped[1] !== target.position.z) {
-      // Offset above the terrain is measured at the DROP spot (display field);
-      // measuring at the remapped spot would bake the loop lift into it.
-      const terrain = terrainHeightAt(field, target.position.x, target.position.z);
-      useStore.getState().updateWorldObject(object.id, {
-        position: [mapped[0], Math.max(-4, Math.round((target.position.y - terrain) * 100) / 100), mapped[1]],
-      });
-    }
-  };
-
-  return (
-    <>
-      <group ref={group} position={[object.position[0], baseY, object.position[2]]}>
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.1, 0]} renderOrder={4}>
-          <ringGeometry args={[ringRadius * 0.9, ringRadius, 40]} />
-          <meshBasicMaterial color="#8fffe8" transparent opacity={0.85} depthWrite={false} toneMapped={false} />
-        </mesh>
-      </group>
-      {ready && group.current && (
-        <TransformControls
-          object={group.current}
-          mode="translate"
-          size={0.8}
-          onObjectChange={commitFromGizmo}
-          onMouseDown={onDragStart}
-          onMouseUp={onDragEnd}
-        />
-      )}
-    </>
-  );
 }
 
 // --- Constraint visualization -------------------------------------------------

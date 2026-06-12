@@ -33,19 +33,6 @@ export function DebugPanel() {
 
   if (!enabled) return null;
   const farthestMarker = sample?.visual.farthestVisibleMarkers[0];
-  const environmentInstances = sample?.environment.instances;
-  const environmentTotals = environmentInstances?.batches.reduce(
-    (totals, batch) => ({
-      near: totals.near + batch.near,
-      blend: totals.blend + batch.blend,
-      far: totals.far + batch.far,
-      hidden: totals.hidden + batch.hidden,
-    }),
-    { near: 0, blend: 0, far: 0, hidden: 0 },
-  );
-  const latestEnvironmentTransition = environmentInstances?.transitions[
-    environmentInstances.transitions.length - 1
-  ];
 
   const audio = sample?.audio as
     | null
@@ -110,19 +97,6 @@ export function DebugPanel() {
             Far orb {farthestMarker ? `${farthestMarker.kind} ${fmt(farthestMarker.distance)} · fade ${fmt(farthestMarker.fade)}` : "none"}
           </div>
           <div>Map seg {sample?.map.segments ?? 0} · rooms {sample?.map.rooms ?? 0} · loop copies {sample?.map.loopPreviews ?? 0}</div>
-          {environmentTotals && (
-            <>
-              <div>
-                Env inst near {environmentTotals.near} · blend {environmentTotals.blend} · far {environmentTotals.far} · hidden {environmentTotals.hidden}
-              </div>
-              <div>
-                Env transition{" "}
-                {latestEnvironmentTransition
-                  ? `${latestEnvironmentTransition.from}→${latestEnvironmentTransition.to} @ ${fmt(latestEnvironmentTransition.distance)}`
-                  : "none"}
-              </div>
-            </>
-          )}
           <div>Render calls {sample?.render?.calls ?? 0} · tris {sample?.render ? Math.round(sample.render.triangles / 1000) : 0}k</div>
           <div>Scene meshes {sample?.render?.meshes ?? 0} · point lights {sample?.render?.visiblePointLights ?? 0}</div>
           <div>Audio {audio ? `${audio.contextState} · ${audio.trackCount} tracks` : "none"}</div>

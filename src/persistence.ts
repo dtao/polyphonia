@@ -5,11 +5,6 @@ import {
   defaultComposition,
   normalizeComposition,
 } from "./composition";
-import {
-  detailPackBundleForId,
-  importDetailPackPayload,
-  type DetailPackBundle,
-} from "./detailPackStorage";
 import { newId } from "./id";
 import { databaseRequest, STEM_STORE } from "./localDatabase";
 import { normalizeMap } from "./map";
@@ -177,7 +172,6 @@ export interface CompositionBundle {
   version: number;
   composition: SerializedComposition;
   stems: Record<string, StemEntry>;
-  detailPack?: DetailPackBundle;
   creatorAssets?: CreatorAssetBundle;
 }
 
@@ -202,9 +196,6 @@ export async function buildCompositionBundle(comp: Composition): Promise<Composi
     }
   }
 
-  const detailPack = normalized.environment.pack?.id
-    ? await detailPackBundleForId(normalized.environment.pack.id)
-    : undefined;
   const creatorAssetIds = environmentCreatorAssetIds(normalized);
   const creatorAssets = creatorAssetIds.length
     ? await creatorAssetBundleForIds(creatorAssetIds)
@@ -213,13 +204,12 @@ export async function buildCompositionBundle(comp: Composition): Promise<Composi
     version: BUNDLE_VERSION,
     composition: { ...normalized, tracks },
     stems,
-    ...(detailPack ? { detailPack } : {}),
     ...(creatorAssets ? { creatorAssets } : {}),
   };
 }
 
-// Download the composition with uploaded stems and any local custom detail pack
-// embedded, so the map remains fully portable.
+// Download the composition with uploaded stems and every referenced creator
+// asset embedded, so the composition remains fully portable.
 export async function exportComposition(comp: Composition): Promise<void> {
   const normalized = normalizeComposition(comp);
   const payload = await buildCompositionBundle(normalized);
@@ -238,9 +228,9 @@ export async function importComposition(file: File): Promise<Composition> {
   if (payload?.version !== 1 && payload?.version !== 2 && payload?.version !== 3 && payload?.version !== 4 && payload?.version !== BUNDLE_VERSION) {
     throw new Error("Unrecognized or unsupported Polyphonia file.");
   }
-  if (payload.detailPack) {
-    await importDetailPackPayload(payload.detailPack as Partial<DetailPackBundle>);
-  }
+  // Older bundles may carry a `detailPack` payload from the retired pack
+  // system; it is intentionally ignored (the composition still loads, minus
+  // the pack dressing).
   if (payload.creatorAssets) {
     await importCreatorAssetBundle(payload.creatorAssets as Partial<CreatorAssetBundle>);
   }

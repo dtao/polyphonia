@@ -19,19 +19,12 @@ these spatial compositions.
   room-scale walking, while **Geo Drive** uses GPS movement at 100 ft per unit
   for car-scale exploration.
 - **Immersive spaces** — every composition starts from the same neutral visual
-  space and can optionally select an authored detail pack at an automatic, low,
-  or high quality tier. Atlas Cavern, Verdant Grove, and Prismatic Reach dress
-  existing paths, ramps, tunnels, rooms, platforms, and standalone walls with
-  modular GLTF landmarks and aligned PBR textures without replacing the map
-  used for movement or acoustics. High-quality mode adds restrained bloom,
-  ambient occlusion, tone mapping, vignette, and shadowed authored lighting;
-  automatic low quality keeps the dressing while reducing repeated assets and
-  expensive effects. Creators can also import reusable PBR materials and
-  self-contained GLB landmarks separately, assign different materials to
-  floors/walls/ceilings, place models directly, and carry those assets through
-  export or cloud publishing. Placed landmarks remain in the composition when
-  switching detail packs and repeat continuously across tiled or path-loop
-  maps. A full detail pack is optional.
+  space. The World panel layers visual identity over it: imported PBR
+  materials assigned to floors/walls/ceilings, imported self-contained GLB
+  objects placed directly in the scene, and the generated world below — all
+  without replacing the map used for movement or acoustics, and all carried
+  through export or cloud publishing. Placed objects repeat continuously
+  across tiled or path-loop maps.
   Editable path maps can define terminal loop points for corridor-like
   spaces that wrap back on themselves. Path segments can be marked as enclosed
   **tunnels** whose walls and ceiling muffle sound passing in or out the sides,
@@ -50,21 +43,21 @@ these spatial compositions.
   point a stem like a directional speaker with configurable beam width and
   dispersion.
 - **Generated worlds** — the World panel (edit mode) procedurally generates a
-  visual environment around the composition: a sculptable terrain heightfield
-  plus scattered objects in three biomes (forest, cavern, open meadow), with
-  controls for density (0 = bare terrain, no objects), relief, lighting mood,
-  a gradient sky (derived from one picked color, or fading between two picked
-  colors), and ground colors.
+  natural landscape around the composition: a sculptable terrain heightfield
+  in three biomes (forest, cavern, open meadow), with controls for relief,
+  feature size, lighting mood, a gradient sky (derived from one picked color,
+  or fading between two picked colors), and ground colors.
   Generation is constraint-aware: it keeps clear, walkable zones around stems
   and paths (toggleable, with an adjustable buffer, visualizable in the
-  editor). Composers can sculpt terrain with raise/lower/smooth brushes, place
-  or delete objects, recolor/scale/lock individual objects, and then
+  editor). Composers sculpt the terrain with raise/lower/smooth brushes, then
   **regenerate** with preservation modes — fresh overwrite, fresh around
-  stems & paths, preserve major edits, preserve all edits, or regenerate just
-  a zone around the viewer. The generated world is visual dressing (the map
-  still owns movement and acoustics; on boundless open maps the listener also
-  walks the terrain), and it round-trips through export/import and cloud
-  publishing as part of the composition.
+  stems & paths, preserve major sculpting, preserve all sculpting, or re-roll
+  just a zone around the viewer. On path-loop maps the terrain repeats across
+  the loop seam, so sculpted hills are visible ahead as you approach the wrap.
+  The generated world is visual dressing (the map still owns movement and
+  acoustics; on boundless open maps the listener also walks the terrain), and
+  it round-trips through export/import and cloud publishing as part of the
+  composition.
 - **Build from scratch** — create a new composition (title / BPM, plus an
   artist name for local-only use) and add stems by file picker or
   drag-and-drop; uploads drop into the running loop in time.
@@ -73,9 +66,9 @@ these spatial compositions.
   survives reloads. Keep a library of compositions in a searchable, sortable
   home grid and switch between them.
 - **Portable** — export a composition as a single self-contained
-  `.polyphonia.json` (audio, custom packs, and every referenced creator asset
-  embedded) and re-import it anywhere. Cloned spatial instances share one
-  embedded audio asset rather than multiplying the file size.
+  `.polyphonia.json` (audio and every referenced creator asset embedded) and
+  re-import it anywhere. Cloned spatial instances share one embedded audio
+  asset rather than multiplying the file size.
 - **Share** — publish a composition to the cloud and get a stable read-only link
   (`/c/:id`) anyone can open, with visible progress while publishing or loading
   audio for first plays. *(Requires Supabase config — see below.)*
@@ -101,8 +94,6 @@ The start screen shows the short Git commit hash that was present when the app
 bundle was built, so deployed builds can be identified without manually updating
 a version string.
 
-High-fidelity environment production is documented in
-[`docs/environment-authoring.md`](docs/environment-authoring.md).
 For ready-to-import free assets and supported formats, see
 [`docs/creator-assets.md`](docs/creator-assets.md).
 
@@ -132,9 +123,9 @@ Audio quality can be A/B tested with `audioQuality=full` or
   trim loop start/end, adjust crossfade, ring out tails (fold a stem's overrun
   past the loop length back onto the start so reverb decays across the seam),
   set the loop length in beats and the beats-per-bar (time signature) for the
-  bar lines, or disable looping. The Environment
-  panel selects optional detail packs, imports materials/models, assigns map
-  surfaces, and places landmarks. Directional stems show their heading and outer
+  bar lines, or disable looping. The World
+  panel generates and sculpts the landscape, imports materials/models, assigns
+  map surfaces, and places objects. Directional stems show their heading and outer
   cone on the ground while selected. Selected walls use the same three-axis move
   gizmo as stems, with endpoint handles for reshaping. Selected path points use
   that three-axis gizmo too, moving connected branches in X/Z and setting ramp
@@ -152,8 +143,9 @@ custom server. In a Supabase project:
      (`compositions` + `stems` bucket).
    - `202605300002_add_artist_identities.sql` adds artist identity, slug routes,
      avatar metadata, and per-artist composition title uniqueness.
-   - `202606060001_custom_detail_packs.sql` adds immutable creator pack
-     manifests and the public `environment-assets` bucket.
+   - `202606060001_custom_detail_packs.sql` adds the public
+     `environment-assets` bucket (and a legacy `detail_packs` table from the
+     retired pack system; harmless to keep).
    - `202606060002_creator_assets.sql` adds independently reusable material and
      landmark manifests.
 
@@ -264,11 +256,11 @@ full URL. Add an SPA fallback so routes like `/c/:id`, `/gallery`, and
 ```
 src/
   audio/        AudioEngine (Web Audio) + procedural placeholder synth
-  scene/        React Three Fiber scene: detail packs, Player, EditControls, gizmo, markers
-  ui/           EntryScreen, PropertiesPanel, AddStem, EnvironmentPanel, LoopPanel, PublishControl, Account, Viewer, Gallery, ArtistPage
+  scene/        React Three Fiber scene: generated world, surface dressing, Player, EditControls, gizmo, markers
+  ui/           EntryScreen, PropertiesPanel, AddStem, WorldPanel, LoopPanel, PublishControl, Account, Viewer, Gallery, ArtistPage
   artist.ts       artist identity helpers (slugs, artist routes)
-  environment.ts  optional detail-pack, surface-material, landmark, and generated-world metadata
-  worldgen/       deterministic noise, terrain field, constraint-aware scatter, regeneration modes
+  environment.ts  surface-material, landmark, and generated-world metadata
+  worldgen/       deterministic noise, terrain field, regeneration modes (+ dormant scatter engine)
   composition.ts  types + the built-in "Journey" demo
   store.ts        Zustand store
   persistence.ts  local-first save/load + export/import

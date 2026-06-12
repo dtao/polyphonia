@@ -16,8 +16,7 @@ import { ARWalkSession } from "./ARWalkSession";
 import { CompositionMap, LoopPreviewTransform, loopPreviewElevationOffset, tiledMapTransforms, transformLoopPoint } from "../map";
 import { TrackDef } from "../composition";
 import { AudioEngine } from "../audio/AudioEngine";
-import { debugEnabled, debugFlag, debugValue } from "../debug";
-import { EnvironmentEffects } from "./EnvironmentEffects";
+import { debugEnabled, debugFlag } from "../debug";
 import { effectiveFadeInner, effectiveFadeOuter, isFadeRadiusOverridden, radialFade, setCompositionFadeRadii, subscribeDebugFade } from "./fade";
 
 const VIEWER_SAMPLE_DISTANCE = 0.75;
@@ -74,22 +73,10 @@ export function Scene() {
   // visible copy so the room beyond a seam lights up as you approach it.
   const showEchoLights =
     mode === "explore" && loopPreviewsEnabled && map.tiling.type !== "none" && !debugFlag("debugNoPointLights") && !debugFlag("debugNoEchoLights");
-  const forcedPack = debugValue("environmentPack");
-  const forcedQuality = debugValue("environmentQuality");
-  const renderedEnvironment = forcedPack
-    ? {
-        ...environment,
-        pack: {
-          id: forcedPack,
-          quality: forcedQuality === "low" ? ("low" as const) : ("high" as const),
-        },
-      }
-    : environment;
-
   return (
     <>
       <ARWorldTransform>
-        <EnvironmentScene environment={renderedEnvironment} map={map} editMode={mode === "edit"} />
+        <EnvironmentScene environment={environment} map={map} editMode={mode === "edit"} />
         {mode === "explore" && loopPreviewsEnabled && <TiledMapPreview viewer={viewer} groupRef={previewGroup} />}
         <TileBoundaryOverlay map={map} viewer={viewer} editMode={mode === "edit"} />
         <MapScene map={map} tracks={tracks} lightTracks={mode === "explore" ? tileLights : tracks} editMode={mode === "edit"} />
@@ -122,7 +109,6 @@ export function Scene() {
       {mode === "explore" && loopPreviewsEnabled && <LoopWrapBlipGuard groupRef={previewGroup} />}
       <StemAnimationDriver />
       <ListenerSync />
-      <EnvironmentEffects environment={renderedEnvironment} editMode={mode === "edit"} />
       <ARWalkSession />
       <ARBackdrop />
       <DebugSampler />
@@ -298,7 +284,7 @@ function LoopWrapBlipGuard({ groupRef }: { groupRef: React.RefObject<THREE.Group
   const seen = useRef(loopWrap.generation);
   useFrame(() => {
     // Also blank any preview groups registered from below <EnvironmentScene>
-    // (e.g. <DetailMapDressing>'s loop floor shells and environmental objects),
+    // (e.g. <SurfaceMapDressing>'s loop floor shells and environmental objects),
     // which can't host their own after-wrap guard because they mount before
     // <Player>. This component mounts after <Player>, so the generation bump is
     // already recorded when this runs.

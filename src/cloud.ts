@@ -2,17 +2,7 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { Composition, TrackDef, audioAssetKey, normalizeComposition } from "./composition";
 import { newId } from "./id";
 import { ArtistIdentity, slugifyArtist } from "./artist";
-import {
-  getStoredDetailPack,
-  packAssetReferences,
-  rewritePackUrls,
-  storedAsset,
-} from "./detailPackStorage";
-import {
-  environmentPackById,
-  registerCustomEnvironmentPack,
-  type EnvironmentPackDefinition,
-} from "./environmentPacks";
+import { storedAsset } from "./assetStorage";
 import {
   creatorAssetReferences,
   getStoredCreatorAssets,
@@ -41,9 +31,9 @@ function supabase(): SupabaseClient {
 const BUCKET = "stems";
 const TABLE = "compositions";
 const ARTISTS_TABLE = "artists";
-const DETAIL_PACKS_TABLE = "detail_packs";
 const CREATOR_ASSETS_TABLE = "creator_assets";
-const DETAIL_PACK_ASSET_BUCKET = "environment-assets";
+// Bucket name predates the pack removal; creator assets still publish here.
+const ENVIRONMENT_ASSET_BUCKET = "environment-assets";
 const isUploaded = (url: string) => url.startsWith("blob:");
 export const normalizePublishedTitle = (title: string) => title.trim().replace(/\s+/g, " ").toLowerCase() || "untitled";
 export const publishedStemAssetKey = (track: Pick<TrackDef, "id" | "audioAssetId">): string => audioAssetKey(track);
@@ -280,16 +270,12 @@ export async function publishComposition(
     report(`Prepared ${t.name}`, true);
   }
 
-  report("Publishing environment pack");
-  const publishedEnvironment = await publishCustomDetailPack(comp, user.id);
-  report("Published environment pack", true);
-  const packComposition = publishedEnvironment ? { ...comp, environment: publishedEnvironment } : comp;
   report("Publishing creator assets");
-  const creatorEnvironment = await publishCreatorAssets(packComposition, user.id);
+  const creatorEnvironment = await publishCreatorAssets(comp, user.id);
   report("Published creator assets", true);
   const publishedComposition = creatorEnvironment
-    ? { ...packComposition, environment: creatorEnvironment }
-    : packComposition;
+    ? { ...comp, environment: creatorEnvironment }
+    : comp;
 
   // title/artist are denormalized columns (for the gallery); manifest stays canonical.
   report("Saving composition");
@@ -325,11 +311,6 @@ export async function fetchPublishedComposition(id: string): Promise<Composition
     artistAvatarUrl: data.artist_avatar_url ?? (data.manifest as Composition).artistAvatarUrl,
     artistAvatarEmailHash: data.artist_avatar_email_hash ?? (data.manifest as Composition).artistAvatarEmailHash,
   });
-  const packId = composition.environment.pack?.id;
-  if (packId && !environmentPackById(packId)) {
-    const pack = await fetchPublishedDetailPack(packId);
-    if (pack) registerCustomEnvironmentPack(pack);
-  }
   const creatorIds = environmentCreatorAssetIds(composition);
   if (creatorIds.length) {
     const { data: creatorAssets, error: creatorError } = await supabase()
@@ -366,7 +347,7 @@ async function publishCreatorAssets(
       if (!entry) throw new Error(`Creator asset ${hash} is missing from local storage.`);
       const safeName = (entry.name || "asset").replace(/[^\w.-]+/g, "_");
       const path = `${userId}/${remoteId}/${hash}/${safeName}`;
-      const bucket = supabase().storage.from(DETAIL_PACK_ASSET_BUCKET);
+      const bucket = supabase().storage.from(ENVIRONMENT_ASSET_BUCKET);
       const publicUrl = bucket.getPublicUrl(path).data.publicUrl;
       const { error } = await bucket.upload(path, entry.blob, {
         contentType: entry.type || entry.blob.type || "application/octet-stream",
@@ -410,62 +391,6 @@ function environmentCreatorAssetIds(comp: Composition): string[] {
     ...Object.values(comp.environment.surfaces ?? {}).filter((id): id is string => !!id),
     ...(comp.environment.landmarks ?? []).map((landmark) => landmark.assetId),
   ])];
-}
-
-async function publishCustomDetailPack(
-  comp: Composition,
-  userId: string,
-): Promise<Composition["environment"] | undefined> {
-  const localId = comp.environment.pack?.id;
-  if (!localId) return undefined;
-  const storedPack = await getStoredDetailPack(localId);
-  if (!storedPack) return undefined;
-
-  const version = (await sha256Text(`${userId}:${localId}:${JSON.stringify(storedPack)}`)).slice(0, 32);
-  const remoteId = `pack-${version}`;
-  const urls = new Map<string, string>();
-  for (const reference of [...new Set(packAssetReferences(storedPack))]) {
-    if (!reference.startsWith("asset:")) continue;
-    const hash = reference.slice("asset:".length);
-    const entry = await storedAsset(hash);
-    if (!entry) throw new Error(`Detail-pack asset ${hash} is missing from local storage.`);
-    const safeName = (entry.name || "asset").replace(/[^\w.-]+/g, "_");
-    const path = `${userId}/${remoteId}/${hash}/${safeName}`;
-    const bucket = supabase().storage.from(DETAIL_PACK_ASSET_BUCKET);
-    const publicUrl = bucket.getPublicUrl(path).data.publicUrl;
-    const { error } = await bucket.upload(path, entry.blob, {
-      contentType: entry.type || entry.blob.type || "application/octet-stream",
-      upsert: true,
-    });
-    if (error) throw error;
-    urls.set(reference, publicUrl);
-  }
-
-  const manifest = rewritePackUrls(
-    { ...storedPack, id: remoteId },
-    (url) => urls.get(url) ?? url,
-  );
-  const { error } = await supabase()
-    .from(DETAIL_PACKS_TABLE)
-    .upsert({ id: remoteId, owner: userId, manifest });
-  if (error) throw error;
-  return {
-    ...comp.environment,
-    pack: {
-      ...comp.environment.pack!,
-      id: remoteId,
-    },
-  };
-}
-
-async function fetchPublishedDetailPack(id: string): Promise<EnvironmentPackDefinition | null> {
-  const { data, error } = await supabase()
-    .from(DETAIL_PACKS_TABLE)
-    .select("manifest")
-    .eq("id", id)
-    .maybeSingle();
-  if (error) throw error;
-  return data?.manifest ? data.manifest as EnvironmentPackDefinition : null;
 }
 
 export interface GallerySummary {

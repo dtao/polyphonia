@@ -1,13 +1,9 @@
 import { useState } from "react";
-import {
-  GENERATED_BIOMES,
-  GeneratedBiome,
-  WORLD_OBJECT_KINDS,
-  WorldObjectKind,
-} from "../environment";
-import { WORLD_OBJECT_SPECS } from "../worldgen/objects";
+import { GENERATED_BIOMES, GeneratedBiome } from "../environment";
+import type { CreatorLandmarkAsset, CreatorMaterialAsset } from "../creatorAssets";
 import type { RegenerationMode } from "../worldgen/regen";
 import { skyGradient } from "../scene/skyGradient";
+import { CreatorAssetImporter } from "./CreatorAssetImporter";
 import { useStore, WorldTool } from "../store";
 
 const BIOME_LABELS: Record<GeneratedBiome, string> = {
@@ -17,20 +13,25 @@ const BIOME_LABELS: Record<GeneratedBiome, string> = {
 };
 
 const REGEN_MODES: Array<{ mode: RegenerationMode; label: string; hint: string }> = [
-  { mode: "keep-constraints", label: "Fresh, around stems & paths", hint: "Wipes edits; keeps clear zones around stems and walkable paths." },
-  { mode: "overwrite", label: "Fresh (full overwrite)", hint: "Wipes edits and objects; honors the constraint toggles below." },
-  { mode: "keep-major", label: "Preserve major edits", hint: "Keeps big sculpting strokes, locked and far-moved objects; remixes the rest." },
-  { mode: "keep-all", label: "Preserve all edits", hint: "Keeps everything you touched; regenerates only untouched terrain and objects." },
+  { mode: "keep-constraints", label: "Fresh, around stems & paths", hint: "Wipes sculpting; keeps clear zones around stems and walkable paths." },
+  { mode: "overwrite", label: "Fresh (full overwrite)", hint: "Wipes sculpting; honors the constraint toggles below." },
+  { mode: "keep-major", label: "Preserve major sculpting", hint: "Keeps big sculpting strokes; remixes the rest of the terrain." },
+  { mode: "keep-all", label: "Preserve all sculpting", hint: "Keeps every brush stroke; re-rolls only untouched terrain." },
 ];
 
 export function WorldPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () => void; onClose: () => void }) {
-  const generated = useStore((s) => s.composition.environment.generated);
+  const environment = useStore((s) => s.composition.environment);
+  const generated = environment.generated;
   const generateWorld = useStore((s) => s.generateWorld);
   const regenerateWorld = useStore((s) => s.regenerateWorld);
   const regenerateWorldRegion = useStore((s) => s.regenerateWorldRegion);
   const clearGeneratedWorld = useStore((s) => s.clearGeneratedWorld);
   const setWorldParams = useStore((s) => s.setWorldParams);
   const setWorldConstraints = useStore((s) => s.setWorldConstraints);
+  const setEnvironment = useStore((s) => s.setEnvironment);
+  const addLandmark = useStore((s) => s.addLandmark);
+  const creatorAssets = useStore((s) => s.creatorAssets);
+  const removeCreatorAsset = useStore((s) => s.removeCreatorAsset);
   const worldTool = useStore((s) => s.worldTool);
   const setWorldTool = useStore((s) => s.setWorldTool);
   const showConstraintZones = useStore((s) => s.showConstraintZones);
@@ -38,6 +39,9 @@ export function WorldPanel({ open, onOpen, onClose }: { open: boolean; onOpen: (
   const [biome, setBiome] = useState<GeneratedBiome>(generated?.biome ?? "forest");
   const [regenMode, setRegenMode] = useState<RegenerationMode>("keep-constraints");
   const [regionRadius, setRegionRadius] = useState(24);
+  const [importing, setImporting] = useState<"material" | "landmark" | null>(null);
+  const materials = creatorAssets.filter((asset): asset is CreatorMaterialAsset => asset.kind === "material");
+  const landmarks = creatorAssets.filter((asset): asset is CreatorLandmarkAsset => asset.kind === "landmark");
 
   if (!open) {
     return (
@@ -77,9 +81,6 @@ export function WorldPanel({ open, onOpen, onClose }: { open: boolean; onOpen: (
         <>
           <div style={section}>
             <div style={label}>Shape & mood</div>
-            <Slider label="Density" min={0} max={1} step={0.05} value={generated.params.density}
-              onChange={(density) => setWorldParams({ density })} />
-            <div style={miniHint}>Density applies on the next regenerate; 0 generates bare terrain with no objects.</div>
             <Slider label="Relief" min={0} max={12} step={0.5} value={generated.params.terrainAmplitude}
               onChange={(terrainAmplitude) => setWorldParams({ terrainAmplitude })} />
             <Slider label="Feature size" min={20} max={120} step={2} value={generated.params.terrainScale}
@@ -153,15 +154,11 @@ export function WorldPanel({ open, onOpen, onClose }: { open: boolean; onOpen: (
           </div>
 
           <div style={section}>
-            <div style={label}>Edit tools</div>
+            <div style={label}>Sculpt</div>
             <div style={toolRow}>
               <ToolButton current={worldTool} tool={{ kind: "terrain", mode: "raise", radius: 8, amount: 1 }} onPick={setWorldTool}>⛰ Raise</ToolButton>
               <ToolButton current={worldTool} tool={{ kind: "terrain", mode: "lower", radius: 8, amount: 1 }} onPick={setWorldTool}>🕳 Lower</ToolButton>
               <ToolButton current={worldTool} tool={{ kind: "terrain", mode: "smooth", radius: 8, amount: 1 }} onPick={setWorldTool}>〜 Smooth</ToolButton>
-            </div>
-            <div style={toolRow}>
-              <ToolButton current={worldTool} tool={{ kind: "place", objectKind: defaultPlaceKind(worldTool) }} onPick={setWorldTool}>＋ Place</ToolButton>
-              <ToolButton current={worldTool} tool={{ kind: "delete" }} onPick={setWorldTool}>✕ Remove</ToolButton>
             </div>
             {worldTool.kind === "terrain" && (
               <>
@@ -170,29 +167,10 @@ export function WorldPanel({ open, onOpen, onClose }: { open: boolean; onOpen: (
                 <Slider label="Strength" min={0.2} max={3} step={0.1} value={worldTool.amount}
                   onChange={(amount) => setWorldTool({ ...worldTool, amount })} />
                 <div style={miniHint}>Drag across the terrain to sculpt. Undo reverts a whole stroke.</div>
+                <button style={subtleButton} onClick={() => setWorldTool({ kind: "none" })}>
+                  Done sculpting
+                </button>
               </>
-            )}
-            {worldTool.kind === "place" && (
-              <>
-                <select
-                  value={worldTool.objectKind}
-                  onChange={(event) => setWorldTool({ kind: "place", objectKind: event.target.value as WorldObjectKind })}
-                  style={select}
-                >
-                  {WORLD_OBJECT_KINDS.map((kind) => (
-                    <option key={kind} value={kind}>
-                      {WORLD_OBJECT_SPECS[kind].label}
-                    </option>
-                  ))}
-                </select>
-                <div style={miniHint}>Click the terrain to place. Placed objects survive regeneration.</div>
-              </>
-            )}
-            {worldTool.kind === "delete" && <div style={miniHint}>Click an object to remove it.</div>}
-            {worldTool.kind !== "none" && (
-              <button style={subtleButton} onClick={() => setWorldTool({ kind: "none" })}>
-                Done editing
-              </button>
             )}
           </div>
 
@@ -214,7 +192,7 @@ export function WorldPanel({ open, onOpen, onClose }: { open: boolean; onOpen: (
               Regenerate zone around viewer
             </button>
             <div style={miniHint}>
-              Reshuffles only the circle around your current position; locked and edited objects stay.
+              Re-rolls the terrain only in the circle around your current position.
             </div>
           </div>
 
@@ -223,12 +201,68 @@ export function WorldPanel({ open, onOpen, onClose }: { open: boolean; onOpen: (
           </button>
         </>
       )}
+
+      <div style={section}>
+        <div style={label}>Materials</div>
+        {(["floor", "wall", "ceiling"] as const).map((surface) => (
+          <label key={surface} style={{ display: "block", marginTop: 6 }}>
+            <select
+              aria-label={`${surface} material`}
+              value={environment.surfaces?.[surface] ?? ""}
+              onChange={(event) =>
+                setEnvironment({
+                  surfaces: { ...environment.surfaces, [surface]: event.target.value || undefined },
+                })
+              }
+              style={select}
+            >
+              <option value="">{surface[0].toUpperCase() + surface.slice(1)}: default</option>
+              {materials.map((asset) => (
+                <option key={asset.id} value={asset.id}>
+                  {asset.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ))}
+        <button style={subtleButton} onClick={() => setImporting("material")}>
+          Import material
+        </button>
+      </div>
+
+      <div style={section}>
+        <div style={label}>Objects</div>
+        {landmarks.map((asset) => (
+          <div key={asset.id} style={assetRow}>
+            <button style={assetAddButton} onClick={() => addLandmark(asset.id)} title={`Place ${asset.name}`}>
+              ＋ {asset.name}
+            </button>
+            <button style={assetRemoveButton} onClick={() => void removeCreatorAsset(asset.id)} title={`Remove ${asset.name}`}>
+              ×
+            </button>
+          </div>
+        ))}
+        <button style={subtleButton} onClick={() => setImporting("landmark")}>
+          Import object (GLB)
+        </button>
+        <div style={miniHint}>Imported objects place at the viewer and move with the gizmo.</div>
+      </div>
+
+      {importing && (
+        <CreatorAssetImporter
+          mode={importing}
+          onClose={() => setImporting(null)}
+          onImported={(id) => {
+            if (importing === "material") {
+              setEnvironment({ surfaces: { ...environment.surfaces, floor: id } });
+            } else {
+              addLandmark(id);
+            }
+          }}
+        />
+      )}
     </div>
   );
-}
-
-function defaultPlaceKind(tool: WorldTool): WorldObjectKind {
-  return tool.kind === "place" ? tool.objectKind : "pine";
 }
 
 function Slider({
@@ -297,7 +331,7 @@ function ToolButton({
 
 const collapsed: React.CSSProperties = {
   position: "absolute",
-  top: 188,
+  top: 92,
   left: 14,
   zIndex: 10,
   height: 36,
@@ -489,4 +523,31 @@ const miniHint: React.CSSProperties = {
   fontSize: 10.5,
   lineHeight: 1.35,
   color: "rgba(255,255,255,0.5)",
+};
+
+const assetRow: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 30px",
+  gap: 5,
+  marginTop: 6,
+};
+
+const assetAddButton: React.CSSProperties = {
+  minHeight: 30,
+  borderRadius: 6,
+  border: "1px solid rgba(255,255,255,0.14)",
+  background: "rgba(255,255,255,0.07)",
+  color: "white",
+  cursor: "pointer",
+  fontSize: 12,
+  textAlign: "left",
+  paddingLeft: 10,
+};
+
+const assetRemoveButton: React.CSSProperties = {
+  borderRadius: 6,
+  border: "1px solid rgba(255,122,107,0.25)",
+  background: "rgba(255,122,107,0.08)",
+  color: "#ffaaa0",
+  cursor: "pointer",
 };

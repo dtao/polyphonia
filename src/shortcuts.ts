@@ -12,7 +12,7 @@
 
 import { useStore } from "./store";
 
-export type EditPanel = "environment" | "map" | "loop" | "world" | null;
+export type EditPanel = "map" | "loop" | "world" | null;
 
 export type ShortcutId =
   | "toggle-fullscreen"
@@ -82,10 +82,6 @@ function deleteSelected(): boolean {
     s.deleteLandmark(s.selectedLandmarkId);
     return true;
   }
-  if (s.selectedWorldObjectId) {
-    s.deleteWorldObject(s.selectedWorldObjectId);
-    return true;
-  }
   if (s.selectedId) {
     s.deleteTrack(s.selectedId);
     return true;
@@ -120,10 +116,6 @@ function cloneSelected(): boolean {
   const s = useStore.getState();
   if (s.selectedLandmarkId) {
     s.duplicateLandmark(s.selectedLandmarkId);
-    return true;
-  }
-  if (s.selectedWorldObjectId) {
-    s.duplicateWorldObject(s.selectedWorldObjectId);
     return true;
   }
   if (s.selectedId) {
@@ -182,10 +174,6 @@ export const SHORTCUTS: Shortcut[] = [
       }
       if (s.selectedLandmarkId) {
         s.selectLandmark(null);
-        return true;
-      }
-      if (s.selectedWorldObjectId) {
-        s.selectWorldObject(null);
         return true;
       }
       if (s.worldTool.kind !== "none") {

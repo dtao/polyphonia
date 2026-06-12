@@ -1261,7 +1261,7 @@ function walkableFloorGeometry(map: CompositionMap): THREE.BufferGeometry | null
 
 // The flat fill patches that close the wedge gap where two or more path
 // segments meet at an angle, mirroring the miter the reactive floor builds in
-// `walkableFloorGeometry`. The textured floor (DetailMapDressing) lays per-
+// `walkableFloorGeometry`. The textured floor (SurfaceDressing) lays per-
 // segment slabs that stop square at each end, so without these the pack texture
 // is missing across every angled joint. Each polygon is the convex hull of the
 // incident segments' mitered border points, at the joint's shared elevation.

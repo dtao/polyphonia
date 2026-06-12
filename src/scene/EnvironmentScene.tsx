@@ -4,7 +4,6 @@ import { useEffect } from "react";
 import * as THREE from "three";
 import type { EnvironmentSettings } from "../environment";
 import type { CompositionMap } from "../map";
-import { AuthoredEnvironmentScene } from "./AuthoredEnvironmentScene";
 import {
   registeredCreatorAssets,
   type CreatorLandmarkAsset,
@@ -14,7 +13,7 @@ import { useStore } from "../store";
 import { CreatorLandmarks } from "./CreatorLandmarks";
 import { GeneratedWorld } from "./GeneratedWorld";
 import { skyGradient } from "./skyGradient";
-import { SurfaceMapDressing } from "./DetailMapDressing";
+import { SurfaceMapDressing } from "./SurfaceDressing";
 import { RADIAL_FADE_INNER, RADIAL_FADE_OUTER, effectiveFadeInner, effectiveFadeOuter } from "./fade";
 
 // Own scene.fog imperatively. A JSX `<fog attach="fog">` here attaches to the
@@ -112,15 +111,7 @@ export function EnvironmentScene({
 
       {environment.generated && <GeneratedWorld editMode={editMode} />}
 
-      {(environment.pack || environment.landmarks?.some((placement) => placement.packId)) && (
-        <AuthoredEnvironmentScene
-          environment={environment}
-          map={map}
-          editMode={editMode}
-          surfaceMaterials={surfaceMaterials}
-        />
-      )}
-      {!environment.pack && surfaceMaterials && (
+      {surfaceMaterials && (
         <SurfaceMapDressing map={map} materials={surfaceMaterials} editMode={editMode} />
       )}
       <CreatorLandmarks

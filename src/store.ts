@@ -52,16 +52,6 @@ import {
   unpublish as cloudUnpublish,
 } from "./cloud";
 import {
-  importDetailPackBundle,
-  loadStoredDetailPacks,
-  removeStoredDetailPack,
-} from "./detailPackStorage";
-import {
-  EnvironmentPackDefinition,
-  environmentPackById,
-  registerCustomEnvironmentPacks,
-} from "./environmentPacks";
-import {
   CreatorAsset,
   CreatorLandmarkImport,
   CreatorMaterialImport,
@@ -112,7 +102,7 @@ export const pendingTeleport = { value: null as { x: number; z: number } | null 
 export const loopWrap = { generation: 0 };
 
 // Tiled-preview groups whose contents are positioned from React state that lags
-// the camera by a frame (e.g. <DetailMapDressing>'s loop floor shells and
+// the camera by a frame (e.g. <SurfaceMapDressing>'s loop floor shells and
 // environmental-object copies). They live below <EnvironmentScene>, which mounts
 // before <Player>, so they can't run their own after-wrap guard. Instead they
 // register here and <Scene>'s LoopWrapBlipGuard — mounted after <Player> — hides
@@ -151,13 +141,11 @@ type Falloff = Pick<TrackDef, "refDistance" | "maxDistance" | "rolloff">;
 
 export type Mode = "explore" | "edit";
 
-// Active tool for editing the generated environment in the 3D view. Transient
+// Active tool for sculpting the generated terrain in the 3D view. Transient
 // UI state (not part of the composition); cleared when leaving edit mode.
 export type WorldTool =
   | { kind: "none" }
-  | { kind: "terrain"; mode: TerrainEditMode; radius: number; amount: number }
-  | { kind: "place"; objectKind: WorldObjectKind }
-  | { kind: "delete" };
+  | { kind: "terrain"; mode: TerrainEditMode; radius: number; amount: number };
 
 function newWorldSeed(): number {
   return Math.floor(Math.random() * 0xffffffff) | 0;
@@ -176,7 +164,6 @@ interface StoreState {
   publishProgress: PublishProgress | null;
   undoStack: Composition[];
   redoStack: Composition[];
-  customDetailPacks: EnvironmentPackDefinition[];
   creatorAssets: CreatorAsset[];
 
   mode: Mode;
@@ -191,7 +178,6 @@ interface StoreState {
   selectedPlatformId: string | null;
   selectedWallId: string | null;
   selectedLandmarkId: string | null;
-  selectedWorldObjectId: string | null; // generated-environment object (tree/rock/…)
   worldTool: WorldTool; // active generated-environment edit tool (transient UI state)
   showConstraintZones: boolean; // visualize stem/path clear zones in edit mode
   entered: boolean; // has the user started the experience (left the entry screen)
@@ -206,8 +192,6 @@ interface StoreState {
   resetViewToMapStart: () => void;
   setViewer: (viewer: boolean) => void;
   startAudio: () => Promise<void>;
-  importDetailPack: (file: File) => Promise<void>;
-  removeDetailPack: (id: string) => Promise<void>;
   importMaterialAsset: (input: CreatorMaterialImport) => Promise<string>;
   importLandmarkAsset: (input: CreatorLandmarkImport) => Promise<string>;
   removeCreatorAsset: (id: string) => Promise<void>;
@@ -247,14 +231,6 @@ interface StoreState {
   setWorldConstraints: (constraints: Partial<GeneratedConstraints>) => void;
   applyTerrainBrush: (brush: { mode: TerrainEditMode; center: [number, number]; radius: number; amount: number }) => string;
   finishTerrainStroke: (editIds: string[]) => void;
-  selectWorldObject: (id: string | null) => void;
-  addWorldObject: (kind: WorldObjectKind, at: [number, number]) => void;
-  updateWorldObject: (id: string, patch: Partial<Pick<WorldObjectPlacement, "position" | "yaw" | "scale" | "tint">>) => void;
-  deleteWorldObject: (id: string) => void;
-  duplicateWorldObject: (id: string) => void;
-  /** Raise (never lower) an object's classified edit level, e.g. at gizmo-drag end. */
-  markWorldObjectEdit: (id: string, level: "minor" | "major") => void;
-  setWorldObjectLock: (id: string, locked: boolean) => void;
   setWorldTool: (tool: WorldTool) => void;
   setShowConstraintZones: (show: boolean) => void;
 
@@ -707,7 +683,7 @@ function shiftRoomForPinnedResize(room: MapRoom, patch: Partial<MapRoom>, dimens
 function pruneSelection(
   s: StoreState,
   composition: Composition,
-): Pick<StoreState, "selectedId" | "selectedMapPointKey" | "selectedMapSegmentId" | "branchStartPointKey" | "selectedStart" | "selectedRoomId" | "selectedEntranceIndex" | "selectedPlatformId" | "selectedWallId" | "selectedLandmarkId" | "selectedWorldObjectId"> {
+): Pick<StoreState, "selectedId" | "selectedMapPointKey" | "selectedMapSegmentId" | "branchStartPointKey" | "selectedStart" | "selectedRoomId" | "selectedEntranceIndex" | "selectedPlatformId" | "selectedWallId" | "selectedLandmarkId"> {
   const selectedRoom = s.selectedRoomId ? composition.map.rooms.find((room) => room.id === s.selectedRoomId) : undefined;
   return {
     selectedId: s.selectedId && composition.tracks.some((t) => t.id === s.selectedId) ? s.selectedId : null,
@@ -731,25 +707,6 @@ function pruneSelection(
     selectedLandmarkId:
       s.selectedLandmarkId && composition.environment.landmarks?.some((landmark) => landmark.id === s.selectedLandmarkId)
         ? s.selectedLandmarkId
-        : null,
-    selectedWorldObjectId:
-      s.selectedWorldObjectId &&
-      composition.environment.generated?.objects.some((object) => object.id === s.selectedWorldObjectId)
-        ? s.selectedWorldObjectId
-        : null,
-  };
-}
-
-// After a regenerate replaces the object set, keep the selection only if the
-// selected object survived (locked/user-placed objects do).
-function pruneSelectionAfterWorldChange(
-  s: StoreState,
-  generated: GeneratedEnvironment,
-): Pick<StoreState, "selectedWorldObjectId"> {
-  return {
-    selectedWorldObjectId:
-      s.selectedWorldObjectId && generated.objects.some((object) => object.id === s.selectedWorldObjectId)
-        ? s.selectedWorldObjectId
         : null,
   };
 }
@@ -809,7 +766,6 @@ export const useStore = create<StoreState>((set, get) => ({
   publishProgress: null,
   undoStack: [],
   redoStack: [],
-  customDetailPacks: [],
   creatorAssets: [],
   mode: "explore",
   selectedId: null,
@@ -823,7 +779,7 @@ export const useStore = create<StoreState>((set, get) => ({
   selectedPlatformId: null,
   selectedWallId: null,
   selectedLandmarkId: null,
-  selectedWorldObjectId: null,
+  
   worldTool: { kind: "none" },
   showConstraintZones: false,
   entered: false,
@@ -837,48 +793,6 @@ export const useStore = create<StoreState>((set, get) => ({
   setEntered: (entered) => set({ entered }),
   resetViewToMapStart: () => moveViewToMapStart(get().composition.map),
   setViewer: (viewer) => set({ viewer }),
-  importDetailPack: async (file) => {
-    const pack = await importDetailPackBundle(file);
-    const customDetailPacks = [
-      ...get().customDetailPacks.filter((candidate) => candidate.id !== pack.id),
-      pack,
-    ];
-    registerCustomEnvironmentPacks(customDetailPacks);
-    set((state) => ({
-      customDetailPacks,
-      ...withHistory(state, `environment:pack:${pack.id}`),
-      composition: {
-        ...touchComposition(state.composition),
-        environment: normalizeEnvironment({
-          ...state.composition.environment,
-          pack: {
-            id: pack.id,
-            variant: pack.variants[0],
-            quality: "auto",
-          },
-        }),
-      },
-    }));
-  },
-  removeDetailPack: async (id) => {
-    await removeStoredDetailPack(id);
-    const customDetailPacks = get().customDetailPacks.filter((pack) => pack.id !== id);
-    registerCustomEnvironmentPacks(customDetailPacks);
-    set((state) => ({
-      customDetailPacks,
-      ...(state.composition.environment.pack?.id === id
-        ? {
-            composition: {
-              ...touchComposition(state.composition),
-              environment: normalizeEnvironment({
-                ...state.composition.environment,
-                pack: undefined,
-              }),
-            },
-          }
-        : {}),
-    }));
-  },
   importMaterialAsset: async (input) => {
     const asset = await importCreatorMaterial(input);
     const creatorAssets = [...get().creatorAssets, asset];
@@ -1042,13 +956,12 @@ export const useStore = create<StoreState>((set, get) => ({
         selectedPlatformId: mode === "edit" ? s.selectedPlatformId : null,
         selectedWallId: mode === "edit" ? s.selectedWallId : null,
         selectedLandmarkId: mode === "edit" ? s.selectedLandmarkId : null,
-        selectedWorldObjectId: mode === "edit" ? s.selectedWorldObjectId : null,
         worldTool: mode === "edit" ? s.worldTool : ({ kind: "none" } as WorldTool),
       };
     }),
   toggleMode: () => get().setMode(get().mode === "edit" ? "explore" : "edit"),
-  select: (selectedId) => set({ selectedId, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedWorldObjectId: null }),
-  selectMapPoint: (selectedMapPointKey) => set({ selectedMapPointKey, selectedMapSegmentId: null, selectedId: null, selectedStart: false, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedWorldObjectId: null }),
+  select: (selectedId) => set({ selectedId, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null }),
+  selectMapPoint: (selectedMapPointKey) => set({ selectedMapPointKey, selectedMapSegmentId: null, selectedId: null, selectedStart: false, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null }),
   moveMapPoint: (key, point, elevation) =>
     set((s) => {
       if (!s.composition.map.segments.some((segment) => mapPointExists(segment, key))) return s;
@@ -1078,15 +991,15 @@ export const useStore = create<StoreState>((set, get) => ({
         branchStartPointKey: s.branchStartPointKey === key ? null : s.branchStartPointKey,
       };
     }),
-  selectMapSegment: (selectedMapSegmentId) => set({ selectedMapSegmentId, selectedMapPointKey: null, selectedId: null, branchStartPointKey: null, selectedStart: false, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedWorldObjectId: null }),
-  setBranchStartPoint: (branchStartPointKey) => set({ branchStartPointKey, selectedMapPointKey: branchStartPointKey, selectedMapSegmentId: null, selectedId: null, selectedStart: false, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedWorldObjectId: null }),
-  selectStart: () => set({ selectedStart: true, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedWorldObjectId: null }),
+  selectMapSegment: (selectedMapSegmentId) => set({ selectedMapSegmentId, selectedMapPointKey: null, selectedId: null, branchStartPointKey: null, selectedStart: false, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null }),
+  setBranchStartPoint: (branchStartPointKey) => set({ branchStartPointKey, selectedMapPointKey: branchStartPointKey, selectedMapSegmentId: null, selectedId: null, selectedStart: false, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null }),
+  selectStart: () => set({ selectedStart: true, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedRoomId: null, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null }),
   setStartGizmoMode: (startGizmoMode) => set({ startGizmoMode }),
 
   selectLandmark: (selectedLandmarkId) =>
     set({
       selectedLandmarkId,
-      selectedWorldObjectId: null,
+      
       selectedId: null,
       selectedMapPointKey: null,
       selectedMapSegmentId: null,
@@ -1104,15 +1017,10 @@ export const useStore = create<StoreState>((set, get) => ({
     const creatorAsset = state.creatorAssets.find(
       (asset) => asset.kind === "landmark" && asset.id === assetId,
     );
-    const pack = environmentPackById(state.composition.environment.pack?.id);
-    const packId = pack?.landmarks.some((landmark) => landmark.id === assetId)
-      ? pack.id
-      : undefined;
     const scale = creatorAsset?.kind === "landmark" ? creatorAsset.defaultScale : 1;
     const landmark: EnvironmentLandmarkPlacement = {
       id: newId(),
       assetId,
-      ...(packId ? { packId } : {}),
       position: [x, surfaceHeightAt(state.composition.map, [x, z]), z],
       rotation: [0, 0, 0],
       scale: [scale, scale, scale],
@@ -1127,7 +1035,7 @@ export const useStore = create<StoreState>((set, get) => ({
         }),
       },
       selectedLandmarkId: landmark.id,
-      selectedWorldObjectId: null,
+      
       selectedId: null,
       selectedMapPointKey: null,
       selectedMapSegmentId: null,
@@ -1189,7 +1097,7 @@ export const useStore = create<StoreState>((set, get) => ({
         }),
       },
       selectedLandmarkId: copy.id,
-      selectedWorldObjectId: null,
+      
       selectedId: null,
       selectedMapPointKey: null,
       selectedMapSegmentId: null,
@@ -1216,7 +1124,7 @@ export const useStore = create<StoreState>((set, get) => ({
         ...touchComposition(s.composition),
         environment: normalizeEnvironment({ ...s.composition.environment, generated }),
       },
-      selectedWorldObjectId: null,
+      
     }));
   },
   regenerateWorld: (mode) => {
@@ -1233,7 +1141,6 @@ export const useStore = create<StoreState>((set, get) => ({
         ...touchComposition(s.composition),
         environment: normalizeEnvironment({ ...s.composition.environment, generated: next }),
       },
-      ...pruneSelectionAfterWorldChange(s, next),
     }));
   },
   regenerateWorldRegion: (radius) => {
@@ -1253,7 +1160,6 @@ export const useStore = create<StoreState>((set, get) => ({
         ...touchComposition(s.composition),
         environment: normalizeEnvironment({ ...s.composition.environment, generated: next }),
       },
-      ...pruneSelectionAfterWorldChange(s, next),
     }));
   },
   clearGeneratedWorld: () =>
@@ -1263,7 +1169,7 @@ export const useStore = create<StoreState>((set, get) => ({
         ...touchComposition(s.composition),
         environment: normalizeEnvironment({ ...s.composition.environment, generated: undefined }),
       },
-      selectedWorldObjectId: null,
+      
       worldTool: { kind: "none" },
     })),
   setWorldParams: (params) =>
@@ -1356,157 +1262,14 @@ export const useStore = create<StoreState>((set, get) => ({
         },
       };
     }),
-  selectWorldObject: (selectedWorldObjectId) =>
-    set({
-      selectedWorldObjectId,
-      selectedLandmarkId: null,
-      selectedId: null,
-      selectedMapPointKey: null,
-      selectedMapSegmentId: null,
-      branchStartPointKey: null,
-      selectedStart: false,
-      selectedRoomId: null,
-      selectedEntranceIndex: null,
-      selectedPlatformId: null,
-      selectedWallId: null,
-    }),
-  addWorldObject: (kind, at) => {
-    const placed = loopEditPoint(get().composition.map, at);
-    const object: WorldObjectPlacement = {
-      id: newId(),
-      kind,
-      position: [placed[0], 0, placed[1]],
-      yaw: 0,
-      scale: 1,
-      userPlaced: true,
-    };
-    set((s) => {
-      const generated = s.composition.environment.generated;
-      if (!generated) return s;
-      return {
-        ...withHistory(s, `world:object:${object.id}:add`),
-        composition: {
-          ...touchComposition(s.composition),
-          environment: normalizeEnvironment({
-            ...s.composition.environment,
-            generated: { ...generated, objects: [...generated.objects, object] },
-          }),
-        },
-        selectedWorldObjectId: object.id,
-      };
-    });
-  },
-  updateWorldObject: (id, patch) =>
-    set((s) => {
-      const generated = s.composition.environment.generated;
-      const before = generated?.objects.find((object) => object.id === id);
-      if (!generated || !before) return s;
-      const edit = before.userPlaced ? undefined : classifyObjectEdit(before, patch);
-      return {
-        ...withHistory(s, `world:object:${id}:${Object.keys(patch).sort().join(",")}`),
-        composition: {
-          ...touchComposition(s.composition),
-          environment: normalizeEnvironment({
-            ...s.composition.environment,
-            generated: {
-              ...generated,
-              objects: generated.objects.map((object) =>
-                object.id === id ? { ...object, ...patch, ...(edit ? { edit } : {}) } : object,
-              ),
-            },
-          }),
-        },
-      };
-    }),
-  deleteWorldObject: (id) =>
-    set((s) => {
-      const generated = s.composition.environment.generated;
-      if (!generated) return s;
-      const locks = { ...generated.locks };
-      delete locks[id];
-      return {
-        ...withHistory(s, `world:object:${id}:delete`),
-        composition: {
-          ...touchComposition(s.composition),
-          environment: normalizeEnvironment({
-            ...s.composition.environment,
-            generated: { ...generated, locks, objects: generated.objects.filter((object) => object.id !== id) },
-          }),
-        },
-        selectedWorldObjectId: s.selectedWorldObjectId === id ? null : s.selectedWorldObjectId,
-      };
-    }),
-  duplicateWorldObject: (id) => {
-    const state = get();
-    const generated = state.composition.environment.generated;
-    const source = generated?.objects.find((object) => object.id === id);
-    if (!generated || !source) return;
-    const copy: WorldObjectPlacement = {
-      ...source,
-      id: newId(),
-      position: [source.position[0] + 2, source.position[1], source.position[2] + 2],
-      userPlaced: true,
-    };
-    delete copy.edit;
-    set((s) => ({
-      ...withHistory(s, `world:object:${copy.id}:duplicate`),
-      composition: {
-        ...touchComposition(s.composition),
-        environment: normalizeEnvironment({
-          ...s.composition.environment,
-          generated: { ...generated, objects: [...generated.objects, copy] },
-        }),
-      },
-      selectedWorldObjectId: copy.id,
-    }));
-  },
-  markWorldObjectEdit: (id, level) =>
-    set((s) => {
-      const generated = s.composition.environment.generated;
-      const before = generated?.objects.find((object) => object.id === id);
-      if (!generated || !before || before.userPlaced || before.edit === "major" || before.edit === level) return s;
-      return {
-        // Same key as the drag's position updates, so the upgrade coalesces
-        // into the drag's single undo entry.
-        ...withHistory(s, `world:object:${id}:position`),
-        composition: {
-          ...touchComposition(s.composition),
-          environment: normalizeEnvironment({
-            ...s.composition.environment,
-            generated: {
-              ...generated,
-              objects: generated.objects.map((object) => (object.id === id ? { ...object, edit: level } : object)),
-            },
-          }),
-        },
-      };
-    }),
-  setWorldObjectLock: (id, locked) =>
-    set((s) => {
-      const generated = s.composition.environment.generated;
-      if (!generated) return s;
-      const locks = { ...generated.locks };
-      if (locked) locks[id] = true;
-      else delete locks[id];
-      return {
-        ...withHistory(s, `world:object:${id}:lock`),
-        composition: {
-          ...touchComposition(s.composition),
-          environment: normalizeEnvironment({
-            ...s.composition.environment,
-            generated: { ...generated, locks },
-          }),
-        },
-      };
-    }),
   // Picking a tool clears the object selection so brush/place clicks never
   // fight the inspector; selecting an object clears the tool (see scene).
   setWorldTool: (worldTool) =>
-    set(worldTool.kind !== "none" ? { worldTool, selectedWorldObjectId: null } : { worldTool }),
+    set(worldTool.kind !== "none" ? { worldTool } : { worldTool }),
   setShowConstraintZones: (showConstraintZones) => set({ showConstraintZones }),
 
   selectRoom: (selectedRoomId) =>
-    set({ selectedRoomId, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedWorldObjectId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
+    set({ selectedRoomId, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
 
   addRoom: () => {
     const map = get().composition.map;
@@ -1572,11 +1335,11 @@ export const useStore = create<StoreState>((set, get) => ({
       entrances: room.entrances.map((entrance) => ({ ...entrance })),
     };
     get().setMap({ rooms: [...map.rooms, copy] });
-    set({ selectedRoomId: copy.id, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedWorldObjectId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false });
+    set({ selectedRoomId: copy.id, selectedEntranceIndex: null, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false });
   },
 
   selectEntrance: (roomId, index) =>
-    set({ selectedRoomId: roomId, selectedEntranceIndex: index, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedWorldObjectId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
+    set({ selectedRoomId: roomId, selectedEntranceIndex: index, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
 
   addEntrance: (roomId, side) => {
     const map = get().composition.map;
@@ -1584,7 +1347,7 @@ export const useStore = create<StoreState>((set, get) => ({
     if (!room) return;
     const entrances: RoomEntrance[] = [...room.entrances, { side, width: 5, offset: 0 }];
     get().updateRoom(roomId, { entrances });
-    set({ selectedRoomId: roomId, selectedEntranceIndex: entrances.length - 1, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedWorldObjectId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, selectedStart: false });
+    set({ selectedRoomId: roomId, selectedEntranceIndex: entrances.length - 1, selectedPlatformId: null, selectedWallId: null, selectedLandmarkId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, selectedStart: false });
   },
 
   updateEntrance: (roomId, index, patch) => {
@@ -1680,7 +1443,7 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   selectPlatform: (selectedPlatformId) =>
-    set({ selectedPlatformId, selectedWallId: null, selectedLandmarkId: null, selectedWorldObjectId: null, selectedRoomId: null, selectedEntranceIndex: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
+    set({ selectedPlatformId, selectedWallId: null, selectedLandmarkId: null, selectedRoomId: null, selectedEntranceIndex: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
 
   // Attach a platform to a terminal path point; alignment positions it just
   // past that point so its near edge meets the path.
@@ -1747,11 +1510,11 @@ export const useStore = create<StoreState>((set, get) => ({
       elevation: platformElevation(map, platform),
     };
     get().setMap({ preset: "custom", platforms: [...map.platforms, copy] });
-    set({ selectedPlatformId: copy.id, selectedWallId: null, selectedRoomId: null, selectedEntranceIndex: null, selectedLandmarkId: null, selectedWorldObjectId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false });
+    set({ selectedPlatformId: copy.id, selectedWallId: null, selectedRoomId: null, selectedEntranceIndex: null, selectedLandmarkId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false });
   },
 
   selectWall: (selectedWallId) =>
-    set({ selectedWallId, selectedPlatformId: null, selectedLandmarkId: null, selectedWorldObjectId: null, selectedRoomId: null, selectedEntranceIndex: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
+    set({ selectedWallId, selectedPlatformId: null, selectedLandmarkId: null, selectedRoomId: null, selectedEntranceIndex: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false }),
 
   addWall: () => {
     const map = get().composition.map;
@@ -1792,7 +1555,7 @@ export const useStore = create<StoreState>((set, get) => ({
       end: [wall.end[0] + CLONE_OFFSET, wall.end[1] + CLONE_OFFSET],
     };
     get().setMap({ preset: "custom", walls: [...map.walls, copy] });
-    set({ selectedWallId: copy.id, selectedPlatformId: null, selectedRoomId: null, selectedEntranceIndex: null, selectedLandmarkId: null, selectedWorldObjectId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false });
+    set({ selectedWallId: copy.id, selectedPlatformId: null, selectedRoomId: null, selectedEntranceIndex: null, selectedLandmarkId: null, selectedId: null, selectedMapPointKey: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false });
   },
 
   // Create a room whose doorway is centered on the given path point and aligned
@@ -2112,17 +1875,13 @@ export const useStore = create<StoreState>((set, get) => ({
 
   // Load the saved library (or seed/migrate) and resolve the current composition.
   initLibrary: async () => {
-    const [customDetailPacks, creatorAssets] = await Promise.all([
-      loadStoredDetailPacks(),
-      loadCreatorAssets(),
-    ]);
-    registerCustomEnvironmentPacks(customDetailPacks);
+    const creatorAssets = await loadCreatorAssets();
     const { library, currentId } = loadLibrary();
     const current = library.find((c) => c.id === currentId) ?? library[0];
     const composition = current ? await resolveComposition(current) : get().composition;
     moveViewToMapStart(composition.map);
     clearHistoryMarkers();
-    set({ library, composition, customDetailPacks, creatorAssets, undoStack: [], redoStack: [] });
+    set({ library, composition, creatorAssets, undoStack: [], redoStack: [] });
   },
 
   // Switch the current composition. The outgoing one is flushed back into the
@@ -2168,7 +1927,7 @@ export const useStore = create<StoreState>((set, get) => ({
     set({
       composition: comp,
       selectedId: null,
-      selectedLandmarkId: null, selectedWorldObjectId: null,
+      selectedLandmarkId: null,
       library: next,
       undoStack: [],
       redoStack: [],
@@ -2179,11 +1938,7 @@ export const useStore = create<StoreState>((set, get) => ({
   // Load an exported bundle as a new composition in the library and switch to it.
   importComposition: async (file) => {
     const comp = normalizeComposition(await importBundle(file));
-    const [customDetailPacks, creatorAssets] = await Promise.all([
-      loadStoredDetailPacks(),
-      loadCreatorAssets(),
-    ]);
-    registerCustomEnvironmentPacks(customDetailPacks);
+    const creatorAssets = await loadCreatorAssets();
     const { composition, library } = get();
     revokeBlobUrls(composition);
     const next = upsert(upsert(library, serializeComposition(composition)), serializeComposition(comp));
@@ -2192,8 +1947,7 @@ export const useStore = create<StoreState>((set, get) => ({
     set({
       composition: comp,
       selectedId: null,
-      selectedLandmarkId: null, selectedWorldObjectId: null,
-      customDetailPacks,
+      selectedLandmarkId: null,
       creatorAssets,
       library: next,
       undoStack: [],

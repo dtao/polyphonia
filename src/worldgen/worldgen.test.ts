@@ -372,11 +372,16 @@ describe("path-loop awareness", () => {
 });
 
 describe("regeneration modes", () => {
+  // Generation itself is terrain-only now, but older manifests still carry
+  // objects; preservation semantics keep governing them. Build a vestigial
+  // object population with the dormant scatter engine.
   function editedWorld() {
     const generated = generateEnvironment("forest", pathMap, [], { seed: 7, now: NOW });
-    expect(generated.objects.length).toBeGreaterThan(3);
-    const [a, b, c, d] = generated.objects;
-    const objects = generated.objects.map((object) =>
+    expect(generated.objects).toEqual([]);
+    const scattered = scatterObjects(generated, flattenSources(pathMap, [], generated));
+    expect(scattered.length).toBeGreaterThan(3);
+    const [a, b, c, d] = scattered;
+    const objects = scattered.map((object) =>
       object.id === a.id
         ? { ...object, edit: "major" as const }
         : object.id === b.id

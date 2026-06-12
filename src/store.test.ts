@@ -142,10 +142,7 @@ describe("store edit contracts", () => {
     });
   });
 
-  it("adds, edits, selects, and removes pack landmarks through history", async () => {
-    useStore.getState().setEnvironment({
-      pack: { id: "verdant-grove", variant: "temperate", quality: "auto" },
-    });
+  it("adds, edits, selects, and removes landmarks through history", async () => {
     useStore.setState({ undoStack: [], redoStack: [] });
 
     useStore.getState().addLandmark("evergreen");
@@ -310,17 +307,12 @@ describe("store edit contracts", () => {
     });
   });
 
-  it("keeps placed landmarks when changing detail packs", () => {
-    useStore.getState().setEnvironment({
-      pack: { id: "verdant-grove", variant: "temperate", quality: "auto" },
-    });
+  it("keeps placed landmarks when changing other environment settings", () => {
     useStore.getState().addLandmark("evergreen");
     const landmark = useStore.getState().composition.environment.landmarks?.[0];
-    expect(landmark?.packId).toBe("verdant-grove");
+    expect(landmark?.assetId).toBe("evergreen");
 
-    useStore.getState().setEnvironment({
-      pack: { id: "atlas-cavern", variant: "ember", quality: "auto" },
-    });
+    useStore.getState().setEnvironment({ surfaces: { floor: "moss" } });
 
     expect(useStore.getState().composition.environment.landmarks).toEqual([landmark]);
   });

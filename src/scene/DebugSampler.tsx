@@ -4,7 +4,6 @@ import { debugEnabled, environmentDebugSnapshot, mapDebugSnapshot, memorySnapsho
 import { useStore } from "../store";
 import * as THREE from "three";
 import { markerDebugSnapshot } from "./markerDebug";
-import { environmentInstanceDebugSnapshot } from "./environmentInstanceDebug";
 
 export function DebugSampler() {
   const { camera, gl, scene } = useThree();
@@ -35,10 +34,7 @@ export function DebugSampler() {
       position,
       ...room,
       map: mapDebugSnapshot(state.composition.map),
-      environment: {
-        ...environmentDebugSnapshot(state.composition.environment),
-        instances: environmentInstanceDebugSnapshot(),
-      },
+      environment: environmentDebugSnapshot(state.composition.environment),
       render: renderDebugSnapshot(gl, scene),
       visual: markerDebugSnapshot(now),
       audio: state.engine?.debugSnapshot() ?? null,

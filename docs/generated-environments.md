@@ -1,9 +1,18 @@
 # Generated Environments
 
-Procedural visual worlds (terrain + scattered objects) that composers can
-generate, sculpt, and selectively regenerate around their stems and paths.
-Read this before touching `src/worldgen/`, `src/scene/GeneratedWorld.tsx`, the
-`generated` branch of `EnvironmentSettings`, or the World panel.
+Procedural visual landscapes (a sculptable terrain heightfield, gradient sky,
+and mood lighting) that composers generate and selectively regenerate around
+their stems and paths. Read this before touching `src/worldgen/`,
+`src/scene/GeneratedWorld.tsx`, the `generated` branch of
+`EnvironmentSettings`, or the World panel.
+
+> **Object scatter is retired from the product** (the primitive tree/rock
+> archetypes weren't worth keeping): generation is terrain-only, nothing
+> renders `generated.objects`, and there is no placement UI. The scatter
+> engine (`scatter.ts`, `objects.ts`) and its preservation semantics stay in
+> the codebase, tested and dormant, as the foundation for a future
+> imported-asset object system. Vestigial objects in older manifests are
+> preserved by normalization but not shown.
 
 ## Data model (`src/environment.ts`)
 
@@ -15,9 +24,9 @@ Read this before touching `src/worldgen/`, `src/scene/GeneratedWorld.tsx`, the
   published world renders identically in every browser).
 - `center`, `size` — the square region; `center` is the map start at
   generation time and stays fixed afterward.
-- `objects: WorldObjectPlacement[]` — baked scatter placements, because they
-  are individually editable. `position[1]` is an **offset above the terrain**,
-  not an absolute height, so preserved objects re-seat when terrain re-rolls.
+- `objects: WorldObjectPlacement[]` — baked scatter placements (vestigial:
+  see the retirement note above; normalized and preserved, never rendered).
+  `position[1]` is an offset above the terrain, not an absolute height.
   Objects carry provenance: `userPlaced`, `edit: "minor" | "major"`.
 - `edits: GeneratedEdit[]` — ordered terrain ops: brush strokes
   (`raise`/`lower`/`smooth`) and regional `reseed`s. The final heightfield is
@@ -51,47 +60,37 @@ and stems, moving a stem or path keeps its clearance without regenerating.
 Brush edits are scaled by the same mask so a stroke across a path leaves the
 walkable strip untouched.
 
-Objects respect constraints live too: a path drawn or moved *after*
-generation hides the generated objects it now runs through
-(`objectBlockedByClearZone`, same margin as scatter placement). This is
-display-time suppression, not deletion — the manifest keeps the objects, so
-they return if the path moves away. Hand-placed objects are deliberate and
-never hidden.
-
 ## Determinism and editing
 
-- Scatter is a jittered grid hashed per cell from the seed: same seed → same
-  world, and a regional regenerate with a fresh seed only reshuffles its cells.
 - The runtime heightfield is memoized in `src/worldgen/sampler.ts`. Appended
   brush ops apply incrementally to the cached grid (no full rebuild per
   stroke); stem-drag mask changes rebuild at most every ~300 ms.
 - A brush stroke emits several small ops coalesced into one undo entry
   (`withHistory` key `world:terrain`); `finishTerrainStroke` classifies the
-  whole stroke major/minor by cumulative impact. Gizmo drags likewise classify
-  against the drag start at release (`markWorldObjectEdit`).
+  whole stroke major/minor by cumulative impact.
+- (Dormant) scatter is a jittered grid hashed per cell from the seed: same
+  seed → same placements, and it rejects the live clear zones
+  (`objectBlockedByClearZone` mirrors the same margin for display-time
+  suppression when objects return).
 
 ## Regeneration preservation modes (`src/worldgen/regen.ts`)
 
-| Mode | Terrain edits | Objects kept |
-|---|---|---|
-| `overwrite` | wiped | none |
-| `keep-constraints` | wiped | none (constraint toggles forced on) |
-| `keep-major` | major only | locked, user-placed, major-edited |
-| `keep-all` | all | locked, user-placed, any-edited |
-| regional (`regenerateRegion`) | drops strokes centered in the circle, appends a `reseed` | everything outside + preserved inside |
+| Mode | Terrain sculpting kept |
+|---|---|
+| `overwrite` | none |
+| `keep-constraints` | none (constraint toggles forced on) |
+| `keep-major` | major strokes only |
+| `keep-all` | all strokes |
+| regional (`regenerateRegion`) | drops strokes centered in the circle, appends a `reseed` |
 
 All modes re-roll the base seed except regional, which keeps it and blends a
-fresh region seed.
+fresh region seed. The same modes also govern vestigial objects (locked /
+user-placed / edited ones survive) so older manifests behave predictably.
 
 ## Rendering (`src/scene/GeneratedWorld.tsx`)
 
 - Terrain is one opaque vertex-colored mesh → the scene fog fades it at the
   shared radial band for free.
-- Scatter objects are primitive-composed archetypes
-  (`src/worldgen/objects.ts`) rendered through `createFadedInstancedMesh`, so
-  per-instance visibility routes through `radialFade` per the AGENTS.md rule.
-  Instance picking maps `event.instanceId` through the per-refill
-  `visibleIds` array.
 - The biome mood adds lights and a camera-following gradient sky dome
   (`skyGradient.ts`): with one authored sky color both shades derive from it
   (lighter horizon, darker zenith); an optional second color (`skyColor2`)
@@ -116,13 +115,9 @@ you approach the end loop point.
   off-corridor (masked by the same distance fade that hides the structural
   map-copy seam). No terrain mesh copies are rendered — overlapping opaque
   heightfields would z-fight.
-- Scatter objects get transformed instance copies (chained via
-  `tiledMapTransforms`, static around the region center); copies share the
-  base object's id, so clicking one selects the object it is a view of.
 - The zone before the end seam *displays* the transported start-side world,
-  so scatter skips generating there, and composer edits (brush centers,
-  placements, gizmo drops) are remapped to their fundamental-domain spot via
-  `loopEditPoint` — the transport shows them under the cursor.
+  so composer edits (brush centers) are remapped to their fundamental-domain
+  spot via `loopEditPoint` — the transport shows them under the cursor.
 - `shade`/`patch` on the display field keep terrain coloring (height ramp and
   patch noise) consistent across the seam despite the lift.
 
@@ -131,18 +126,20 @@ region as before.
 
 ## UI
 
-- World panel (top-left stack, `src/ui/WorldPanel.tsx`): biome, generate,
-  shape/mood sliders, constraint toggles + zone visualization, edit tools
-  (brushes, place, remove), regeneration modes, regional regenerate.
-- Selected-object inspector (bottom-left, `src/ui/WorldObjectPanel.tsx`):
-  rotation/scale/height/tint, lock, duplicate, delete; gizmo moves it.
+The World panel (top-left stack, `src/ui/WorldPanel.tsx`) is the single
+visual-world surface:
+
+- Terrain & sky: biome, generate, relief/feature-size/mood sliders, sky
+  gradient colors, ground palette, constraint toggles + zone visualization,
+  sculpt brushes, regeneration modes, regional regenerate.
+- Materials: imported PBR materials assigned to map floor/wall/ceiling
+  (rendered by `src/scene/SurfaceDressing.tsx`), with import.
+- Objects: imported GLB landmarks (creator assets) placed at the viewer and
+  moved with the gizmo; inspector in `src/ui/LandmarkPanel.tsx`.
 
 ## Tuning constants worth knowing
 
-- `MAX_WORLD_OBJECTS` (scatter.ts) caps manifest size and draw cost; density
-  0 scatters nothing at all (bare hills and valleys).
-- Major/minor thresholds live in regen.ts (`MAJOR_TERRAIN_IMPACT`,
-  `MAJOR_MOVE_DISTANCE`).
+- Major/minor stroke thresholds live in regen.ts (`MAJOR_TERRAIN_IMPACT`).
 - `FLATTEN_BLEND` / `RIM_BLEND` (terrain.ts) shape how terrain meets paths and
   the region edge.
 - `FLATTEN_DROP` (terrain.ts): flattened terrain seats this far below the

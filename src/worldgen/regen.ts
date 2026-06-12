@@ -25,9 +25,6 @@ import {
 } from "../environment";
 import type { CompositionMap } from "../map";
 import type { TrackDef } from "../composition";
-import { flattenSources } from "./terrain";
-import { MAX_WORLD_OBJECTS, scatterObjects } from "./scatter";
-import { loopFieldContext } from "./loop";
 
 export type RegenerationMode = "overwrite" | "keep-constraints" | "keep-major" | "keep-all";
 
@@ -74,7 +71,11 @@ export function generateEnvironment(
   tracks: TrackDef[],
   options: { seed: number; size?: number; now: string },
 ): GeneratedEnvironment {
-  const generated: GeneratedEnvironment = {
+  // Object scatter is retired from generation (the primitive archetypes never
+  // looked good enough); worlds generate as terrain-only. The scatter engine
+  // (scatter.ts) stays dormant for a future imported-asset object system, and
+  // vestigial objects in older manifests are preserved but not rendered.
+  return {
     biome,
     seed: options.seed,
     params: defaultGeneratedParams(biome),
@@ -86,8 +87,6 @@ export function generateEnvironment(
     locks: {},
     generatedAt: options.now,
   };
-  const sources = flattenSources(map, tracks, generated);
-  return { ...generated, objects: scatterObjects(generated, sources, { loop: loopFieldContext(map) }) };
 }
 
 export function regenerateEnvironment(
@@ -111,7 +110,7 @@ export function regenerateEnvironment(
   const locks: Record<string, boolean> = {};
   for (const id of Object.keys(generated.locks)) if (keptIds.has(id)) locks[id] = true;
 
-  const next: GeneratedEnvironment = {
+  return {
     ...generated,
     seed: options.seed,
     constraints,
@@ -119,12 +118,6 @@ export function regenerateEnvironment(
     locks,
     objects: kept,
     generatedAt: options.now,
-  };
-  const sources = flattenSources(map, tracks, next);
-  const budget = Math.max(0, MAX_WORLD_OBJECTS - kept.length);
-  return {
-    ...next,
-    objects: [...kept, ...scatterObjects(next, sources, { avoid: kept, budget, loop: loopFieldContext(map) })],
   };
 }
 
@@ -161,15 +154,5 @@ export function regenerateRegion(
   const locks: Record<string, boolean> = {};
   for (const id of Object.keys(generated.locks)) if (keptIds.has(id)) locks[id] = true;
 
-  const next: GeneratedEnvironment = { ...generated, edits, locks, objects: kept, generatedAt: options.now };
-  const sources = flattenSources(map, tracks, next);
-  const budget = Math.max(0, MAX_WORLD_OBJECTS - kept.length);
-  const fresh = scatterObjects(next, sources, {
-    region,
-    avoid: kept,
-    seed: options.seed,
-    budget,
-    loop: loopFieldContext(map),
-  });
-  return { ...next, objects: [...kept, ...fresh] };
+  return { ...generated, edits, locks, objects: kept, generatedAt: options.now };
 }

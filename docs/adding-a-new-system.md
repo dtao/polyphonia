@@ -100,20 +100,18 @@ Acoustics" panel).
 
 ---
 
-## New environment pack
+## New visual layer for the world
 
-See `docs/environment-authoring.md` for the full workflow. The short version:
+The detail-pack system was retired; the visual layers are now the generated
+world ([generated-environments.md](generated-environments.md)) and imported
+creator assets ([creator-assets.md](creator-assets.md)): PBR surface
+materials assigned to map surfaces and self-contained GLB objects placed
+directly. Rules that still apply to anything visual:
 
-1. Add a `EnvironmentPackDefinition` to `src/environmentPacks.ts` (or bundle it
-   as a custom pack loaded via the Store UI).
+1. It is purely visual: it must not affect movement or acoustics.
 
-2. Pack definitions include: id, label, asset paths, quality budgets, variant
-   definitions, attribution, and optional postprocessing config.
-
-3. The pack is purely visual: it must not affect movement or acoustics.
-
-4. Test against the radial-fade rules: any geometry the pack adds that uses
-   non-opaque materials must route opacity/intensity through `radialFade`.
+2. Test against the radial-fade rules: any geometry using non-opaque
+   materials must route opacity/intensity through `radialFade`.
 
 ---
 
