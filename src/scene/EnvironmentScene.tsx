@@ -83,9 +83,12 @@ export function EnvironmentScene({
   const floor = environment.surfaces?.floor ? materialById.get(environment.surfaces.floor) : undefined;
   const wall = environment.surfaces?.wall ? materialById.get(environment.surfaces.wall) : undefined;
   const ceiling = environment.surfaces?.ceiling ? materialById.get(environment.surfaces.ceiling) : undefined;
-  const surfaceMaterials = floor
-    ? { floor, ...(wall ? { wall } : {}), ...(ceiling ? { ceiling } : {}) }
-    : undefined;
+  // Any assigned surface mounts the dressing — wall/ceiling choices must work
+  // without a floor material (P33).
+  const surfaceMaterials =
+    floor || wall || ceiling
+      ? { ...(floor ? { floor } : {}), ...(wall ? { wall } : {}), ...(ceiling ? { ceiling } : {}) }
+      : undefined;
   return (
     <>
       {/* Scene background AND fog are owned imperatively by <FogSync>, not JSX

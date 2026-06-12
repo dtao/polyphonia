@@ -3,9 +3,9 @@ import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import type { SurfaceMaterialDefinition } from "../creatorAssets";
 import type { CompositionMap, MapPlatform, MapRoom, WalkableSegment } from "../map";
-import { mapPointKey, platformElevation, roomElevation } from "../map";
+import { mapPointKey, platformElevation, roomElevation, tunnelHeight } from "../map";
 import { DEFAULT_ENCLOSURE_HEIGHT } from "../spatialConstants";
-import { pathJointPatches } from "./MapScene";
+import { pathJointPatches, roomWallBoxes } from "./MapScene";
 
 // Textured shells over the map's walkable geometry, driven by imported
 // creator materials assigned in the World panel (floor/wall/ceiling). Purely
@@ -13,14 +13,19 @@ import { pathJointPatches } from "./MapScene";
 // and acoustics. All meshes use standard opaque materials, so the scene fog
 // fades them at the shared radial band without extra wiring.
 
+// Each surface resolves independently; absent means "no texture assigned for
+// that surface" and its shells simply don't render (the reactive map geometry
+// underneath keeps its default look). Wall falls back to floor, and ceiling to
+// wall/floor, preserving the historical "one material dresses everything"
+// behavior when only a floor is chosen.
 interface ResolvedSurfaceMaterials {
-  floor: THREE.MeshStandardMaterial;
-  wall: THREE.MeshStandardMaterial;
-  ceiling: THREE.MeshStandardMaterial;
+  floor?: THREE.MeshStandardMaterial;
+  wall?: THREE.MeshStandardMaterial;
+  ceiling?: THREE.MeshStandardMaterial;
 }
 
 export interface SurfaceMaterialDefinitions {
-  floor: SurfaceMaterialDefinition;
+  floor?: SurfaceMaterialDefinition;
   wall?: SurfaceMaterialDefinition;
   ceiling?: SurfaceMaterialDefinition;
 }
@@ -44,20 +49,24 @@ export function SurfaceMapDressing({
 function MapShell({ map, materials }: { map: CompositionMap; materials: ResolvedSurfaceMaterials }) {
   return (
     <group>
-      {map.segments.length === 0 && map.rooms.length === 0 && map.platforms.length === 0 && (
+      {materials.floor && map.segments.length === 0 && map.rooms.length === 0 && map.platforms.length === 0 && (
         <FallbackFloor map={map} material={materials.floor} />
       )}
       {map.segments.map((segment) => (
         <SegmentShell key={segment.id} map={map} segment={segment} materials={materials} />
       ))}
-      <JointPatches map={map} material={materials.floor} />
+      {materials.floor && <JointPatches map={map} material={materials.floor} />}
       {map.rooms.map((room) => (
-        <RoomFloor key={room.id} map={map} room={room} material={materials.floor} />
+        <group key={room.id}>
+          {materials.floor && <RoomFloor map={map} room={room} material={materials.floor} />}
+          <RoomShell map={map} room={room} materials={materials} />
+        </group>
       ))}
-      {map.platforms.map((platform) => (
-        <PlatformFloor key={platform.id} map={map} platform={platform} material={materials.floor} />
-      ))}
-      {map.walls.map((wall) => {
+      {materials.floor &&
+        map.platforms.map((platform) => (
+          <PlatformFloor key={platform.id} map={map} platform={platform} material={materials.floor!} />
+        ))}
+      {materials.wall && map.walls.map((wall) => {
         const dx = wall.end[0] - wall.start[0];
         const dz = wall.end[1] - wall.start[1];
         const length = Math.hypot(dx, dz);
@@ -196,15 +205,20 @@ function SegmentShell({
     (startY + endY) / 2 - 0.1,
     (segment.start[1] + segment.end[1]) / 2,
   ];
-  const wallHeight = Math.max(map.wallHeight, DEFAULT_ENCLOSURE_HEIGHT);
+  // Match the reactive tunnel interior (MapScene's Tunnel), which uses the
+  // room-aware tunnel height rather than the map wall height, so the textured
+  // shells sit exactly over the plain interior surfaces.
+  const wallHeight = tunnelHeight(map, segment, DEFAULT_ENCLOSURE_HEIGHT);
   const tunnel = segment.kind === "tunnel";
 
   return (
     <group position={position} rotation={[0, yaw, 0]}>
-      <mesh material={materials.floor} rotation={[pitch, 0, 0]} castShadow receiveShadow>
-        <boxGeometry args={[segment.width, 0.26, length]} />
-      </mesh>
-      {tunnel && (
+      {materials.floor && (
+        <mesh material={materials.floor} rotation={[pitch, 0, 0]} castShadow receiveShadow>
+          <boxGeometry args={[segment.width, 0.26, length]} />
+        </mesh>
+      )}
+      {tunnel && materials.wall && (
         <>
           <mesh
             material={materials.wall}
@@ -224,16 +238,45 @@ function SegmentShell({
           >
             <boxGeometry args={[0.45, wallHeight, length]} />
           </mesh>
-          <mesh
-            material={materials.ceiling}
-            position={[0, wallHeight, 0]}
-            rotation={[pitch, 0, 0]}
-            castShadow
-            receiveShadow
-          >
-            <boxGeometry args={[segment.width + 0.8, 0.45, length]} />
-          </mesh>
         </>
+      )}
+      {tunnel && materials.ceiling && (
+        <mesh
+          material={materials.ceiling}
+          position={[0, wallHeight, 0]}
+          rotation={[pitch, 0, 0]}
+          castShadow
+          receiveShadow
+        >
+          <boxGeometry args={[segment.width + 0.8, 0.45, length]} />
+        </mesh>
+      )}
+    </group>
+  );
+}
+
+// Textured shells over a room's walls and ceiling. The reactive room geometry
+// (MapScene's Room) stays underneath for selection/edit affordances; these
+// boxes are slightly inflated so the texture wins the depth test from both
+// sides. Wall boxes reuse the room's doorway-aware spans so entrances stay
+// open, and the ceiling box's underside hangs just below the reactive ceiling
+// plane so it is what you see from inside.
+function RoomShell({ map, room, materials }: { map: CompositionMap; room: MapRoom; materials: ResolvedSurfaceMaterials }) {
+  if (!materials.wall && !materials.ceiling) return null;
+  const elevation = roomElevation(map, room);
+  const h = room.height;
+  return (
+    <group position={[room.center[0], elevation, room.center[1]]} rotation={[0, room.rotation, 0]}>
+      {materials.wall &&
+        roomWallBoxes(room).map((b, i) => (
+          <mesh key={i} material={materials.wall} position={[b.pos[0], h / 2, b.pos[1]]} castShadow receiveShadow>
+            <boxGeometry args={[b.size[0] + 0.04, h, b.size[1] + 0.04]} />
+          </mesh>
+        ))}
+      {materials.ceiling && (
+        <mesh material={materials.ceiling} position={[0, h + 0.2, 0]} castShadow receiveShadow>
+          <boxGeometry args={[room.width + 0.5, 0.45, room.depth + 0.5]} />
+        </mesh>
       )}
     </group>
   );
@@ -309,9 +352,13 @@ function useSurfaceMaterials(
     }),
     [source],
   );
-  const urls = useMemo(
-    () => [...new Set(Object.values(definitions).flatMap(materialTextureUrls))],
+  const defined = useMemo(
+    () => Object.values(definitions).filter((definition): definition is SurfaceMaterialDefinition => !!definition),
     [definitions],
+  );
+  const urls = useMemo(
+    () => [...new Set(defined.flatMap(materialTextureUrls))],
+    [defined],
   );
   const loaded = useTexture(urls) as THREE.Texture[];
   const textures = useMemo(() => {
@@ -322,9 +369,7 @@ function useSurfaceMaterials(
       const texture = source.clone();
       texture.wrapS = THREE.RepeatWrapping;
       texture.wrapT = THREE.RepeatWrapping;
-      if (urls[index] === definitions.floor.albedo ||
-          urls[index] === definitions.wall.albedo ||
-          urls[index] === definitions.ceiling.albedo) {
+      if (defined.some((definition) => definition.albedo === urls[index])) {
         texture.colorSpace = THREE.SRGBColorSpace;
       }
       texture.needsUpdate = true;
@@ -332,24 +377,24 @@ function useSurfaceMaterials(
     });
     surfaceTextureCache.set(cacheKey, created);
     return created;
-  }, [cacheId, definitions, loaded, urls]);
+  }, [cacheId, defined, loaded, urls]);
   const textureByUrl = useMemo(
     () => new Map(urls.map((url, index) => [url, textures[index]])),
     [textures, urls],
   );
   const materials = useMemo(
     () => ({
-      floor: createSurfaceMaterial(definitions.floor, textureByUrl, editMode),
-      wall: createSurfaceMaterial(definitions.wall, textureByUrl, editMode),
-      ceiling: createSurfaceMaterial(definitions.ceiling, textureByUrl, editMode),
+      floor: definitions.floor ? createSurfaceMaterial(definitions.floor, textureByUrl, editMode) : undefined,
+      wall: definitions.wall ? createSurfaceMaterial(definitions.wall, textureByUrl, editMode) : undefined,
+      ceiling: definitions.ceiling ? createSurfaceMaterial(definitions.ceiling, textureByUrl, editMode) : undefined,
     }),
     [definitions, editMode, textureByUrl],
   );
   useEffect(
     () => () => {
-      materials.floor.dispose();
-      if (materials.wall !== materials.floor) materials.wall.dispose();
-      if (materials.ceiling !== materials.floor && materials.ceiling !== materials.wall) materials.ceiling.dispose();
+      materials.floor?.dispose();
+      if (materials.wall !== materials.floor) materials.wall?.dispose();
+      if (materials.ceiling !== materials.floor && materials.ceiling !== materials.wall) materials.ceiling?.dispose();
     },
     [materials],
   );

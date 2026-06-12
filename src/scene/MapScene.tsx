@@ -277,7 +277,8 @@ function doorPanelData(room: MapRoom, entrance: RoomEntrance): { center: [number
 }
 
 // Wall boxes in room-local coords; each entrance leaves a gap in its wall.
-function roomWallBoxes(room: MapRoom): Array<{ pos: [number, number]; size: [number, number] }> {
+// Exported so SurfaceDressing can build matching textured shells (P33).
+export function roomWallBoxes(room: MapRoom): Array<{ pos: [number, number]; size: [number, number] }> {
   const hw = room.width / 2;
   const hd = room.depth / 2;
   const t = wallThickness(room.wallThickness);
