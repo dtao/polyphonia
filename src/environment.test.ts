@@ -19,6 +19,30 @@ describe("environment normalization", () => {
     });
   });
 
+  it("keeps explicit floor planes — including an empty list — and omits when absent", () => {
+    expect(normalizeEnvironment({})).not.toHaveProperty("floorPlanes");
+    expect(normalizeEnvironment({ floorPlanes: [] })).toEqual({ floorPlanes: [] });
+    expect(
+      normalizeEnvironment({
+        floorPlanes: [
+          { id: "a", elevation: -2.15 },
+          { id: "b", elevation: -40, opacity: 0.5 },
+          { id: "c", elevation: 999 }, // clamped
+          { id: "", elevation: 0 }, // dropped: blank id
+          { id: "d", elevation: NaN }, // dropped: bad elevation
+          { id: "e", elevation: 3, opacity: 4 }, // opacity clamped to 1 → omitted
+        ],
+      }),
+    ).toEqual({
+      floorPlanes: [
+        { id: "a", elevation: -2.15 },
+        { id: "b", elevation: -40, opacity: 0.5 },
+        { id: "c", elevation: 100 },
+        { id: "e", elevation: 3 },
+      ],
+    });
+  });
+
   it("normalizes authored pack selections", () => {
     expect(
       normalizeEnvironment({

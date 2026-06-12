@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { GENERATED_BIOMES, GeneratedBiome } from "../environment";
+import { GENERATED_BIOMES, GeneratedBiome, MAX_FLOOR_PLANES, type FloorPlanePlacement } from "../environment";
+import { newId } from "../id";
+import { UNDERFLOOR_HEIGHT } from "../scene/mapHeights";
 import { BUILTIN_MATERIALS, type CreatorLandmarkAsset, type CreatorMaterialAsset } from "../creatorAssets";
 import type { RegenerationMode } from "../worldgen/regen";
 import { skyGradient } from "../scene/skyGradient";
@@ -45,6 +47,9 @@ export function WorldPanel({ open, onOpen, onClose }: { open: boolean; onOpen: (
     ...creatorAssets.filter((asset): asset is CreatorMaterialAsset => asset.kind === "material"),
   ];
   const landmarks = creatorAssets.filter((asset): asset is CreatorLandmarkAsset => asset.kind === "landmark");
+  // Absent = the legacy default plane; editing it materializes the array.
+  const floorPlanes = environment.floorPlanes ?? [{ id: "default", elevation: UNDERFLOOR_HEIGHT }];
+  const setFloorPlanes = (next: FloorPlanePlacement[]) => setEnvironment({ floorPlanes: next });
 
   if (!open) {
     return (
@@ -236,6 +241,67 @@ export function WorldPanel({ open, onOpen, onClose }: { open: boolean; onOpen: (
         <div style={miniHint}>
           Terrain ground textures the generated landscape (tinted by its height palette); floor/wall/ceiling
           dress the map geometry.
+        </div>
+      </div>
+
+      <div style={section}>
+        <div style={label}>Reflective floors</div>
+        {floorPlanes.map((plane, index) => (
+          <div key={plane.id} style={assetRow}>
+            <input
+              aria-label={`Floor plane ${index + 1} elevation`}
+              type="number"
+              step={0.5}
+              value={plane.elevation}
+              onChange={(event) => {
+                const elevation = event.currentTarget.valueAsNumber;
+                if (!Number.isFinite(elevation)) return;
+                setFloorPlanes(floorPlanes.map((p) => (p.id === plane.id ? { ...p, elevation } : p)));
+              }}
+              style={{ ...select, width: 64, marginTop: 0 }}
+              title="Elevation (y) of this reflective plane"
+            />
+            <input
+              aria-label={`Floor plane ${index + 1} strength`}
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={plane.opacity ?? 1}
+              onChange={(event) =>
+                setFloorPlanes(floorPlanes.map((p) => (p.id === plane.id ? { ...p, opacity: event.currentTarget.valueAsNumber } : p)))
+              }
+              style={{ flex: 1 }}
+              title="Glow strength"
+            />
+            <button
+              style={assetAddButton}
+              onClick={() => setFloorPlanes([...floorPlanes, { ...plane, id: newId() }])}
+              disabled={floorPlanes.length >= MAX_FLOOR_PLANES}
+              title="Clone this plane (then adjust its elevation)"
+            >
+              ⧉
+            </button>
+            <button style={assetRemoveButton} onClick={() => setFloorPlanes(floorPlanes.filter((p) => p.id !== plane.id))} title="Remove this plane">
+              ×
+            </button>
+          </div>
+        ))}
+        {!floorPlanes.length && <div style={miniHint}>No reflective planes. Maps that dip below 0 won’t intersect one.</div>}
+        <button
+          style={subtleButton}
+          onClick={() => setFloorPlanes([...floorPlanes, { id: newId(), elevation: floorPlanes[floorPlanes.length - 1]?.elevation ?? UNDERFLOOR_HEIGHT }])}
+          disabled={floorPlanes.length >= MAX_FLOOR_PLANES}
+        >
+          Add reflective plane
+        </button>
+        {environment.floorPlanes && (
+          <button style={subtleButton} onClick={() => setEnvironment({ floorPlanes: undefined })} title="Back to the single default plane">
+            Reset to default
+          </button>
+        )}
+        <div style={miniHint}>
+          The translucent light-reflecting surface under the map. Move it, stack several at different elevations, or remove them all.
         </div>
       </div>
 

@@ -16,9 +16,30 @@ export interface EnvironmentLandmarkPlacement {
   scale: [number, number, number];
 }
 
+/**
+ * One translucent light-reflecting floor plane (the brushed "mirror" surface
+ * historically rendered once at y = -2.15 under every map). Composers can move
+ * it, stack several, or remove them all. Purely visual.
+ */
+export interface FloorPlanePlacement {
+  id: string;
+  elevation: number;
+  /** 0..1 strength multiplier for the surface's glow/pattern; absent = 1. */
+  opacity?: number;
+}
+
+export const MAX_FLOOR_PLANES = 8;
+
 export interface EnvironmentSettings {
   /** Optional authored visual layer. The map remains authoritative for gameplay. */
   pack?: EnvironmentPackSelection;
+  /**
+   * Reflective floor planes. ABSENT means "inherit the legacy default" (one
+   * plane at the engine's underfloor height) so older manifests keep their
+   * look and publish hash; an explicit empty array means the composer removed
+   * them all.
+   */
+  floorPlanes?: FloorPlanePlacement[];
   /** Creator-authored visual instances. They never affect movement or acoustics. */
   landmarks?: EnvironmentLandmarkPlacement[];
   /**
@@ -223,12 +244,37 @@ export function normalizeEnvironment(value: Partial<EnvironmentSettings> | undef
     : [];
   const surfaces = normalizeSurfaces(value?.surfaces);
   const generated = normalizeGenerated(value?.generated);
+  const floorPlanes = normalizeFloorPlanes(value?.floorPlanes);
   return {
     ...(pack ? { pack } : {}),
     ...(landmarks.length ? { landmarks } : {}),
     ...(surfaces ? { surfaces } : {}),
     ...(generated ? { generated } : {}),
+    // An explicit empty array survives (= "no planes"); only absent stays absent.
+    ...(floorPlanes ? { floorPlanes } : {}),
   };
+}
+
+// Absent/invalid → undefined (inherit the legacy default plane). A present
+// array — including an empty one — is preserved verbatim after dropping
+// malformed entries, so "removed all planes" round-trips.
+function normalizeFloorPlanes(value: unknown): FloorPlanePlacement[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const planes: FloorPlanePlacement[] = [];
+  for (const raw of value) {
+    const plane = raw as Partial<FloorPlanePlacement> | undefined;
+    if (!plane || typeof plane !== "object") continue;
+    if (typeof plane.id !== "string" || !plane.id.trim()) continue;
+    if (typeof plane.elevation !== "number" || !Number.isFinite(plane.elevation)) continue;
+    if (planes.length >= MAX_FLOOR_PLANES) break;
+    const opacity = clampNumber(plane.opacity, 0, 1, 1);
+    planes.push({
+      id: plane.id.trim(),
+      elevation: Math.max(-100, Math.min(100, plane.elevation)),
+      ...(opacity < 1 ? { opacity } : {}),
+    });
+  }
+  return planes;
 }
 
 export function normalizeGenerated(value: unknown): GeneratedEnvironment | undefined {

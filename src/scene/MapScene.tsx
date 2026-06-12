@@ -725,6 +725,10 @@ function WallHandles({ wall }: { wall: MapWall }) {
   );
 }
 
+// The composition's reflective floor planes: the classic light-reflecting
+// translucent surface, now placeable. Absent config = the legacy single plane
+// at UNDERFLOOR_HEIGHT; composers can move it, stack up to MAX_FLOOR_PLANES, or
+// remove them all (environment.floorPlanes: []).
 function ReflectiveUnderfloor({
   segments,
   tracks,
@@ -736,14 +740,20 @@ function ReflectiveUnderfloor({
   lightTracks: TrackDef[];
   previewFade: number;
 }) {
+  const floorPlanes = useStore((s) => s.composition.environment.floorPlanes);
   const bounds = useMemo(() => mapBounds(segments, tracks), [segments, tracks]);
+  const planes = floorPlanes ?? [{ id: "default", elevation: UNDERFLOOR_HEIGHT }];
   if (!bounds) return null;
 
   return (
-    <mesh position={[bounds.center[0], UNDERFLOOR_HEIGHT, bounds.center[1]]} rotation={[-Math.PI / 2, 0, 0]}>
-      <planeGeometry args={[bounds.size, bounds.size, 96, 96]} />
-      <ReflectiveUnderfloorMaterial tracks={lightTracks} previewFade={previewFade} />
-    </mesh>
+    <group>
+      {planes.map((plane) => (
+        <mesh key={plane.id} position={[bounds.center[0], plane.elevation, bounds.center[1]]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[bounds.size, bounds.size, 96, 96]} />
+          <ReflectiveUnderfloorMaterial tracks={lightTracks} previewFade={previewFade * (plane.opacity ?? 1)} />
+        </mesh>
+      ))}
+    </group>
   );
 }
 
