@@ -16,7 +16,8 @@ element in `src/App.tsx`. All 3D components live under `src/scene/`.
     <SurfaceMapDressing />  ← imported-material shells over map geometry
     <CreatorLandmarks />    ← imported GLB objects (placed landmarks)
     <MapScene />            ← path/room/platform/wall meshes + edit handles
-    <TrackMarker /> × N     ← glowing orbs for each stem
+    <LightDirector />       ← the ONLY stem point lights (budgeted pool)
+    <TrackMarker /> × N     ← glowing orbs for each stem (no lights)
     <TrackGizmo />          ← transform gizmo on selected stem
     <EditControls />        ← orbit camera for edit mode
     <Player />              ← movement + pointer-lock for explore mode
@@ -157,6 +158,24 @@ are now:
 
 All of it is visual only: the map remains authoritative for movement and
 acoustics.
+
+## Point-light budget
+
+Three.js forward rendering evaluates every visible light on every lit
+fragment, so light cost = light count × lit surface area — and generated
+terrain makes the lit surface the whole screen. Stems therefore do NOT own
+point lights. `<LightDirector>` owns a small fixed pool and assigns it per
+frame to the highest-priority light sources (each stem, plus its nearest
+tiled copy), where priority = audio-driven intensity, full inside the
+light's range, falling quadratically beyond it, and zero past the
+radial-fade cutoff. An FPS controller (`lightBudget.ts`) steps the pool
+through `LIGHT_TIERS` (16 → 0) with hysteresis and cooldowns; slot handoffs
+damp intensity so lights never pop, and the pool size only changes on tier
+transitions, keeping shader programs stable.
+
+Do not mount per-object `<pointLight>`s for new features — add candidates to
+the director instead. Debug: `?debug=1` exposes `window.polyLights`
+(fps/tier/pool/active) and `?lightBudget=N` pins the pool size (dev builds).
 
 ## DPR cap
 

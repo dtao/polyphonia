@@ -100,7 +100,6 @@ export function exportDebugSamples(): void {
       debugNoPointLights: debugFlag("debugNoPointLights"),
       debugNoLoopPreview: debugFlag("debugNoLoopPreview"),
       debugNoLoopLights: debugFlag("debugNoLoopLights"),
-      debugNoEchoLights: debugFlag("debugNoEchoLights"),
       debugNoFlare: debugFlag("debugNoFlare"),
       debugNoStarRays: debugFlag("debugNoStarRays"),
       debugTerrainProbe: debugFlag("debugTerrainProbe"),
