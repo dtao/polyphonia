@@ -494,6 +494,11 @@ const panel: React.CSSProperties = {
   backdropFilter: "blur(8px)",
   color: "white",
   fontFamily: "system-ui, sans-serif",
+  // The panel has outgrown short viewports (visible radius, fade points,
+  // auto-pilot, vertical visibility…) — scroll inside it rather than cutting
+  // off the lower sections.
+  maxHeight: "calc(100vh - 160px)",
+  overflowY: "auto",
 };
 
 const head: React.CSSProperties = {
