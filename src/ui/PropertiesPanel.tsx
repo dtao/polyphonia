@@ -491,10 +491,10 @@ function Slider({
 
 const panel: React.CSSProperties = {
   position: "absolute",
+  top: 190,
   bottom: 16,
   left: 16,
   width: 300,
-  maxHeight: "calc(100vh - 90px)",
   overflowY: "auto",
   boxSizing: "border-box",
   padding: 16,
