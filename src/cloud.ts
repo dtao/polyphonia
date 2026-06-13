@@ -252,7 +252,7 @@ export async function publishComposition(
         if (prevHash[assetId] !== hash) {
           const { error } = await sb.storage
             .from(BUCKET)
-            .upload(path, blob, { contentType: blob.type || "audio/mpeg", upsert: true });
+            .upload(path, blob, { contentType: blob.type || "audio/mpeg", upsert: true, cacheControl: "31536000" });
           if (error) throw error;
         }
         published = { url, hash };
@@ -352,6 +352,7 @@ async function publishCreatorAssets(
       const { error } = await bucket.upload(path, entry.blob, {
         contentType: entry.type || entry.blob.type || "application/octet-stream",
         upsert: true,
+        cacheControl: "31536000",
       });
       if (error) throw error;
       urls.set(reference, publicUrl);
