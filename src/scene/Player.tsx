@@ -166,6 +166,13 @@ export function Player() {
     };
   }, [entered, gl.domElement]);
 
+  // Movement runs at priority -1 so the camera moves (and any loop wrap is
+  // applied, with viewState updated) BEFORE every default-priority useFrame.
+  // Camera followers registered earlier in the tree (SkyDome, the terrain
+  // lattice offset, FogSync) would otherwise render one frame behind on a
+  // loop-wrap teleport — a single-frame flicker. Every other useFrame in the
+  // app uses the default priority, where execution order is mount order; keep
+  // it that way so this stays the lone exception.
   useFrame((_, dt) => {
     if (!entered) return; // no movement until the experience has started
     const lookSmoothing = 34;
@@ -318,7 +325,7 @@ export function Player() {
         });
       }
     }
-  });
+  }, -1);
 
   // Before entering, the lock is armed on the entry button so its single click
   // both starts the experience and locks the pointer (no second click). After
