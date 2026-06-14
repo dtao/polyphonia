@@ -118,4 +118,4 @@ earlier ones.
 - [x] P33 Setting texture for walls and ceiling doesn't seem to affect tunnels or rooms.
 - [ ] P34 Standalone walls with textures flicker due to z-fighting.
 - [ ] P35 There should be some warning if you try to set a loop bound in a way that will cause the map to infinitely collide with itself.
-- [ ] P36 In Edit mode, it should be possible to select objects "through" the ceiling of a room (i.e. clicking on a stem orb should select the stem orb, not the room). This is important since the default perspective in Edit mode is elevated, so the user is typically positioned above the room.
+- [x] P36 In Edit mode, it should be possible to select objects "through" the ceiling of a room (i.e. clicking on a stem orb should select the stem orb, not the room). This is important since the default perspective in Edit mode is elevated, so the user is typically positioned above the room.

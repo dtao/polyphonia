@@ -123,12 +123,12 @@ function Room({ room, elevationY, editMode, selected }: { room: MapRoom; elevati
           <planeGeometry args={[room.width, room.depth]} />
           <meshStandardMaterial color={selected ? "#16302e" : "#14161e"} roughness={0.92} metalness={0.08} side={THREE.DoubleSide} />
         </mesh>
-        <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, h, 0]}>
+        <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, h, 0]} raycast={editMode ? () => null : undefined}>
           <planeGeometry args={[room.width, room.depth]} />
           <meshStandardMaterial color={wallColor} roughness={0.85} metalness={0.05} transparent={wallTransparent} opacity={wallOpacity} depthWrite={!editMode} side={THREE.DoubleSide} />
         </mesh>
         {boxes.map((b, i) => (
-          <mesh key={i} position={[b.pos[0], h / 2, b.pos[1]]}>
+          <mesh key={i} position={[b.pos[0], h / 2, b.pos[1]]} raycast={editMode ? () => null : undefined}>
             <boxGeometry args={[b.size[0], h, b.size[1]]} />
             <meshStandardMaterial color={wallColor} roughness={0.85} metalness={0.05} transparent={wallTransparent} opacity={wallOpacity} depthWrite={!editMode} side={THREE.DoubleSide} />
           </mesh>
