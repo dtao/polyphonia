@@ -1,8 +1,8 @@
 import * as THREE from "three";
 import { Composition, StemDirectivity, StemShape, TrackDef } from "../composition";
-import { CompositionMap, MapRoom, containingRoom, loopPreviewElevationOffset, roomWallObstructionCount, tiledMapTransforms, transformLoopPoint, tunnelObstructionCount, wallObstructionCount } from "../map";
+import { CompositionMap, LoopPreviewTransform, MapRoom, containingRoom, roomWallObstructionCount, tiledMapTransforms, tunnelObstructionCount, wallObstructionCount } from "../map";
 import { createPlaceholderStems } from "./synth";
-import { effectivePannerPosition as computeEffectivePannerPosition, distanceSqToListener as computeDistanceSqToListener, filterAudibleCandidates } from "./audioSpatial";
+import { effectivePannerPosition as computeEffectivePannerPosition, distanceSqToListener as computeDistanceSqToListener, selectAudibleTrackInstances } from "./audioSpatial";
 
 interface LiveTrack {
   def: TrackDef;
@@ -111,6 +111,12 @@ export class AudioEngine {
   private listenerPosition = new THREE.Vector3();
   private trackPosition = new THREE.Vector3();
   private map: CompositionMap | null = null;
+  // Tiled loop transforms depend only on the listener position + map, not on
+  // any individual stem, so memoize them across the per-track acoustics loop.
+  private cachedLoopTransforms: LoopPreviewTransform[] | null = null;
+  private cachedLoopTransformsMap: CompositionMap | null = null;
+  private cachedLoopTransformsX = NaN;
+  private cachedLoopTransformsZ = NaN;
   private activeRoomAcousticsKey: string | null = null;
   private tileAudioPreviewRadius: number;
   private activeRoomDebug: { id: string; decay: number; reverbSend: number; impulseDuration: number } | null = null;
@@ -1072,31 +1078,40 @@ export class AudioEngine {
     const audibleDistance = Math.max(far, this.tileAudioPreviewRadius);
     const audibleDistanceSq = audibleDistance * audibleDistance;
 
-    if (this.distanceSqToListener(base) > audibleDistanceSq) return [];
-
-    if (!this.map) return [{ id: "base", position: base, direction }];
-    const previews = tiledMapTransforms(this.map, [this.listenerPosition.x, this.listenerPosition.z], this.tileAudioPreviewRadius);
-    if (!previews.length) return [{ id: "base", position: base, direction }];
-
-    const candidates: AudibleTrackInstance[] = [{ id: "base", position: base, direction }];
-    for (const preview of previews) {
-      const [x, z] = transformLoopPoint(preview, [base[0], base[2]]);
-      const c = Math.cos(preview.rotation);
-      const s = Math.sin(preview.rotation);
-      candidates.push({
-        id: preview.id,
-        position: [x, base[1] + loopPreviewElevationOffset(this.map, preview), z],
-        direction: [direction[0] * c + direction[1] * s, -direction[0] * s + direction[1] * c],
-      });
-    }
-    return filterAudibleCandidates(
-      candidates,
+    return selectAudibleTrackInstances(
+      base,
+      direction,
+      this.listenerLoopTransforms(),
+      this.map,
       audibleDistanceSq,
       this.maxVirtualAudioInstancesPerTrack,
       this.listenerPosition.x,
       this.listenerPosition.y,
       this.listenerPosition.z,
     );
+  }
+
+  // Loop/tile transforms for the current listener position. They depend only on
+  // the listener + map (not the stem), so memoize across the per-track acoustics
+  // loop to avoid recomputing them once per track.
+  private listenerLoopTransforms(): LoopPreviewTransform[] {
+    if (!this.map) return [];
+    const x = this.listenerPosition.x;
+    const z = this.listenerPosition.z;
+    if (
+      this.cachedLoopTransforms &&
+      this.cachedLoopTransformsMap === this.map &&
+      this.cachedLoopTransformsX === x &&
+      this.cachedLoopTransformsZ === z
+    ) {
+      return this.cachedLoopTransforms;
+    }
+    const previews = tiledMapTransforms(this.map, [x, z], this.tileAudioPreviewRadius);
+    this.cachedLoopTransforms = previews;
+    this.cachedLoopTransformsMap = this.map;
+    this.cachedLoopTransformsX = x;
+    this.cachedLoopTransformsZ = z;
+    return previews;
   }
 
   private distanceSqToListener(pos: [number, number, number]): number {

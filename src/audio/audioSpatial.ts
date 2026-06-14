@@ -2,6 +2,13 @@
 // tested and benchmarked independently of the Web Audio API.
 
 import type { StemShape } from "../composition";
+import { CompositionMap, LoopPreviewTransform, loopPreviewElevationOffset, transformLoopPoint } from "../map";
+
+export interface AudibleInstance {
+  id: string;
+  position: [number, number, number];
+  direction: [number, number];
+}
 
 function clamp(v: number, min: number, max: number): number {
   return v < min ? min : v > max ? max : v;
@@ -87,4 +94,46 @@ export function filterAudibleCandidates<T extends { position: [number, number, n
   return sorted
     .filter((c) => distanceSqToListener(c.position, lx, ly, lz) <= audibleDistanceSq)
     .slice(0, maxInstances);
+}
+
+/**
+ * Chooses which instances of a stem are audible for the current listener: the
+ * base (untiled) stem plus any path-loop / tile copies near the listener,
+ * limited to the nearest `maxInstances`.
+ *
+ * Crucially, the base-distance cull is only applied when there is NO loop/tile
+ * wrapping near the listener (`previews` empty). When previews exist, a far base
+ * may have a wrapped copy sitting right next to the listener — e.g. a stem near
+ * a path-loop seam once the listener crosses it — so we build every candidate
+ * and let the distance filter decide. Culling on base distance here is what
+ * silenced near-seam stems across the seam.
+ */
+export function selectAudibleTrackInstances(
+  base: [number, number, number],
+  direction: [number, number],
+  previews: LoopPreviewTransform[],
+  map: Pick<CompositionMap, "elevations" | "tiling"> | null,
+  audibleDistanceSq: number,
+  maxInstances: number,
+  lx: number,
+  ly: number,
+  lz: number,
+): AudibleInstance[] {
+  if (!map || !previews.length) {
+    if (distanceSqToListener(base, lx, ly, lz) > audibleDistanceSq) return [];
+    return [{ id: "base", position: base, direction }];
+  }
+
+  const candidates: AudibleInstance[] = [{ id: "base", position: base, direction }];
+  for (const preview of previews) {
+    const [x, z] = transformLoopPoint(preview, [base[0], base[2]]);
+    const c = Math.cos(preview.rotation);
+    const s = Math.sin(preview.rotation);
+    candidates.push({
+      id: preview.id,
+      position: [x, base[1] + loopPreviewElevationOffset(map, preview), z],
+      direction: [direction[0] * c + direction[1] * s, -direction[0] * s + direction[1] * c],
+    });
+  }
+  return filterAudibleCandidates(candidates, audibleDistanceSq, maxInstances, lx, ly, lz);
 }
