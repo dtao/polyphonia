@@ -96,14 +96,23 @@ export function StemLoopMeter({ track }: { track: TrackDef }) {
     return clamp(((clientX - rect.left) / rect.width) * duration, 0, duration);
   };
 
+  // Snap a source-time position to the nearest whole beat, like the coarse
+  // offset (P44). The clip in/out points line up with the beat grid just as the
+  // offset does, so trims stay musically aligned.
+  const snapToBeat = (sec: number): number =>
+    clamp(Math.round(sec / beatLength) * beatLength, 0, duration);
+
   const startDrag = (handle: "in" | "out") => (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
     const onMove = (ev: PointerEvent) => {
-      const sec = secFromPointer(ev.clientX);
-      if (handle === "in") setTrackLoop(track.id, { loopStart: Math.min(sec, outSec - 0.01) });
-      else setTrackLoop(track.id, { loopEnd: Math.max(sec, inSec + 0.01) });
+      const sec = snapToBeat(secFromPointer(ev.clientX));
+      // Keep at least a one-beat region between the handles.
+      if (handle === "in")
+        setTrackLoop(track.id, { loopStart: Math.max(0, Math.min(sec, outSec - beatLength)) });
+      else
+        setTrackLoop(track.id, { loopEnd: Math.min(duration, Math.max(sec, inSec + beatLength)) });
     };
     const onUp = (ev: PointerEvent) => {
       try {
