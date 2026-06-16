@@ -360,7 +360,14 @@ function OrbVisual({
   );
 }
 
-const PILLAR_HEIGHT = 60;
+// Effectively infinite: the column extends far past any visible vertical range
+// so it always reads as rising/descending forever (P38). The downward half is
+// naturally hidden by opaque terrain (additive depth-tested fragments behind the
+// ground are rejected); the upward half climbs into the sky. The whole shaft
+// shares one opacity, so it looks like a continuous beam rather than a capped
+// cylinder. Audio already treats pillars as vertically infinite (XZ-only
+// falloff in audioSpatial), so this matches what the listener hears.
+const PILLAR_HEIGHT = 4000;
 const PILLAR_RADIUS = 0.18;
 const PILLAR_GLOW_RADIUS = PILLAR_RADIUS * 4.5;
 
