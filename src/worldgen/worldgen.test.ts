@@ -6,6 +6,7 @@ import {
   flattenAt,
   flattenSources,
   insideClearZone,
+  terrainClipVolumes,
   terrainHeightAt,
 } from "./terrain";
 import { objectBlockedByClearZone, scatterObjects } from "./scatter";
@@ -23,6 +24,7 @@ import { canonicalFieldPoint, deriveRegion } from "./region";
 import { generatedGroundHeight, resetTerrainCache, terrainFieldFor } from "./sampler";
 import type { Composition } from "../composition";
 import { normalizeMap, surfaceHeightAt } from "../map";
+import { DEFAULT_ENCLOSURE_HEIGHT } from "../spatialConstants";
 import type { TrackDef } from "../composition";
 import type { GeneratedEnvironment, WorldObjectPlacement } from "../environment";
 import { defaultGeneratedParams } from "../environment";
@@ -113,43 +115,90 @@ describe("terrain field", () => {
     }
   });
 
-  it("leaves terrain high over buried tunnels and rooms (P31)", () => {
-    const undergroundMap = normalizeMap({
+  it("never carves terrain to tunnels or rooms — terrain stays natural (P31)", () => {
+    // Tunnels/rooms are enclosed by their own geometry; the terrain keeps its
+    // natural height (a hillside can sit overhead) and the corridor is cleared
+    // by cutting the mesh at render, not by lowering the field. So the terrain
+    // over a tunnel must match a reference field where that tunnel is absent.
+    const generated = testEnvironment();
+    // Both maps share the same approach segment + start; only the tunnel
+    // differs. Sample past the approach's flatten blend (x >= 16) so any
+    // difference is purely the tunnel's doing.
+    const tunnelMap = normalizeMap({
+      preset: "custom",
+      segments: [
+        { id: "surface", start: [-30, 0], end: [0, 0], width: 4 },
+        { id: "tunnel", start: [0, 0], end: [40, 0], width: 4, kind: "tunnel" },
+      ],
+      start: { position: [-30, 0], direction: [1, 0] },
+    });
+    const bareMap = normalizeMap({
+      preset: "custom",
+      segments: [{ id: "surface", start: [-30, 0], end: [0, 0], width: 4 }],
+      start: { position: [-30, 0], direction: [1, 0] },
+    });
+    const tunnelField = buildTerrainField(generated, flattenSources(tunnelMap, [], generated));
+    const bareField = buildTerrainField(generated, flattenSources(bareMap, [], generated));
+    for (let x = 16; x <= 36; x += 4) {
+      // Identical to the no-tunnel field, and NOT pinned to the floor.
+      expect(terrainHeightAt(tunnelField, x, 0)).toBeCloseTo(terrainHeightAt(bareField, x, 0), 4);
+      expect(terrainHeightAt(tunnelField, x, 0)).not.toBeCloseTo(-FLATTEN_DROP, 1);
+    }
+  });
+
+  it("reports tunnel/room hole-clip volumes and keeps scatter off them (P31)", () => {
+    const map = normalizeMap({
       preset: "custom",
       segments: [
         { id: "surface", start: [-40, 0], end: [0, 0], width: 4 },
         { id: "tunnel", start: [0, 0], end: [40, 0], width: 4, kind: "tunnel" },
       ],
+      rooms: [
+        { id: "chamber", center: [50, 0], rotation: 0, width: 8, depth: 6, height: 3, elevation: -20, entrances: [{ side: "west", width: 3, offset: 0 }] },
+      ],
       start: { position: [-40, 0], direction: [1, 0] },
       elevations: { "0.000,0.000": -20, "40.000,0.000": -20 },
     });
+    const volumes = terrainClipVolumes(map);
+    // The open surface segment is not cut; the tunnel and room are.
+    const strips = volumes.filter((v) => v.kind === "strip");
+    const boxes = volumes.filter((v) => v.kind === "box");
+    expect(strips).toHaveLength(1);
+    expect(boxes).toHaveLength(1);
+    const strip = strips[0] as Extract<(typeof volumes)[number], { kind: "strip" }>;
+    expect(strip.a).toEqual([0, 0]);
+    expect(strip.b).toEqual([40, 0]);
+    // Ceiling follows the floor at each end (= floor + tunnel height), lifted a
+    // hair so no rim survives. Both ends are at -20 here.
+    expect(strip.ceilingA).toBeGreaterThan(-20 + DEFAULT_ENCLOSURE_HEIGHT);
+    expect(strip.ceilingB).toBeGreaterThan(-20 + DEFAULT_ENCLOSURE_HEIGHT);
+    expect(strip.halfWidth).toBeGreaterThan(2); // wider than the corridor
+
+    // Scatter is still kept off the enclosed footprints.
     const generated = testEnvironment();
-    const field = buildTerrainField(generated, flattenSources(undergroundMap, [], generated));
-    // Over the buried tunnel's midsection, the landscape keeps its natural
-    // height instead of being dragged down to the corridor.
-    expect(terrainHeightAt(field, 25, 0)).toBeGreaterThan(-5);
+    const sources = flattenSources(map, [], generated);
+    expect(insideClearZone(sources, generated.constraints.buffer, 20, 0)).toBe(true); // in tunnel
+    expect(insideClearZone(sources, generated.constraints.buffer, 50, 0)).toBe(true); // in room
+  });
 
-    // The same tunnel at the surface still carves as before.
-    const surfaceTunnelMap = normalizeMap({
+  it("clips a sloped tunnel with a ceiling that follows the slope (P31)", () => {
+    // A tunnel diving 0 -> -10 must be cut by the ceiling at each end, not by a
+    // single height — otherwise terrain far above the deep end is removed.
+    const map = normalizeMap({
       preset: "custom",
-      segments: [{ id: "tunnel", start: [0, 0], end: [40, 0], width: 4, kind: "tunnel" }],
-      start: { position: [0, 0], direction: [1, 0] },
-    });
-    const surfaceField = buildTerrainField(generated, flattenSources(surfaceTunnelMap, [], generated));
-    expect(terrainHeightAt(surfaceField, 20, 0)).toBeCloseTo(-FLATTEN_DROP, 4);
-
-    // A fully buried room keeps the hillside above it too.
-    const buriedRoomMap = normalizeMap({
-      preset: "custom",
-      segments: [{ id: "tunnel", start: [0, 0], end: [30, 0], width: 4, kind: "tunnel" }],
-      rooms: [
-        { id: "chamber", center: [36, 0], rotation: 0, width: 8, depth: 8, height: 3, elevation: -20, entrances: [{ side: "west", width: 3, offset: 0 }] },
+      segments: [
+        { id: "in", start: [-20, 0], end: [0, 0], width: 4 },
+        { id: "dive", start: [0, 0], end: [30, 0], width: 4, kind: "tunnel" },
       ],
-      start: { position: [0, 0], direction: [1, 0] },
-      elevations: { "0.000,0.000": -20, "30.000,0.000": -20 },
+      start: { position: [-20, 0], direction: [1, 0] },
+      elevations: { "0.000,0.000": 0, "30.000,0.000": -10 },
     });
-    const roomField = buildTerrainField(generated, flattenSources(buriedRoomMap, [], generated));
-    expect(terrainHeightAt(roomField, 36, 0)).toBeGreaterThan(-5);
+    const strip = terrainClipVolumes(map).find((v) => v.kind === "strip") as Extract<
+      ReturnType<typeof terrainClipVolumes>[number],
+      { kind: "strip" }
+    >;
+    // Shallow end's ceiling sits ~10 above the deep end's.
+    expect(strip.ceilingA - strip.ceilingB).toBeCloseTo(10, 4);
   });
 
   it("applies raise edits away from paths but not across protected zones", () => {

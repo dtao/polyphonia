@@ -69,16 +69,19 @@ const FLATTEN_BLEND = 10;
 const FLATTEN_TARGET_SLOPE = 1.1;
 /** Width of the rim band where terrain falls back to the base level. */
 const RIM_BLEND = 26;
-/**
- * How far the natural terrain must clear a tunnel/room's ceiling (everywhere
- * along it) before the structure counts as buried and stops carving the
- * terrain down (P31).
- */
-const BURIED_CLEARANCE = 0.75;
 
 export type FlattenSource =
   | { kind: "strip"; a: [number, number]; b: [number, number]; halfWidth: number; ya: number; yb: number }
-  | { kind: "disc"; center: [number, number]; radius: number; y: number };
+  | { kind: "disc"; center: [number, number]; radius: number; y: number }
+  // Tunnels and rooms (P31): these are enclosed by their own floor/wall/ceiling
+  // geometry, so the terrain is NOT carved down to them — it keeps its natural
+  // height and the hillside stays overhead. Instead the terrain MESH is cut
+  // (see terrainClipVolumes / the clip in GeneratedWorld): any terrain that
+  // falls inside the interior is discarded, leaving a clean hole through the
+  // hill. These sources exist only to keep scatter off the structure (they are
+  // ignored by flattenAt, so they never pin the terrain height).
+  | { kind: "clearStrip"; a: [number, number]; b: [number, number]; halfWidth: number }
+  | { kind: "clearDisc"; center: [number, number]; radius: number };
 
 export interface TerrainField {
   center: [number, number];
@@ -106,21 +109,9 @@ export function terrainResolution(size: number): number {
 export function flattenSources(
   map: CompositionMap,
   tracks: Pick<TrackDef, "position">[],
-  generated: Pick<GeneratedEnvironment, "center" | "size" | "constraints" | "seed" | "params">,
+  generated: Pick<GeneratedEnvironment, "center" | "size" | "constraints">,
 ): FlattenSource[] {
   const sources: FlattenSource[] = [];
-  // The natural (un-carved) terrain height — base noise with the rim fade,
-  // before any flattening. Used to detect structures that sit entirely below
-  // the landscape: tunnels and rooms buried this way go *through* the terrain
-  // (P31) instead of dragging it down, so underground corridors and chambers
-  // are possible. Partially exposed structures still carve as before.
-  const naturalHeight = (x: number, z: number): number => {
-    const rim = 1 - smoothstep((Math.max(Math.abs(x - generated.center[0]), Math.abs(z - generated.center[1])) - (generated.size - RIM_BLEND)) / RIM_BLEND);
-    const scale = generated.params.terrainScale;
-    return fbm2(generated.seed, x / scale, z / scale, 4) * generated.params.terrainAmplitude * rim;
-  };
-  const buried = (samples: Array<[number, number]>, top: number): boolean =>
-    samples.every(([x, z]) => naturalHeight(x, z) > top + BURIED_CLEARANCE);
   // The spawn area always stays clear so entering a composition never drops
   // the listener into a tree or against a sudden slope.
   sources.push({
@@ -140,45 +131,28 @@ export function flattenSources(
       for (const segment of map.segments) {
         const a = copy ? transformLoopPoint(copy, segment.start) : segment.start;
         const b = copy ? transformLoopPoint(copy, segment.end) : segment.end;
-        const ya = pointElevation(map, mapPointKey(segment.start)) + lift;
-        const yb = pointElevation(map, mapPointKey(segment.end)) + lift;
-        // A tunnel whose ceiling stays below the natural landscape runs
-        // through it — leave the terrain alone so it reads as underground.
+        // Tunnels are enclosed: don't carve the terrain down to them. The
+        // terrain keeps its natural height (so a hillside can sit overhead) and
+        // the corridor is cleared by cutting a hole in the terrain mesh instead
+        // (see terrainClipVolumes). The clear* source only keeps scatter off it.
         if (isTunnelSegment(segment)) {
-          const top = Math.max(ya, yb) + tunnelHeight(map, segment, DEFAULT_ENCLOSURE_HEIGHT);
-          const mid: [number, number] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-          if (buried([a, mid, b], top)) continue;
+          sources.push({ kind: "clearStrip", a, b, halfWidth: segment.width / 2 });
+          continue;
         }
         sources.push({
           kind: "strip",
           a,
           b,
           halfWidth: segment.width / 2,
-          ya,
-          yb,
+          ya: pointElevation(map, mapPointKey(segment.start)) + lift,
+          yb: pointElevation(map, mapPointKey(segment.end)) + lift,
         });
       }
       for (const room of map.rooms) {
+        // Rooms are enclosed like tunnels: keep the terrain natural and cut the
+        // chamber out of the mesh rather than flattening the ground to it.
         const center = copy ? transformLoopPoint(copy, room.center) : room.center;
-        const radius = Math.hypot(room.width, room.depth) / 2;
-        const y = roomElevation(map, room) + lift;
-        // Same exception for fully buried rooms: underground chambers keep
-        // the hillside above them.
-        const top = y + room.height;
-        const ringSamples: Array<[number, number]> = [
-          center,
-          [center[0] + radius, center[1]],
-          [center[0] - radius, center[1]],
-          [center[0], center[1] + radius],
-          [center[0], center[1] - radius],
-        ];
-        if (buried(ringSamples, top)) continue;
-        sources.push({
-          kind: "disc",
-          center,
-          radius,
-          y,
-        });
+        sources.push({ kind: "clearDisc", center, radius: Math.hypot(room.width, room.depth) / 2 });
       }
       for (const platform of map.platforms) {
         sources.push({
@@ -212,7 +186,7 @@ function smoothstep(t: number): number {
 }
 
 /** Distance from a point to a strip's centerline (segment, not line). */
-function stripDistance(source: Extract<FlattenSource, { kind: "strip" }>, x: number, z: number): { d: number; t: number } {
+function stripDistance(source: { a: [number, number]; b: [number, number] }, x: number, z: number): { d: number; t: number } {
   const dx = source.b[0] - source.a[0];
   const dz = source.b[1] - source.a[1];
   const lengthSq = dx * dx + dz * dz;
@@ -243,9 +217,13 @@ export function flattenAt(
       const { d, t } = stripDistance(source, x, z);
       edge = d - (source.halfWidth + buffer);
       y = source.ya + (source.yb - source.ya) * t;
-    } else {
+    } else if (source.kind === "disc") {
       edge = Math.hypot(x - source.center[0], z - source.center[1]) - (source.radius + buffer);
       y = source.y;
+    } else {
+      // Tunnel/room (clear*) sources never pin the terrain height — the
+      // terrain keeps its natural height over them and the mesh is cut instead.
+      continue;
     }
     const m = smoothstep(edge / FLATTEN_BLEND);
     if (m < weight) {
@@ -262,13 +240,69 @@ export function flattenAt(
 /** Clearance test for scatter placement: true if (x, z) is too close to protected geometry. */
 export function insideClearZone(sources: FlattenSource[], buffer: number, x: number, z: number, margin = 1): boolean {
   for (const source of sources) {
-    const edge =
-      source.kind === "strip"
-        ? stripDistance(source, x, z).d - (source.halfWidth + buffer)
-        : Math.hypot(x - source.center[0], z - source.center[1]) - (source.radius + buffer);
+    let edge: number;
+    if (source.kind === "strip" || source.kind === "clearStrip") {
+      edge = stripDistance(source, x, z).d - (source.halfWidth + buffer);
+    } else {
+      edge = Math.hypot(x - source.center[0], z - source.center[1]) - (source.radius + buffer);
+    }
     if (edge < margin) return true;
   }
   return false;
+}
+
+/**
+ * A volume the terrain mesh is cut around so a tunnel/room interior reads as a
+ * clean hole through the hill (P31). The renderer discards any terrain fragment
+ * inside the footprint whose height is below `ceiling` — terrain ABOVE the
+ * ceiling (the hillside overhead) is kept, terrain that would poke into the
+ * enclosed space is removed. Heights are in base-map space (no loop/lattice
+ * lift); the renderer tests against the canonical sample coordinate of each
+ * vertex, so a single base volume covers every tiled copy.
+ */
+export type TerrainClipVolume =
+  // A tunnel's ceiling follows its floor slope, so the cut is bounded by the
+  // ceiling at each end (interpolated along the strip) rather than a single
+  // height — otherwise a sloped tunnel clips terrain far above its deep end.
+  | { kind: "strip"; a: [number, number]; b: [number, number]; halfWidth: number; ceilingA: number; ceilingB: number }
+  | { kind: "box"; center: [number, number]; rotation: number; halfWidth: number; halfDepth: number; ceiling: number };
+
+/**
+ * Cut the hole slightly wider than the walkable interior (past the side walls,
+ * which hide the cut) and slightly above the ceiling, so no rim of terrain
+ * survives against the walls or roof of the opening.
+ */
+const CLIP_WIDTH_MARGIN = 0.35;
+const CLIP_CEILING_MARGIN = 0.3;
+
+/** Tunnel corridors and room chambers to cut out of the terrain mesh. */
+export function terrainClipVolumes(map: CompositionMap): TerrainClipVolume[] {
+  const volumes: TerrainClipVolume[] = [];
+  for (const segment of map.segments) {
+    if (!isTunnelSegment(segment)) continue;
+    const height = tunnelHeight(map, segment, DEFAULT_ENCLOSURE_HEIGHT);
+    const ya = pointElevation(map, mapPointKey(segment.start));
+    const yb = pointElevation(map, mapPointKey(segment.end));
+    volumes.push({
+      kind: "strip",
+      a: segment.start,
+      b: segment.end,
+      halfWidth: segment.width / 2 + CLIP_WIDTH_MARGIN,
+      ceilingA: ya + height + CLIP_CEILING_MARGIN,
+      ceilingB: yb + height + CLIP_CEILING_MARGIN,
+    });
+  }
+  for (const room of map.rooms) {
+    volumes.push({
+      kind: "box",
+      center: room.center,
+      rotation: room.rotation,
+      halfWidth: room.width / 2 + CLIP_WIDTH_MARGIN,
+      halfDepth: room.depth / 2 + CLIP_WIDTH_MARGIN,
+      ceiling: roomElevation(map, room) + room.height + CLIP_CEILING_MARGIN,
+    });
+  }
+  return volumes;
 }
 
 export function buildTerrainField(

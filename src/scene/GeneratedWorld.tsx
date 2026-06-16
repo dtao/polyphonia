@@ -8,7 +8,8 @@ import { materialTextureUrls } from "./SurfaceDressing";
 import { useStore, viewState } from "../store";
 import { surfaceHeightAt } from "../map";
 import { fieldHeightAtWorld, flattenSourcesFor, terrainFieldFor } from "../worldgen/sampler";
-import { TerrainField, flattenAt, flattenSources } from "../worldgen/terrain";
+import { TerrainField, flattenAt, flattenSources, terrainClipVolumes } from "../worldgen/terrain";
+import type { CompositionMap } from "../map";
 import { LOOP_BLEND_BAND, loopFieldContext, loopProgress } from "../worldgen/loop";
 import { LatticeContext, latticeContext, latticeCoords } from "../worldgen/lattice";
 import { deriveRegion } from "../worldgen/region";
@@ -169,6 +170,106 @@ function MoodLighting({ generated }: { generated: GeneratedEnvironment }) {
 
 // --- Terrain ---------------------------------------------------------------
 
+// --- Tunnel/room "hole" clip ---------------------------------------------------
+// Tunnels and rooms keep the terrain natural (a hillside can sit overhead), and
+// the corridor/chamber is cleared by cutting the terrain MESH instead of
+// lowering it (P31). Each terrain fragment that falls inside an enclosed
+// footprint AND below its ceiling is discarded, so the structure reads as a
+// clean hole through the hill — terrain above the ceiling stays put. The test
+// runs against the vertex's canonical map coordinate (aCanonXZ), so one base
+// volume covers every tiled/loop copy.
+const MAX_CLIP = 32;
+
+const CLIP_FRAGMENT = /* glsl */ `
+  #include <clipping_planes_fragment>
+  for (int i = 0; i < MAX_CLIP; i++) {
+    if (i >= uClipCount) break;
+    vec4 A = uClipA[i];
+    vec4 B = uClipB[i]; // (kind, halfWidth, ceiling/ceilingA, halfDepth/ceilingB)
+    bool insideVol = false;
+    if (B.x < 0.5) { // tunnel: strip whose ceiling follows the floor slope
+      vec2 p0 = A.xy;
+      vec2 d = A.zw - A.xy;
+      float L = dot(d, d);
+      float t = L > 0.0 ? clamp(dot(vCanonXZ - p0, d) / L, 0.0, 1.0) : 0.0;
+      float ceiling = mix(B.z, B.w, t);
+      if (vWorldY >= ceiling) continue; // above the ceiling: keep (hill overhead)
+      insideVol = distance(vCanonXZ, p0 + d * t) <= B.y;
+    } else { // room: oriented box (matches map.ts toLocalXZ)
+      if (vWorldY >= B.z) continue;
+      vec2 rel = vCanonXZ - A.xy;
+      float c = A.z;
+      float s = A.w;
+      vec2 loc = vec2(rel.x * c - rel.y * s, rel.x * s + rel.y * c);
+      insideVol = abs(loc.x) <= B.y && abs(loc.y) <= B.w;
+    }
+    if (insideVol) discard;
+  }
+`;
+
+interface ClipUniforms {
+  uClipCount: { value: number };
+  uClipA: { value: THREE.Vector4[] };
+  uClipB: { value: THREE.Vector4[] };
+}
+
+function useTerrainClip(map: CompositionMap): {
+  onBeforeCompile: (shader: any) => void;
+  cacheKey: () => string;
+} {
+  const uniforms = useMemo<ClipUniforms>(
+    () => ({
+      uClipCount: { value: 0 },
+      uClipA: { value: Array.from({ length: MAX_CLIP }, () => new THREE.Vector4()) },
+      uClipB: { value: Array.from({ length: MAX_CLIP }, () => new THREE.Vector4()) },
+    }),
+    [],
+  );
+  // Refresh footprints when the map changes; mutating the stable uniform
+  // objects updates live rendering without recompiling the shader.
+  useMemo(() => {
+    const volumes = terrainClipVolumes(map);
+    const count = Math.min(volumes.length, MAX_CLIP);
+    uniforms.uClipCount.value = count;
+    for (let i = 0; i < count; i++) {
+      const v = volumes[i];
+      // B = (kind, halfWidth, ceiling/ceilingA, halfDepth/ceilingB).
+      if (v.kind === "strip") {
+        uniforms.uClipA.value[i].set(v.a[0], v.a[1], v.b[0], v.b[1]);
+        uniforms.uClipB.value[i].set(0, v.halfWidth, v.ceilingA, v.ceilingB);
+      } else {
+        uniforms.uClipA.value[i].set(v.center[0], v.center[1], Math.cos(v.rotation), Math.sin(v.rotation));
+        uniforms.uClipB.value[i].set(1, v.halfWidth, v.ceiling, v.halfDepth);
+      }
+    }
+  }, [map, uniforms]);
+  const onBeforeCompile = useCallback(
+    (shader: any) => {
+      shader.uniforms.uClipCount = uniforms.uClipCount;
+      shader.uniforms.uClipA = uniforms.uClipA;
+      shader.uniforms.uClipB = uniforms.uClipB;
+      shader.vertexShader = shader.vertexShader
+        .replace(
+          "#include <common>",
+          "#include <common>\nattribute vec2 aCanonXZ;\nvarying vec2 vCanonXZ;\nvarying float vWorldY;",
+        )
+        .replace(
+          "#include <begin_vertex>",
+          "#include <begin_vertex>\nvCanonXZ = aCanonXZ;\nvWorldY = (modelMatrix * vec4(transformed, 1.0)).y;",
+        );
+      shader.fragmentShader = shader.fragmentShader
+        .replace(
+          "#include <common>",
+          `#include <common>\n#define MAX_CLIP ${MAX_CLIP}\nuniform int uClipCount;\nuniform vec4 uClipA[MAX_CLIP];\nuniform vec4 uClipB[MAX_CLIP];\nvarying vec2 vCanonXZ;\nvarying float vWorldY;`,
+        )
+        .replace("#include <clipping_planes_fragment>", CLIP_FRAGMENT);
+    },
+    [uniforms],
+  );
+  const cacheKey = useCallback(() => "terrain-tunnel-clip", []);
+  return { onBeforeCompile, cacheKey };
+}
+
 function TerrainPatch({
   generated,
   field,
@@ -182,6 +283,8 @@ function TerrainPatch({
   editMode: boolean;
   groundMaterial?: SurfaceMaterialDefinition;
 }) {
+  const map = useStore((s) => s.composition.map);
+  const clip = useTerrainClip(map);
   const geometry = useMemo(
     () => buildTerrainGeometry(generated, field, !!groundMaterial),
     [generated, field, groundMaterial],
@@ -219,11 +322,27 @@ function TerrainPatch({
         onClick={editMode ? brush.onClick : undefined}
       >
         {groundMaterial ? (
-          <Suspense fallback={<meshStandardMaterial vertexColors roughness={0.96} metalness={0} />}>
-            <TerrainGroundMaterial definition={groundMaterial} />
+          <Suspense
+            fallback={
+              <meshStandardMaterial
+                vertexColors
+                roughness={0.96}
+                metalness={0}
+                onBeforeCompile={clip.onBeforeCompile}
+                customProgramCacheKey={clip.cacheKey}
+              />
+            }
+          >
+            <TerrainGroundMaterial definition={groundMaterial} clip={clip} />
           </Suspense>
         ) : (
-          <meshStandardMaterial vertexColors roughness={0.96} metalness={0} />
+          <meshStandardMaterial
+            vertexColors
+            roughness={0.96}
+            metalness={0}
+            onBeforeCompile={clip.onBeforeCompile}
+            customProgramCacheKey={clip.cacheKey}
+          />
         )}
       </mesh>
       </group>
@@ -237,7 +356,13 @@ function TerrainPatch({
 // the tile size) and multiply with the height-palette vertex colors, so the
 // biome tint still reads through. Textures are cloned per definition rather
 // than shared with SurfaceDressing so the repeat settings never fight.
-function TerrainGroundMaterial({ definition }: { definition: SurfaceMaterialDefinition }) {
+function TerrainGroundMaterial({
+  definition,
+  clip,
+}: {
+  definition: SurfaceMaterialDefinition;
+  clip: { onBeforeCompile: (shader: any) => void; cacheKey: () => string };
+}) {
   const urls = useMemo(() => materialTextureUrls(definition), [definition]);
   const loaded = useTexture(urls) as THREE.Texture[];
   const textureByUrl = useMemo(() => {
@@ -258,7 +383,7 @@ function TerrainGroundMaterial({ definition }: { definition: SurfaceMaterialDefi
   }, [definition, loaded, urls]);
   const material = useMemo(() => {
     const texture = (url: string | undefined) => (url ? textureByUrl.get(url) : undefined);
-    return new THREE.MeshStandardMaterial({
+    const mat = new THREE.MeshStandardMaterial({
       map: texture(definition.albedo),
       normalMap: texture(definition.normal),
       normalScale: new THREE.Vector2(definition.normalScale ?? 0.7, definition.normalScale ?? 0.7),
@@ -268,7 +393,11 @@ function TerrainGroundMaterial({ definition }: { definition: SurfaceMaterialDefi
       metalness: definition.metalness,
       vertexColors: true,
     });
-  }, [definition, textureByUrl]);
+    // Cut tunnel/room interiors out of the textured terrain too (P31).
+    mat.onBeforeCompile = clip.onBeforeCompile;
+    mat.customProgramCacheKey = clip.cacheKey;
+    return mat;
+  }, [definition, textureByUrl, clip]);
   useEffect(
     () => () => {
       material.dispose();
@@ -290,6 +419,9 @@ function buildTerrainGeometry(
   const positions = new Float32Array(verts * verts * 3);
   const colors = new Float32Array(verts * verts * 3);
   const uvs = new Float32Array(verts * verts * 2);
+  // Canonical map XZ per vertex (loop/lattice fields fold many world positions
+  // onto one map position) so the tunnel/room hole clip tests against map space.
+  const canon = new Float32Array(verts * verts * 2);
   const palette = generated.params.palette.map((hex) => new THREE.Color(hex));
   const amplitude = Math.max(generated.params.terrainAmplitude, 2);
   const color = new THREE.Color();
@@ -313,6 +445,8 @@ function buildTerrainGeometry(
       const shadeHeight = field.shade ? field.shade[index] : h;
       const px = field.patch ? field.patch[index * 2] : x;
       const pz = field.patch ? field.patch[index * 2 + 1] : z;
+      canon[index * 2] = px;
+      canon[index * 2 + 1] = pz;
       const patch = valueNoise2(generated.seed + 977, px * 0.11, pz * 0.11) * 0.35;
       const t = Math.min(1, Math.max(0, 0.5 + shadeHeight / (2 * amplitude) + (patch - 0.175)));
       if (t < 0.5) color.lerpColors(palette[0], palette[1], t * 2);
@@ -348,6 +482,7 @@ function buildTerrainGeometry(
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
   geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+  geometry.setAttribute("aCanonXZ", new THREE.BufferAttribute(canon, 2));
   geometry.setIndex(new THREE.BufferAttribute(indices, 1));
   geometry.computeVertexNormals();
   return geometry;
@@ -485,19 +620,24 @@ function ConstraintZones({ generated }: { generated: GeneratedEnvironment }) {
   return (
     <group>
       {sources.map((source, index) => {
-        if (source.kind === "disc") {
+        // Tunnels/rooms (clear*) keep the terrain natural and cut a hole in the
+        // mesh instead of carving; show them in blue to distinguish from the
+        // red carve zones (paths/platforms/stems).
+        if (source.kind === "disc" || source.kind === "clearDisc") {
+          const carve = source.kind === "disc";
           return (
             <mesh
               key={index}
-              position={[source.center[0], source.y + 0.14, source.center[1]]}
+              position={[source.center[0], (carve ? source.y : 0) + 0.14, source.center[1]]}
               rotation={[-Math.PI / 2, 0, 0]}
               renderOrder={4}
             >
-              <circleGeometry args={[source.radius + buffer, 40]} />
-              <meshBasicMaterial color="#ff5d5d" transparent opacity={0.14} depthWrite={false} toneMapped={false} />
+              <circleGeometry args={[source.radius + (carve ? buffer : 0), 40]} />
+              <meshBasicMaterial color={carve ? "#ff5d5d" : "#5db0ff"} transparent opacity={0.14} depthWrite={false} toneMapped={false} />
             </mesh>
           );
         }
+        const carve = source.kind === "strip";
         const dx = source.b[0] - source.a[0];
         const dz = source.b[1] - source.a[1];
         const length = Math.hypot(dx, dz);
@@ -507,14 +647,14 @@ function ConstraintZones({ generated }: { generated: GeneratedEnvironment }) {
             key={index}
             position={[
               (source.a[0] + source.b[0]) / 2,
-              (source.ya + source.yb) / 2 + 0.14,
+              (carve ? (source.ya + source.yb) / 2 : 0) + 0.14,
               (source.a[1] + source.b[1]) / 2,
             ]}
             rotation={[-Math.PI / 2, 0, -Math.atan2(dz, dx)]}
             renderOrder={4}
           >
-            <planeGeometry args={[length, (source.halfWidth + buffer) * 2]} />
-            <meshBasicMaterial color="#ff5d5d" transparent opacity={0.14} depthWrite={false} toneMapped={false} />
+            <planeGeometry args={[length, (source.halfWidth + (carve ? buffer : 0)) * 2]} />
+            <meshBasicMaterial color={carve ? "#ff5d5d" : "#5db0ff"} transparent opacity={0.14} depthWrite={false} toneMapped={false} />
           </mesh>
         );
       })}
