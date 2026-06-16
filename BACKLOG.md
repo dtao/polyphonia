@@ -120,12 +120,12 @@ earlier ones.
 - [ ] P35 There should be some warning if you try to set a loop bound in a way that will cause the map to infinitely collide with itself.
 - [x] P36 In Edit mode, it should be possible to select objects "through" the ceiling of a room (i.e. clicking on a stem orb should select the stem orb, not the room). This is important since the default perspective in Edit mode is elevated, so the user is typically positioned above the room.
 - [ ] P37 Rivers should work like paths (multiple branch points, arbitrary length) but fixed to walkable surfaces incl. elevation
-- [ ] P38 Pillars should extend vertically forever
+- [x] P38 Pillars should extend vertically forever
 - [ ] P39 Allow stems to move - define paths, either loops or out-and-back
 - [ ] P40 Customize shape somehow based on audio waveform (like a unique signature - every customized shape should be different in a deterministic way)
 - [ ] P41 Stalactite/stalagmite shapes - come up from the base, or down from above, pulsing (length changing) with the music
-- [ ] P42 Get rid of location rings (except in Edit mode)
+- [x] P42 Get rid of location rings (except in Edit mode)
 - [ ] P43 Fix timing issue with adding stems to composition with many stems (loop seems off, need to refresh to fix)
-- [ ] P44 When editing start/end of track, control should snap to whole number of beats (not just for offset, but for full clip as well)
+- [x] P44 When editing start/end of track, control should snap to whole number of beats (not just for offset, but for full clip as well)
 - [ ] P45 Loop bar should probably have a fill-width editor to make it much easier to make precise adjustments
-- [ ] P46 Ability to pause/unpause music
+- [x] P46 Ability to pause/unpause music
