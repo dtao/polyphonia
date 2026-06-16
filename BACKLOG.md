@@ -113,9 +113,19 @@ earlier ones.
 - [ ] P28 Large authored visible radii vs. generated regions: the bounded-map region derivation accounts for `map.visibleRadius`, but extreme combinations (huge maps near the 560-unit region cap with a large radius) fall back to the rim fade. If composers hit this, expose region size or raise the resolution cap.
 - [x] P29 Independent radii for horizontal vs. vertical visibility - allow "distance you can see" to be adjustable separately for Z axis vs. XY plane so player might be able to see "up/down" more or less far than they can see 360 degrees around them.
 - [x] P30 Make the plane at 0 elevation (as a surface that reflects light) removable, adjustable, cloneable - the visual effect is cool but it can interfere with maps that go to negative elevation. Make it something composers can play with: I might want the same effect of a "translucent floor" at higher or lower elevations.
-- [ ] P31 Tunnels should go *through* the terrain if possible - the current rules are that if you create a path that goes down below the terrain, the world generation engine automatically moves the terrain down so you are always walking about it. Tunnels and rooms should be an exception: you can make a tunnel that goes "underground" and have underground rooms as well.
+- [x] P31 Tunnels should go *through* the terrain if possible - the current rules are that if you create a path that goes down below the terrain, the world generation engine automatically moves the terrain down so you are always walking about it. Tunnels and rooms should be an exception: you can make a tunnel that goes "underground" and have underground rooms as well.
 - [ ] P32 Sliver of terrain is still visible over path on a map that goes fairly deep below 0 elevation (this happens to be around -35).
 - [x] P33 Setting texture for walls and ceiling doesn't seem to affect tunnels or rooms.
 - [ ] P34 Standalone walls with textures flicker due to z-fighting.
 - [ ] P35 There should be some warning if you try to set a loop bound in a way that will cause the map to infinitely collide with itself.
 - [x] P36 In Edit mode, it should be possible to select objects "through" the ceiling of a room (i.e. clicking on a stem orb should select the stem orb, not the room). This is important since the default perspective in Edit mode is elevated, so the user is typically positioned above the room.
+- [ ] P37 Rivers should work like paths (multiple branch points, arbitrary length) but fixed to walkable surfaces incl. elevation
+- [ ] P38 Pillars should extend vertically forever
+- [ ] P39 Allow stems to move - define paths, either loops or out-and-back
+- [ ] P40 Customize shape somehow based on audio waveform (like a unique signature - every customized shape should be different in a deterministic way)
+- [ ] P41 Stalactite/stalagmite shapes - come up from the base, or down from above, pulsing (length changing) with the music
+- [ ] P42 Get rid of location rings (except in Edit mode)
+- [ ] P43 Fix timing issue with adding stems to composition with many stems (loop seems off, need to refresh to fix)
+- [ ] P44 When editing start/end of track, control should snap to whole number of beats (not just for offset, but for full clip as well)
+- [ ] P45 Loop bar should probably have a fill-width editor to make it much easier to make precise adjustments
+- [ ] P46 Ability to pause/unpause music
