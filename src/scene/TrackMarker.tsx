@@ -306,10 +306,14 @@ function OrbVisual({
 
   return (
     <>
-      <mesh ref={footprint} position={[0, footprintHeight, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[orbRadius * 0.95, orbRadius * 1.55, 48]} />
-        <meshBasicMaterial color={track.color} transparent opacity={0.28} toneMapped={false} depthWrite={false} />
-      </mesh>
+      {mode === "edit" && (
+        // Location ring: a flat footprint marking where the stem sits. Only an
+        // editing aid — hidden in Explore so it doesn't clutter the scene (P42).
+        <mesh ref={footprint} position={[0, footprintHeight, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[orbRadius * 0.95, orbRadius * 1.55, 48]} />
+          <meshBasicMaterial color={track.color} transparent opacity={0.28} toneMapped={false} depthWrite={false} />
+        </mesh>
+      )}
       <mesh ref={aura} position={[0, 0, 0]}>
         <sphereGeometry args={[orbRadius, 24, 16]} />
         <meshBasicMaterial color={track.color} transparent opacity={0.18} toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
