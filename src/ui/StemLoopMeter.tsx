@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useStore } from "../store";
 import { TrackDef } from "../composition";
 
@@ -11,7 +12,14 @@ const OFFSET_COLOR = "#ffcc44";
 // M7.5 — waveform meter for the selected stem with draggable in/out handles
 // defining a per-stem sub-loop. Trim by default (region plays once, then
 // silence); the Repeat toggle tiles the region to fill the composition loop.
-export function StemLoopMeter({ track }: { track: TrackDef }) {
+//
+// The stem panel is narrow, which makes precise edits awkward on long loops, so
+// an Expand button (P45) reopens this same meter full-width in a modal. The
+// modal renders another instance with `expandable={false}`; both read and write
+// the same store track, so they stay in sync and all pointer math is reused
+// rather than duplicated.
+export function StemLoopMeter({ track, expandable = true }: { track: TrackDef; expandable?: boolean }) {
+  const [expanded, setExpanded] = useState(false);
   const engine = useStore((s) => s.engine);
   const bpm = useStore((s) => s.composition.bpm);
   const beats = useStore((s) => s.composition.beats);
@@ -154,13 +162,25 @@ export function StemLoopMeter({ track }: { track: TrackDef }) {
   const totalOffsetBeats = offsetBeatsCoarse + (track.offsetFineBeats ?? 0);
 
   return (
+    <>
     <div style={{ marginBottom: 10 }}>
       <div style={headRow}>
         <span>Stem loop</span>
-        <span>
-          {formatBeats(regionLen / beatLength)} beats
-          {totalOffsetBeats !== 0 && (
-            <span style={{ color: OFFSET_COLOR }}> · {totalOffsetBeats > 0 ? "+" : ""}{formatBeats(totalOffsetBeats)} beat offset</span>
+        <span style={headRight}>
+          <span>
+            {formatBeats(regionLen / beatLength)} beats
+            {totalOffsetBeats !== 0 && (
+              <span style={{ color: OFFSET_COLOR }}> · {totalOffsetBeats > 0 ? "+" : ""}{formatBeats(totalOffsetBeats)} beat offset</span>
+            )}
+          </span>
+          {expandable && (
+            <button
+              style={expandBtn}
+              onClick={() => setExpanded(true)}
+              title="Edit full-width"
+            >
+              ⤢ Expand
+            </button>
           )}
         </span>
       </div>
@@ -215,6 +235,43 @@ export function StemLoopMeter({ track }: { track: TrackDef }) {
         )}
       </div>
     </div>
+    {expanded && (
+      <ExpandedMeterModal track={track} onClose={() => setExpanded(false)} />
+    )}
+    </>
+  );
+}
+
+// Full-width overlay (P45) that hosts a second, non-expandable meter for the
+// same stem. Closes on backdrop click, the close button, or Escape — the latter
+// in the capture phase so it doesn't also fall through to the global Escape
+// shortcut (which would clear the selection).
+function ExpandedMeterModal({ track, onClose }: { track: TrackDef; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+
+  return createPortal(
+    <div style={modalBackdrop} onPointerDown={onClose}>
+      <div style={modalPanel} onPointerDown={(e) => e.stopPropagation()}>
+        <div style={modalHead}>
+          <span style={{ fontWeight: 600 }}>{track.name}</span>
+          <button style={closeBtn} onClick={onClose} title="Close">
+            ✕
+          </button>
+        </div>
+        <StemLoopMeter track={track} expandable={false} />
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -255,9 +312,70 @@ function formatBeats(beats: number): string {
 const headRow: React.CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
+  alignItems: "center",
   fontSize: 12,
   opacity: 0.75,
   marginBottom: 4,
+};
+
+const headRight: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+};
+
+const expandBtn: React.CSSProperties = {
+  padding: "2px 7px",
+  borderRadius: 6,
+  border: "1px solid rgba(255,255,255,0.18)",
+  background: "rgba(255,255,255,0.06)",
+  color: "rgba(255,255,255,0.85)",
+  cursor: "pointer",
+  fontSize: 11,
+  whiteSpace: "nowrap",
+};
+
+const modalBackdrop: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 50,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "rgba(4,6,14,0.55)",
+  backdropFilter: "blur(3px)",
+};
+
+const modalPanel: React.CSSProperties = {
+  width: "min(1100px, 94vw)",
+  boxSizing: "border-box",
+  padding: "14px 16px 12px",
+  borderRadius: 12,
+  background: "rgba(14,17,30,0.96)",
+  border: "1px solid rgba(255,255,255,0.14)",
+  boxShadow: "0 18px 50px rgba(0,0,0,0.5)",
+  color: "white",
+  fontFamily: "system-ui, sans-serif",
+};
+
+const modalHead: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  marginBottom: 10,
+  fontSize: 14,
+};
+
+const closeBtn: React.CSSProperties = {
+  width: 28,
+  height: 28,
+  borderRadius: 6,
+  border: "1px solid rgba(255,255,255,0.18)",
+  background: "rgba(255,255,255,0.06)",
+  color: "rgba(255,255,255,0.85)",
+  cursor: "pointer",
+  fontSize: 13,
+  lineHeight: 1,
 };
 
 const meterTrack: React.CSSProperties = {
