@@ -62,6 +62,7 @@ export default function App() {
   const entered = useStore((s) => s.entered);
   const comp = useStore((s) => s.composition);
   const mode = useStore((s) => s.mode);
+  const paused = useStore((s) => s.paused);
   const select = useStore((s) => s.select);
   const selectedId = useStore((s) => s.selectedId);
   const selectedMapPointKey = useStore((s) => s.selectedMapPointKey);
@@ -273,6 +274,13 @@ export default function App() {
                 )}
                 <button style={exitBtn} onClick={exit} title="Stop and return to the start screen">
                   ⏏ Exit
+                </button>
+                <button
+                  style={iconBtn}
+                  onClick={() => void useStore.getState().togglePause()}
+                  title={`${paused ? "Resume" : "Pause"} music (${shortcutKeys("toggle-pause")})`}
+                >
+                  {paused ? "▶" : "❚❚"}
                 </button>
                 <button
                   style={iconBtn}

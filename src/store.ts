@@ -167,6 +167,8 @@ interface StoreState {
   library: SerializedComposition[];
   engine: AudioEngine | null;
   audioLoading: AudioLoadingState;
+  /** Playback is suspended (P46). Tracked reactively so the UI can reflect it. */
+  paused: boolean;
   publishProgress: PublishProgress | null;
   undoStack: Composition[];
   redoStack: Composition[];
@@ -194,6 +196,7 @@ interface StoreState {
 
   setEngine: (e: AudioEngine | null) => void;
   setAudioLoading: (audioLoading: AudioLoadingState) => void;
+  togglePause: () => Promise<void>;
   setEntered: (entered: boolean) => void;
   resetViewToMapStart: () => void;
   setViewer: (viewer: boolean) => void;
@@ -781,6 +784,7 @@ export const useStore = create<StoreState>((set, get) => ({
   library: [],
   engine: null,
   audioLoading: { status: "idle" },
+  paused: false,
   publishProgress: null,
   undoStack: [],
   redoStack: [],
@@ -947,12 +951,26 @@ export const useStore = create<StoreState>((set, get) => ({
       await e.ctx.resume();
       await e.load(get().composition, (progress) => set({ audioLoading: { status: "loading", ...progress } }));
       e.start();
-      set({ engine: e, audioLoading: { status: "idle" } });
+      set({ engine: e, audioLoading: { status: "idle" }, paused: false });
     } catch (err) {
       e.dispose();
       const message = err instanceof Error ? err.message : "Audio couldn't be loaded.";
       set({ audioLoading: { status: "error", message } });
       throw err;
+    }
+  },
+
+  // Pause/unpause the music (P46). Suspends the AudioContext so playback freezes
+  // in phase and resumes seamlessly; a no-op until audio has started.
+  togglePause: async () => {
+    const e = get().engine;
+    if (!e) return;
+    if (e.isPaused) {
+      await e.resume();
+      set({ paused: false });
+    } else {
+      await e.pause();
+      set({ paused: true });
     }
   },
 

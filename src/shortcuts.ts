@@ -22,6 +22,7 @@ export type ShortcutId =
   | "undo"
   | "redo"
   | "toggle-mode"
+  | "toggle-pause"
   | "set-teleport-pin"
   | "teleport-to-pin";
 
@@ -250,6 +251,17 @@ export const SHORTCUTS: Shortcut[] = [
       const pin = useStore.getState().composition.map.teleportPins?.find((p) => p.key === key);
       if (!pin) return false;
       pendingTeleport.value = { x: pin.position[0], z: pin.position[1] };
+      return true;
+    },
+  },
+  {
+    id: "toggle-pause",
+    keys: "Space",
+    description: "Pause or resume the music",
+    match: (e) => e.code === "Space" && !hasModifier(e) && !e.altKey && !e.shiftKey,
+    enabled: () => !!useStore.getState().engine,
+    run: () => {
+      void useStore.getState().togglePause();
       return true;
     },
   },

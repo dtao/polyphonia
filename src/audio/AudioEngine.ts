@@ -414,6 +414,23 @@ export class AudioEngine {
     this.started = true;
   }
 
+  // Pause/resume playback by suspending the whole AudioContext rather than
+  // touching individual sources (P46). Because every loop position is derived
+  // from `ctx.currentTime`, freezing the clock holds the phase exactly where it
+  // was, so resuming continues in lockstep with no drift and no source
+  // restarts — honoring the engine's "never restart sources" invariant.
+  async pause(): Promise<void> {
+    if (this.ctx.state === "running") await this.ctx.suspend();
+  }
+
+  async resume(): Promise<void> {
+    if (this.ctx.state === "suspended") await this.ctx.resume();
+  }
+
+  get isPaused(): boolean {
+    return this.ctx.state === "suspended";
+  }
+
   // Decode an uploaded audio file into a buffer.
   decode(data: ArrayBuffer): Promise<AudioBuffer> {
     return this.ctx.decodeAudioData(data);
