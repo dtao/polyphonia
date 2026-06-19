@@ -13,6 +13,13 @@ import { PATH_HEIGHT, UNDERFLOOR_HEIGHT } from "./mapHeights";
 
 const MAX_TRACK_LIGHTS = 64;
 
+// Stable no-op raycast for meshes that should never be pointer-pickable. Passing
+// a real function (rather than `undefined`) is important: `raycast` lives on
+// Mesh.prototype, so R3F has no recorded default to restore when the prop is
+// cleared and instead leaves `mesh.raycast === undefined`, which throws
+// "object.raycast is not a function" when an ancestor is raycast recursively.
+const blockRaycast: THREE.Object3D["raycast"] = () => null;
+
 // Uniform sentinel for "no vertical visibility band": far beyond any
 // reachable |Δy| (ELEVATION_LIMIT is ±100), so the vertical smoothstep is 0.
 const NO_VERTICAL_FADE = 1e6;
@@ -105,30 +112,34 @@ function Room({ room, elevationY, editMode, selected }: { room: MapRoom; elevati
         ref={setObj}
         position={[cx, elevationY, cz]}
         rotation={[0, room.rotation, 0]}
-        onClick={(e) => {
-          if (!editMode) return;
-          e.stopPropagation();
-          selectRoom(room.id);
-        }}
-        onPointerOver={(e) => {
-          if (!editMode) return;
-          e.stopPropagation();
-          document.body.style.cursor = "pointer";
-        }}
-        onPointerOut={() => {
-          document.body.style.cursor = "auto";
-        }}
+        onClick={
+          editMode
+            ? (e) => {
+                e.stopPropagation();
+                selectRoom(room.id);
+              }
+            : undefined
+        }
+        onPointerOver={
+          editMode
+            ? (e) => {
+                e.stopPropagation();
+                document.body.style.cursor = "pointer";
+              }
+            : undefined
+        }
+        onPointerOut={editMode ? () => { document.body.style.cursor = "auto"; } : undefined}
       >
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, ROOM_FLOOR_Y, 0]}>
           <planeGeometry args={[room.width, room.depth]} />
           <meshStandardMaterial color={selected ? "#16302e" : "#14161e"} roughness={0.92} metalness={0.08} side={THREE.DoubleSide} />
         </mesh>
-        <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, h, 0]} raycast={editMode ? () => null : undefined}>
+        <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, h, 0]} raycast={blockRaycast}>
           <planeGeometry args={[room.width, room.depth]} />
           <meshStandardMaterial color={wallColor} roughness={0.85} metalness={0.05} transparent={wallTransparent} opacity={wallOpacity} depthWrite={!editMode} side={THREE.DoubleSide} />
         </mesh>
         {boxes.map((b, i) => (
-          <mesh key={i} position={[b.pos[0], h / 2, b.pos[1]]} raycast={editMode ? () => null : undefined}>
+          <mesh key={i} position={[b.pos[0], h / 2, b.pos[1]]} raycast={blockRaycast}>
             <boxGeometry args={[b.size[0], h, b.size[1]]} />
             <meshStandardMaterial color={wallColor} roughness={0.85} metalness={0.05} transparent={wallTransparent} opacity={wallOpacity} depthWrite={!editMode} side={THREE.DoubleSide} />
           </mesh>
