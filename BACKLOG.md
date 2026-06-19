@@ -127,5 +127,5 @@ earlier ones.
 - [x] P42 Get rid of location rings (except in Edit mode)
 - [ ] P43 Fix timing issue with adding stems to composition with many stems (loop seems off, need to refresh to fix)
 - [x] P44 When editing start/end of track, control should snap to whole number of beats (not just for offset, but for full clip as well)
-- [ ] P45 Loop bar should probably have a fill-width editor to make it much easier to make precise adjustments
+- [x] P45 Loop bar should probably have a fill-width editor to make it much easier to make precise adjustments
 - [x] P46 Ability to pause/unpause music

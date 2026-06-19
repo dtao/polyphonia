@@ -260,7 +260,7 @@ function ExpandedMeterModal({ track, onClose }: { track: TrackDef; onClose: () =
   }, [onClose]);
 
   return createPortal(
-    <div style={modalBackdrop} onPointerDown={onClose}>
+    <div style={modalBackdrop} data-stem-panel onPointerDown={onClose}>
       <div style={modalPanel} onPointerDown={(e) => e.stopPropagation()}>
         <div style={modalHead}>
           <span style={{ fontWeight: 600 }}>{track.name}</span>
