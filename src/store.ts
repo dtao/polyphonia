@@ -732,13 +732,23 @@ function pruneSelection(
   };
 }
 
-function copyName(name: string, tracks: TrackDef[]): string {
-  const base = `${name} copy`;
-  const used = new Set(tracks.map((t) => t.name));
-  if (!used.has(base)) return base;
-  for (let i = 2; ; i++) {
-    const next = `${base} ${i}`;
-    if (!used.has(next)) return next;
+function copyName(source: TrackDef, tracks: TrackDef[]): string {
+  const assetId = audioAssetKey(source);
+  const siblings = tracks.filter((t) => audioAssetKey(t) === assetId);
+  // Use the sibling with no trailing " <n>" as the root; fall back to source name.
+  const root = siblings.find((t) => !/ \d+$/.test(t.name));
+  const base = root ? root.name : source.name;
+  const escaped = base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`^${escaped} (\\d+)$`);
+  const used = new Set(
+    siblings.flatMap((t) => {
+      if (t.name === base) return [1];
+      const m = t.name.match(pattern);
+      return m ? [parseInt(m[1], 10)] : [];
+    })
+  );
+  for (let n = 2; ; n++) {
+    if (!used.has(n)) return `${base} ${n}`;
   }
 }
 
@@ -1797,7 +1807,7 @@ export const useStore = create<StoreState>((set, get) => ({
       audioAssetId: source.source.kind === "file" && source.source.url.startsWith("blob:")
         ? audioAssetKey(source)
         : source.audioAssetId,
-      name: copyName(source.name, composition.tracks),
+      name: copyName(source, composition.tracks),
       position: offsetCopyPosition(source.position, composition.tracks.length),
     };
 
