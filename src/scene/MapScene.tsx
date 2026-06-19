@@ -20,6 +20,21 @@ const MAX_TRACK_LIGHTS = 64;
 // "object.raycast is not a function" when an ancestor is raycast recursively.
 const blockRaycast: THREE.Object3D["raycast"] = () => null;
 
+// The floor-glow shaders carry a fixed-size uniform array of at most
+// MAX_TRACK_LIGHTS contributing stems. Compositions can have far more tracks
+// than that, so feed the shader the stems NEAREST the viewer each frame rather
+// than the first N by insertion order — otherwise stems added past the cap
+// never light the floor, no matter where the listener stands. The shader fades
+// each contribution by distance, so only nearby stems matter anyway.
+function nearestTracks(tracks: TrackDef[], camX: number, camZ: number, limit: number): TrackDef[] {
+  if (tracks.length <= limit) return tracks;
+  return tracks
+    .map((t) => ({ t, d: (t.position[0] - camX) ** 2 + (t.position[2] - camZ) ** 2 }))
+    .sort((a, b) => a.d - b.d)
+    .slice(0, limit)
+    .map((e) => e.t);
+}
+
 // Uniform sentinel for "no vertical visibility band": far beyond any
 // reachable |Δy| (ELEVATION_LIMIT is ±100), so the vertical smoothstep is 0.
 const NO_VERTICAL_FADE = 1e6;
@@ -1681,7 +1696,10 @@ function mapBounds(segments: WalkableSegment[], tracks: TrackDef[]): { center: [
 function PathMaterial({ tracks, editMode, selected, previewFade }: { tracks: TrackDef[]; editMode: boolean; selected: boolean; previewFade: number }) {
   const material = useRef<THREE.ShaderMaterial>(null);
   const engine = useStore((s) => s.engine);
-  const smoothedLevels = useRef(new Float32Array(MAX_TRACK_LIGHTS));
+  // Level smoothing keyed by track id (not slot index) so the contributing set
+  // can change as the viewer moves without a slot inheriting another stem's
+  // value. See nearestTracks.
+  const smoothedLevels = useRef(new Map<string, number>());
   const isPreview = previewFade < 0.999;
   // Stable uniforms object — created ONCE. Recreating it on prop changes (e.g.
   // when `tracks` mutates on the first edit) hands a new object to
@@ -1705,22 +1723,26 @@ function PathMaterial({ tracks, editMode, selected, previewFade }: { tracks: Tra
     [],
   );
 
-  useFrame(({ scene }, dt) => {
+  useFrame(({ camera, scene }, dt) => {
     if (!material.current) return;
     const u = material.current.uniforms;
-    u.trackCount.value = Math.min(tracks.length, MAX_TRACK_LIGHTS);
+    const near = nearestTracks(tracks, camera.position.x, camera.position.z, MAX_TRACK_LIGHTS);
+    const levels = smoothedLevels.current;
+    u.trackCount.value = near.length;
     for (let i = 0; i < MAX_TRACK_LIGHTS; i++) {
-      const track = tracks[i];
+      const track = near[i];
       if (track) {
         const volume = track.volume ?? 1;
         const refDistance = track.refDistance ?? 4;
         const maxDistance = track.maxDistance ?? 40;
         u.trackPositions.value[i].set(track.position[0], track.position[2], Math.max(7, Math.min(24, refDistance + maxDistance * 0.22 + volume * 4)));
         u.trackColors.value[i].set(track.color);
+        const next = THREE.MathUtils.damp(levels.get(track.id) ?? 0, engine?.level(track.id) ?? 0, 12, dt);
+        levels.set(track.id, next);
+        u.trackLevels.value[i] = next;
+      } else {
+        u.trackLevels.value[i] = 0;
       }
-      const target = track ? engine?.level(track.id) ?? 0 : 0;
-      smoothedLevels.current[i] = THREE.MathUtils.damp(smoothedLevels.current[i], target, 12, dt);
-      u.trackLevels.value[i] = smoothedLevels.current[i];
     }
     u.baseColor.value.set(selected ? "#8fffe8" : "#c8d2df");
     u.floorStrength.value = selected ? 0.92 : editMode ? 0.78 : 0.66;
@@ -1752,7 +1774,8 @@ function PathMaterial({ tracks, editMode, selected, previewFade }: { tracks: Tra
 function ReflectiveUnderfloorMaterial({ tracks, previewFade }: { tracks: TrackDef[]; previewFade: number }) {
   const material = useRef<THREE.ShaderMaterial>(null);
   const engine = useStore((s) => s.engine);
-  const smoothedLevels = useRef(new Float32Array(MAX_TRACK_LIGHTS));
+  // Level smoothing keyed by track id (see PathMaterial / nearestTracks).
+  const smoothedLevels = useRef(new Map<string, number>());
   // Stable uniforms object (see PathMaterial): recreating it on `tracks` change
   // would freeze this shader after the first edit. Mutate values in place.
   const uniforms = useMemo(
@@ -1772,24 +1795,28 @@ function ReflectiveUnderfloorMaterial({ tracks, previewFade }: { tracks: TrackDe
     [],
   );
 
-  useFrame(({ clock, scene }, dt) => {
+  useFrame(({ camera, clock, scene }, dt) => {
     if (!material.current) return;
     const u = material.current.uniforms;
     u.time.value = clock.elapsedTime;
     u.opacity.value = previewFade;
-    u.trackCount.value = Math.min(tracks.length, MAX_TRACK_LIGHTS);
+    const near = nearestTracks(tracks, camera.position.x, camera.position.z, MAX_TRACK_LIGHTS);
+    const levels = smoothedLevels.current;
+    u.trackCount.value = near.length;
     for (let i = 0; i < MAX_TRACK_LIGHTS; i++) {
-      const track = tracks[i];
+      const track = near[i];
       if (track) {
         const volume = track.volume ?? 1;
         const refDistance = track.refDistance ?? 4;
         const maxDistance = track.maxDistance ?? 40;
         u.trackPositions.value[i].set(track.position[0], track.position[2], Math.max(10, Math.min(36, refDistance + maxDistance * 0.34 + volume * 6)));
         u.trackColors.value[i].set(track.color);
+        const next = THREE.MathUtils.damp(levels.get(track.id) ?? 0, engine?.level(track.id) ?? 0, 9, dt);
+        levels.set(track.id, next);
+        u.trackLevels.value[i] = next;
+      } else {
+        u.trackLevels.value[i] = 0;
       }
-      const target = track ? engine?.level(track.id) ?? 0 : 0;
-      smoothedLevels.current[i] = THREE.MathUtils.damp(smoothedLevels.current[i], target, 9, dt);
-      u.trackLevels.value[i] = smoothedLevels.current[i];
     }
     u.fadeInner.value = effectiveFadeInner();
     u.fadeOuter.value = effectiveFadeOuter();

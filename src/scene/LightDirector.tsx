@@ -108,12 +108,26 @@ export function LightDirector() {
 
     if (debugEnabled() && clock.elapsedTime - lastDebugLog.current > 1) {
       lastDebugLog.current = clock.elapsedTime;
+      const round = (n: number) => Math.round(n * 100) / 100;
+      const planarDist = (c: LightCandidate) => Math.hypot(listener[0] - c.x, listener[1] - c.z);
+      let nearest: LightCandidate | null = null;
+      let nearestDist = Infinity;
+      for (const c of candidates) {
+        const d = planarDist(c);
+        if (d < nearestDist) { nearestDist = d; nearest = c; }
+      }
       (window as unknown as { polyLights?: unknown }).polyLights = {
         fps: Math.round(fpsEma.current),
         tier,
         poolSize,
         candidates: candidates.length,
         active: chosen.length,
+        listener: [round(listener[0]), round(camera.position.y), round(listener[1])],
+        cutoff: round(effectiveFadeOuter()),
+        nearest: nearest
+          ? { id: nearest.id, dist: round(nearestDist), intensity: round(nearest.intensity), y: round(nearest.y), range: round(nearest.range) }
+          : null,
+        chosen: chosen.map((c) => ({ id: c.id, dist: round(planarDist(c)), intensity: round(c.intensity), y: round(c.y) })),
       };
     }
   });
