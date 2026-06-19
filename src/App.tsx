@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Scene } from "./scene/Scene";
 import { PropertiesPanel } from "./ui/PropertiesPanel";
@@ -104,7 +104,13 @@ export default function App() {
 
   // Toggle mode, releasing the pointer lock synchronously when entering edit
   // (drei's PointerLockControls doesn't reliably exit the lock on unmount).
+  // Throttled to 100ms to absorb browser-replayed Tab events that fire after
+  // pointer lock exits, which otherwise toggle the mode right back.
+  const lastToggleMs = useRef(0);
   const handleToggleMode = useCallback(() => {
+    const now = performance.now();
+    if (now - lastToggleMs.current < 100) return;
+    lastToggleMs.current = now;
     if (useStore.getState().mode === "explore") document.exitPointerLock?.();
     useStore.getState().toggleMode();
   }, []);

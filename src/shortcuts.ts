@@ -269,7 +269,7 @@ export const SHORTCUTS: Shortcut[] = [
     id: "toggle-mode",
     keys: "Tab",
     description: "Toggle between Explore and Edit",
-    match: (e) => e.code === "Tab",
+    match: (e) => e.code === "Tab" && !e.repeat,
     enabled: () => !!useStore.getState().engine,
     run: (ctx) => {
       ctx.toggleMode();
