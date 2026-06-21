@@ -19,8 +19,8 @@ export function PublicLanding() {
         <div style={eyebrow}>SPATIAL MUSIC</div>
         <h1 style={title}>POLYPHONIA</h1>
         <p style={lede}>
-          Step inside music. Polyphonia turns a composition into a 3D space,
-          placing each instrument around you so the mix changes as you explore.
+          Step inside music. Polyphonia allows you to compose within a 3D space,
+          placing sounds around you so the mix changes as you explore.
         </p>
 
         {demoUrl && (
@@ -32,8 +32,8 @@ export function PublicLanding() {
         <div style={interestCard}>
           <h2 style={cardTitle}>Create spatial music</h2>
           <p style={cardCopy}>
-            Polyphonia is opening gradually to artists and producers. Leave
-            your email to hear when creator access expands.
+            Leave your email if you're interested in creating your own 3D
+            compositions.
           </p>
           <form style={interestForm} onSubmit={submitInterest}>
             <label style={visuallyHidden} htmlFor="artist-interest-email">
