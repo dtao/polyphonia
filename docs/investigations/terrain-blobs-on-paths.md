@@ -68,6 +68,11 @@ Also worth confirming on a repro: hard-reload so the dev server serves the
 current build, and whether the blobs are smooth ground-colored mounds
 (terrain) or shaped clumps (grass tufts / shrubs — scatter objects).
 
+The debug overlay's **Export** button (`?debug=1`) embeds the `map` and
+`generated` params (no audio) alongside the samples, so a single debug export is
+enough to rebuild and scan the exact terrain field offline — no need for the
+multi-hundred-MB `.polyphonia.json` stem bundle.
+
 ## Probe result (round 4) — root cause found
 
 User probe while standing by a blob:

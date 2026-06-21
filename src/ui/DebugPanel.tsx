@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { clearDebugSamples, debugEnabled, exportDebugSamples, latestDebugSample, DebugSample } from "../debug";
+import { useStore } from "../store";
 import {
   RADIAL_FADE_INNER,
   RADIAL_FADE_OUTER,
@@ -63,7 +64,14 @@ export function DebugPanel() {
         </button>
         {!collapsed && (
           <>
-            <button style={miniBtn} onClick={exportDebugSamples}>
+            <button
+              style={miniBtn}
+              title="Export debug samples + map/generated params (no audio)"
+              onClick={() => {
+                const comp = useStore.getState().composition;
+                exportDebugSamples({ map: comp.map, generated: comp.environment.generated });
+              }}
+            >
               Export
             </button>
             <button

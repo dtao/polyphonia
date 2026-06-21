@@ -1,7 +1,7 @@
 import { CompositionMap, containingRoom, loopAdjacentTransforms } from "./map";
 import { TrackDef } from "./composition";
 import { MarkerDebugSnapshot } from "./scene/markerDebug";
-import type { EnvironmentSettings } from "./environment";
+import type { EnvironmentSettings, GeneratedEnvironment } from "./environment";
 
 export interface DebugSample {
   t: number;
@@ -91,7 +91,15 @@ export function clearDebugSamples(): void {
   latest = null;
 }
 
-export function exportDebugSamples(): void {
+// The map and generated-environment params (seed, params, center, size,
+// constraints, edits) reproduce the terrain field deterministically and carry
+// no audio, so embedding them here makes a debug export enough to rebuild and
+// scan terrain offline — without exporting the multi-hundred-MB stem bundle.
+// See docs/investigations/deep-path-terrain-sliver.md.
+export function exportDebugSamples(context?: {
+  map?: CompositionMap;
+  generated?: GeneratedEnvironment | null;
+}): void {
   const payload = {
     exportedAt: new Date().toISOString(),
     userAgent: navigator.userAgent,
@@ -104,6 +112,8 @@ export function exportDebugSamples(): void {
       debugNoStarRays: debugFlag("debugNoStarRays"),
       debugTerrainProbe: debugFlag("debugTerrainProbe"),
     },
+    map: context?.map,
+    generated: context?.generated ?? undefined,
     samples,
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
