@@ -114,7 +114,7 @@ earlier ones.
 - [x] P29 Independent radii for horizontal vs. vertical visibility - allow "distance you can see" to be adjustable separately for Z axis vs. XY plane so player might be able to see "up/down" more or less far than they can see 360 degrees around them.
 - [x] P30 Make the plane at 0 elevation (as a surface that reflects light) removable, adjustable, cloneable - the visual effect is cool but it can interfere with maps that go to negative elevation. Make it something composers can play with: I might want the same effect of a "translucent floor" at higher or lower elevations.
 - [x] P31 Tunnels should go *through* the terrain if possible - the current rules are that if you create a path that goes down below the terrain, the world generation engine automatically moves the terrain down so you are always walking about it. Tunnels and rooms should be an exception: you can make a tunnel that goes "underground" and have underground rooms as well.
-- [ ] P32 Sliver of terrain is still visible over path on a map that goes fairly deep below 0 elevation (this happens to be around -35).
+- [x] P32 Sliver of terrain is still visible over path on a map that goes fairly deep below 0 elevation (this happens to be around -35).
 - [x] P33 Setting texture for walls and ceiling doesn't seem to affect tunnels or rooms.
 - [ ] P34 Standalone walls with textures flicker due to z-fighting.
 - [ ] P35 There should be some warning if you try to set a loop bound in a way that will cause the map to infinitely collide with itself.

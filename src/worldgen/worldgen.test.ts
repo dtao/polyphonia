@@ -451,6 +451,40 @@ describe("path-loop awareness", () => {
     expect(Math.abs(terrainHeightAt(display, 70, 10) - terrainHeightAt(display, 10, 10) - 4)).toBeLessThan(0.8);
   });
 
+  it("never lifts terrain above a pinned path in the seam blend band (deep loop)", () => {
+    // A deep spur juts out perpendicular near the end seam: its distance to the
+    // seams puts it in the blend band, but the rigid loop transform maps it onto
+    // free start-side terrain, so the seam blend would pull the spur's pinned
+    // terrain UP toward that shallow transported height — terrain visibly
+    // covering a deep path-loop (reported around -67). The fix caps pinned
+    // vertices at their local floor, so terrain stays below the path everywhere.
+    const deepLoop = normalizeMap({
+      preset: "custom",
+      segments: [
+        { id: "a", start: [0, 0], end: [120, 0], width: 6 },
+        { id: "spur", start: [100, 0], end: [100, -40], width: 6 },
+      ],
+      tiling: {
+        type: "path-loop",
+        origin: [0, 0],
+        tileSize: 200,
+        pathLoop: { start: { segmentId: "a", end: "start" }, end: { segmentId: "a", end: "end" } },
+      },
+      start: { position: [0, 0], direction: [1, 0] },
+      elevations: { "100.000,0.000": -54, "100.000,-40.000": -54 },
+    });
+    const generated = testEnvironment({ center: [60, -30], size: 220 });
+    const sources = flattenSources(deepLoop, [], generated);
+    const display = applyLoopToField(buildTerrainField(generated, sources), loopFieldContext(deepLoop)!);
+    for (let x = -10; x <= 140; x += 0.5) {
+      for (let z = -50; z <= 20; z += 0.5) {
+        const { weight, target } = flattenAt(sources, generated.constraints.buffer, x, z);
+        if (weight > 0.1) continue; // pinned (on a path) only
+        expect(terrainHeightAt(display, x, z), `at (${x}, ${z})`).toBeLessThan(target + 0.05);
+      }
+    }
+  });
+
   it("shows a sculpted hill near the start ahead of the end seam", () => {
     const ctx = loopFieldContext(loopMap)!;
     const plain = testEnvironment();

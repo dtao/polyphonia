@@ -96,6 +96,14 @@ export interface TerrainField {
    */
   shade?: Float32Array;
   patch?: Float32Array;
+  /**
+   * Base fields only: the per-vertex flatten weight (0 = pinned to a path, 1 =
+   * free noise) and target floor, after the conservative 3×3 erosion. The loop
+   * display transform reuses these so it never lifts terrain that is pinned to a
+   * path above its floor (see applyLoopToField).
+   */
+  flattenWeight?: Float32Array;
+  flattenTarget?: Float32Array;
 }
 
 export function terrainResolution(size: number): number {
@@ -384,7 +392,14 @@ export function buildTerrainField(
     }
   }
 
-  const field: TerrainField = { center, size, resolution, heights };
+  const field: TerrainField = {
+    center,
+    size,
+    resolution,
+    heights,
+    flattenWeight: erodedWeights,
+    flattenTarget: eroded,
+  };
   applyEditsToField(field, generated, sources);
   return field;
 }
@@ -502,6 +517,25 @@ export function applyLoopToField(base: TerrainField, ctx: LoopFieldContext): Ter
       } else {
         heights[index] = here + canonical.steps * ctx.lift;
       }
+      // The seam blend transports the start side's terrain (its hills) across
+      // the end seam, but the transported height ignores the path running THROUGH
+      // the display point. Where the two loop sides differ in elevation (a long
+      // or curved loop, where the rigid transform mismaps off the corridor), the
+      // blend lifts terrain pinned to the local path above its floor — terrain
+      // visibly covering a deep path-loop. Pull such overshoot back DOWN toward
+      // the local floor, weighted by how pinned the display point is: a vertex
+      // on a path can't rise above its floor, free vertices keep the full blend,
+      // and a transported dip (below the floor) is left untouched so the seam
+      // stays continuous. The base field carries the floor/weight grids at this
+      // display point because flattenSources includes the lifted loop copies.
+      if (base.flattenWeight && base.flattenTarget) {
+        const free = sampleGrid(base, base.flattenWeight, x, z, 1);
+        if (free < 1) {
+          const floor = sampleGrid(base, base.flattenTarget, x, z, 0);
+          const excess = heights[index] - floor;
+          if (excess > 0) heights[index] -= excess * (1 - free);
+        }
+      }
       shade[index] = blended;
       patch[index * 2] = px;
       patch[index * 2 + 1] = pz;
@@ -561,21 +595,26 @@ export function applyLatticeToField(base: TerrainField, ctx: LatticeContext): Te
   return { center, size, resolution, heights, shade, patch };
 }
 
-/** Bilinear height lookup; returns 0 outside the generated region. */
-export function terrainHeightAt(field: TerrainField, x: number, z: number): number {
-  const { center, size, resolution, heights } = field;
+/** Bilinear lookup of a per-vertex grid on a field; returns `outside` off-region. */
+function sampleGrid(field: TerrainField, grid: Float32Array, x: number, z: number, outside: number): number {
+  const { center, size, resolution } = field;
   const verts = resolution + 1;
   const cell = (size * 2) / resolution;
   const gx = (x - (center[0] - size)) / cell;
   const gz = (z - (center[1] - size)) / cell;
-  if (gx < 0 || gz < 0 || gx > resolution || gz > resolution) return 0;
+  if (gx < 0 || gz < 0 || gx > resolution || gz > resolution) return outside;
   const ix = Math.min(resolution - 1, Math.floor(gx));
   const iz = Math.min(resolution - 1, Math.floor(gz));
   const fx = gx - ix;
   const fz = gz - iz;
-  const a = heights[iz * verts + ix];
-  const b = heights[iz * verts + ix + 1];
-  const c = heights[(iz + 1) * verts + ix];
-  const d = heights[(iz + 1) * verts + ix + 1];
+  const a = grid[iz * verts + ix];
+  const b = grid[iz * verts + ix + 1];
+  const c = grid[(iz + 1) * verts + ix];
+  const d = grid[(iz + 1) * verts + ix + 1];
   return a + (b - a) * fx + (c - a) * fz + (a - b - c + d) * fx * fz;
+}
+
+/** Bilinear height lookup; returns 0 outside the generated region. */
+export function terrainHeightAt(field: TerrainField, x: number, z: number): number {
+  return sampleGrid(field, field.heights, x, z, 0);
 }
