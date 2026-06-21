@@ -424,7 +424,6 @@ const grid: React.CSSProperties = {
 };
 
 const card: React.CSSProperties = {
-  minHeight: 112,
   display: "flex",
   flexDirection: "column",
   justifyContent: "space-between",
