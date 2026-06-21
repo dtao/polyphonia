@@ -58,11 +58,15 @@ export interface AuthUser {
 }
 
 export async function signInWithEmail(email: string): Promise<void> {
-  const { error } = await supabase().auth.signInWithOtp({
-    email,
-    options: { emailRedirectTo: window.location.origin },
+  const res = await fetch("/api/signin", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
   });
-  if (error) throw error;
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? "Couldn't send the sign-in link.");
+  }
 }
 
 export async function signOut(): Promise<void> {

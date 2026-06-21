@@ -3,3 +3,9 @@
 [build]
   command = "npm run build"
   publish = "dist"
+  functions = "netlify/functions"
+
+[[redirects]]
+  from = "/api/signin"
+  to = "/.netlify/functions/signin"
+  status = 200
