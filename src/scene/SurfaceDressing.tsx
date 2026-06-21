@@ -3,7 +3,7 @@ import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import type { SurfaceMaterialDefinition } from "../creatorAssets";
 import type { CompositionMap, MapPlatform, MapRoom, WalkableSegment } from "../map";
-import { mapPointKey, platformElevation, roomElevation, tunnelHeight } from "../map";
+import { mapPointKey, platformElevation, roomElevation, tunnelHeight, wallThickness } from "../map";
 import { DEFAULT_ENCLOSURE_HEIGHT } from "../spatialConstants";
 import { pathJointPatches, roomWallBoxes } from "./MapScene";
 
@@ -70,6 +70,11 @@ function MapShell({ map, materials }: { map: CompositionMap; materials: Resolved
         const dx = wall.end[0] - wall.start[0];
         const dz = wall.end[1] - wall.start[1];
         const length = Math.hypot(dx, dz);
+        // Slightly inflated over the reactive WallMesh (MapScene) so the texture
+        // wins the depth test from every side instead of z-fighting the
+        // coincident reactive box (the flicker in P34). Mirrors RoomShell's
+        // wall inflation. Thickness goes through the same clamp helper the
+        // reactive mesh uses so the two boxes share a base size.
         return (
           <mesh
             key={wall.id}
@@ -79,7 +84,7 @@ function MapShell({ map, materials }: { map: CompositionMap; materials: Resolved
             castShadow
             receiveShadow
           >
-            <boxGeometry args={[wall.wallThickness ?? 0.3, wall.height, length]} />
+            <boxGeometry args={[wallThickness(wall.wallThickness) + 0.04, wall.height + 0.04, length + 0.04]} />
           </mesh>
         );
       })}
