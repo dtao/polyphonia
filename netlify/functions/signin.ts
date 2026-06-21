@@ -1,8 +1,8 @@
 import type { Handler } from "@netlify/functions";
 import { createClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = process.env.SUPABASE_URL ?? "";
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY ?? "";
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? "";
+const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY ?? "";
 const ALLOWED_EMAILS_RAW = process.env.ALLOWED_EMAILS ?? "";
 
 const allowedEmails: Set<string> | null = ALLOWED_EMAILS_RAW
