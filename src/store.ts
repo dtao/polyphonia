@@ -212,7 +212,7 @@ interface StoreState {
   createAccountArtist: (name: string) => Promise<void>;
 
   // Publish/unpublish, reflected on the composition via publishedId.
-  publishCurrent: () => Promise<void>;
+  publishCurrent: (force?: boolean) => Promise<void>;
   unpublishComposition: (id: string) => Promise<void>;
   setMode: (mode: Mode) => void;
   toggleMode: () => void;
@@ -904,7 +904,7 @@ export const useStore = create<StoreState>((set, get) => ({
     set({ accountArtist });
   },
 
-  publishCurrent: async () => {
+  publishCurrent: async (force = false) => {
     set({
       publishProgress: {
         completed: 0,
@@ -916,6 +916,7 @@ export const useStore = create<StoreState>((set, get) => ({
       const published = await publishComposition(
         get().composition,
         (publishProgress) => set({ publishProgress }),
+        { force },
       );
       const publishedAt = new Date().toISOString();
       const composition = {

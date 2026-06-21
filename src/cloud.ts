@@ -214,6 +214,7 @@ export function buildPublishedCompositionRow(args: {
 export async function publishComposition(
   comp: Composition,
   onProgress?: (progress: PublishProgress) => void,
+  { force = false }: { force?: boolean } = {},
 ): Promise<PublishResult> {
   const sb = supabase();
   const user = await getCurrentUser();
@@ -248,8 +249,8 @@ export async function publishComposition(
         const path = `${id}/${assetId}`;
         const url = sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
 
-        // Only upload if new or the audio changed since last publish.
-        if (prevHash[assetId] !== hash) {
+        // Only upload if new, the audio changed, or a force re-upload was requested.
+        if (force || prevHash[assetId] !== hash) {
           const { error } = await sb.storage
             .from(BUCKET)
             .upload(path, blob, { contentType: blob.type || "audio/mpeg", upsert: true, cacheControl: "31536000" });

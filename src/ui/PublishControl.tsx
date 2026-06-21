@@ -16,6 +16,7 @@ export function PublishControl() {
   const [busy, setBusy] = useState<null | string>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [forceReupload, setForceReupload] = useState(false);
 
   const empty = comp.tracks.length === 0;
   const published = Boolean(comp.publishedId);
@@ -71,13 +72,22 @@ export function PublishControl() {
           </button>
         </div>
         <div style={{ display: "flex", gap: 14, marginTop: 8 }}>
-          <button style={link2} disabled={!!busy} onClick={() => run("Updating…", publishCurrent)}>
+          <button style={link2} disabled={!!busy} onClick={() => run("Updating…", () => publishCurrent(forceReupload))}>
             {busy === "Updating…" ? "Updating…" : hasUnpublishedChanges ? "Publish changes" : "Update"}
           </button>
           <button style={{ ...link2, color: "#ff9b8f" }} disabled={!!busy} onClick={() => run("Unpublishing…", () => unpublishComposition(comp.id))}>
             Unpublish
           </button>
         </div>
+        <label style={forceLabel}>
+          <input
+            type="checkbox"
+            checked={forceReupload}
+            onChange={(e) => setForceReupload(e.target.checked)}
+            style={{ marginRight: 5 }}
+          />
+          Re-upload all audio
+        </label>
       </>
     );
   } else {
@@ -160,6 +170,16 @@ const linkInput: React.CSSProperties = {
   color: "white",
   padding: "6px 8px",
   fontSize: 12,
+};
+
+const forceLabel: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  marginTop: 8,
+  fontSize: 11,
+  color: "rgba(255,255,255,0.45)",
+  cursor: "pointer",
+  userSelect: "none",
 };
 
 const progressBlock: React.CSSProperties = {
