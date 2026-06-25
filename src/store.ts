@@ -2026,7 +2026,6 @@ export const useStore = create<StoreState>((set, get) => ({
   newComposition: (meta) => {
     const { composition, library } = get();
     const now = new Date().toISOString();
-    const { landmarks: _landmarks, ...environment } = composition.environment;
     revokeBlobUrls(composition);
     const comp: Composition = {
       id: newId(),
@@ -2037,7 +2036,7 @@ export const useStore = create<StoreState>((set, get) => ({
       artistAvatarUrl: get().accountArtist?.artistAvatarUrl,
       artistAvatarEmailHash: get().accountArtist?.artistAvatarEmailHash,
       bpm: meta.bpm || 120,
-      environment,
+      environment: defaultEnvironment,
       map: normalizeMap(MAP_PRESETS.line),
       tracks: [],
       createdAt: now,
