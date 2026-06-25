@@ -48,14 +48,16 @@ cloud publish all spread the whole composition, so the config rides along, and
 ## Constraint awareness
 
 `flattenSources` (`src/worldgen/terrain.ts`) collects protected geometry:
-walkable segments/rooms/platforms (including tiled copies), stem positions,
-and always the map start. Inside each zone (+ `buffer`) the terrain pins to
+walkable segments/rooms/platforms (including tiled copies) and always the map
+start. Inside each zone (+ `buffer`) the terrain pins to
 the **lower envelope** of all sources' surface heights (each rising at
 `FLATTEN_TARGET_SLOPE` outside its own clearance), seated `FLATTEN_DROP`
 below — not simply the nearest source's height. The envelope is ≤ every
 nearby walkable surface and is concave inside the corridor, so grid-cell
 interpolation can never cut a chord above the path at elevation kinks (the
-bottom of a ramp) or under a stem disc sitting on a slope. The target is
+bottom of a ramp). Stems contribute only a `clearDisc` (scatter clearance,
+no height pinning): a stem on open terrain keeps the natural ground rather
+than carving a pit down to the walkable surface height (sea level). The target is
 additionally capped at the nearest source's own height: the distance
 penalty only arbitrates between sources and must never anchor the blend
 band *above* the local path (that produced collar ridges spilling onto

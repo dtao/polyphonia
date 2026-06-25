@@ -175,13 +175,14 @@ export function flattenSources(
 
   if (generated.constraints.stems) {
     for (const track of tracks) {
+      // A stem only keeps scatter clear around itself; it must NOT pin the
+      // terrain height. A height-pinning disc would seat at the walkable
+      // surface height under the stem, which is 0 (sea level) for a stem on
+      // open generated terrain, dragging the terrain into a pit via the lower
+      // envelope. Where a stem genuinely sits on a path/platform/room, those
+      // sources already pin the height; here we only protect the clearance.
       const at: [number, number] = [track.position[0], track.position[2]];
-      sources.push({
-        kind: "disc",
-        center: at,
-        radius: STEM_CLEAR_RADIUS,
-        y: surfaceHeightAt(map, at),
-      });
+      sources.push({ kind: "clearDisc", center: at, radius: STEM_CLEAR_RADIUS });
     }
   }
 

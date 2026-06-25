@@ -2026,6 +2026,10 @@ export const useStore = create<StoreState>((set, get) => ({
   newComposition: (meta) => {
     const { composition, library } = get();
     const now = new Date().toISOString();
+    // A new composition keeps the creator's chosen aesthetic (pack/surfaces/
+    // floor planes) but starts from a blank world: drop placed landmarks and the
+    // previous composition's generated terrain so it never carries over.
+    const { landmarks: _landmarks, generated: _generated, ...environment } = composition.environment;
     revokeBlobUrls(composition);
     const comp: Composition = {
       id: newId(),
@@ -2036,7 +2040,7 @@ export const useStore = create<StoreState>((set, get) => ({
       artistAvatarUrl: get().accountArtist?.artistAvatarUrl,
       artistAvatarEmailHash: get().accountArtist?.artistAvatarEmailHash,
       bpm: meta.bpm || 120,
-      environment: defaultEnvironment,
+      environment,
       map: normalizeMap(MAP_PRESETS.line),
       tracks: [],
       createdAt: now,

@@ -81,11 +81,18 @@ describe("terrain field", () => {
     expect(terrainHeightAt(field, 20, 4)).toBeCloseTo(-FLATTEN_DROP, 4); // inside width/2 + buffer
   });
 
-  it("flattens around stems so they never get buried", () => {
+  it("keeps natural terrain under a stem but clears scatter around it", () => {
     const generated = testEnvironment();
-    const sources = flattenSources(pathMap, [track(0, 50)], generated);
-    const field = buildTerrainField(generated, sources);
-    expect(terrainHeightAt(field, 0, 50)).toBeCloseTo(-FLATTEN_DROP, 4);
+    // A stem on open terrain must not pin the terrain height (which would seat
+    // it at the walkable surface height — sea level — and carve a pit). The
+    // field is identical with and without the stem.
+    const without = buildTerrainField(generated, flattenSources(pathMap, [], generated));
+    const withStem = flattenSources(pathMap, [track(0, 50)], generated);
+    const withField = buildTerrainField(generated, withStem);
+    expect(terrainHeightAt(withField, 0, 50)).toBeCloseTo(terrainHeightAt(without, 0, 50), 6);
+    // But the stem still keeps scatter clear within its radius.
+    expect(insideClearZone(withStem, generated.constraints.buffer, 0, 50)).toBe(true);
+    expect(insideClearZone(withStem, generated.constraints.buffer, 0, 80)).toBe(false);
   });
 
   it("returns 0 outside the generated region", () => {
