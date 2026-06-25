@@ -12,6 +12,7 @@ const TRACK_COLORS = ["#5b8cff", "#ff7a6b", "#ffd166", "#b96bff", "#56e0c0", "#f
 export function PropertiesPanel() {
   const mode = useStore((s) => s.mode);
   const track = useStore((s) => s.composition.tracks.find((t) => t.id === s.selectedId));
+  const soloedTrackId = useStore((s) => s.soloedTrackId);
   const {
     renameTrack,
     setTrackColor,
@@ -24,6 +25,7 @@ export function PropertiesPanel() {
     setTrackShapeWallWidth,
     setTrackShapeRiverEnd,
     setTrackOffset,
+    setSoloTrack,
     deleteTrack,
     duplicateTrack,
   } = useStore.getState();
@@ -51,6 +53,15 @@ export function PropertiesPanel() {
           onChange={(e) => renameTrack(track.id, e.target.value)}
           style={nameInput}
         />
+        <label style={soloLabel} title="Solo: mute all other stems">
+          <input
+            type="checkbox"
+            checked={soloedTrackId === track.id}
+            onChange={(e) => setSoloTrack(e.target.checked ? track.id : null)}
+            style={{ display: "none" }}
+          />
+          <span style={{ ...soloBadge, ...(soloedTrackId === track.id ? soloBadgeActive : {}) }}>S</span>
+        </label>
       </div>
 
       <ElevationReadout value={track.position[1]} />
@@ -192,7 +203,14 @@ export function PropertiesPanel() {
         >
           Duplicate
         </button>
-        <button style={deleteBtn} onClick={() => deleteTrack(track.id)} title="Delete track (Delete)">
+        <button
+          style={deleteBtn}
+          onClick={() => {
+            if (soloedTrackId === track.id) setSoloTrack(null);
+            deleteTrack(track.id);
+          }}
+          title="Delete track (Delete)"
+        >
           Delete
         </button>
       </div>
@@ -628,5 +646,32 @@ const helpText: React.CSSProperties = {
   color: "rgba(255,255,255,0.52)",
   fontSize: 11,
   lineHeight: 1.35,
+};
+
+const soloLabel: React.CSSProperties = {
+  flex: "0 0 auto",
+  cursor: "pointer",
+};
+
+const soloBadge: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: 24,
+  height: 24,
+  borderRadius: 5,
+  border: "1px solid rgba(255,255,255,0.2)",
+  background: "rgba(255,255,255,0.06)",
+  color: "rgba(255,255,255,0.5)",
+  fontSize: 11,
+  fontWeight: 700,
+  letterSpacing: "0.04em",
+  userSelect: "none",
+};
+
+const soloBadgeActive: React.CSSProperties = {
+  border: "1px solid rgba(255,204,68,0.7)",
+  background: "rgba(255,204,68,0.2)",
+  color: "#ffcc44",
 };
 

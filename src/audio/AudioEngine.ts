@@ -105,6 +105,7 @@ export class AudioEngine {
   private loopCrossfade = 0.035;
   private loopTail = false;
   private bpm = 120;
+  private soloTrackId: string | null = null;
   private auditionTimer: ReturnType<typeof setTimeout> | undefined;
   private auditionStartTime: number | null = null;
   private auditionDuration = 0;
@@ -693,12 +694,22 @@ export class AudioEngine {
 
   // --- Live edits: mutate a playing track without restarting anything. ---
 
+  setSoloTrack(soloId: string | null): void {
+    this.soloTrackId = soloId;
+    const now = this.ctx.currentTime;
+    for (const t of this.tracks) {
+      const effective = soloId === null || t.def.id === soloId ? (t.def.volume ?? 1) : 0;
+      t.gain.gain.setTargetAtTime(effective, now, 0.02);
+    }
+  }
+
   setVolume(id: string, volume: number): void {
     const t = this.find(id);
     if (!t) return;
     t.def = { ...t.def, volume };
-    // Ramp to avoid clicks.
-    t.gain.gain.setTargetAtTime(volume, this.ctx.currentTime, 0.02);
+    // Respect solo: if another track is soloed, keep this one silent.
+    const effective = this.soloTrackId !== null && this.soloTrackId !== id ? 0 : volume;
+    t.gain.gain.setTargetAtTime(effective, this.ctx.currentTime, 0.02);
     this.updateTrackAcoustics(t, this.ctx.currentTime);
   }
 

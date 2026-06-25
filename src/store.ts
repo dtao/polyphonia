@@ -186,6 +186,7 @@ interface StoreState {
   selectedPlatformId: string | null;
   selectedWallId: string | null;
   selectedLandmarkId: string | null;
+  soloedTrackId: string | null; // transient: which stem is soloed (others are silenced)
   worldTool: WorldTool; // active generated-environment edit tool (transient UI state)
   showConstraintZones: boolean; // visualize stem/path clear zones in edit mode
   entered: boolean; // has the user started the experience (left the entry screen)
@@ -194,6 +195,7 @@ interface StoreState {
   accountArtist: ArtistIdentity | null; // primary artist identity for signed-in publishing
   authReady: boolean; // initial session lookup has completed
 
+  setSoloTrack: (id: string | null) => void;
   setEngine: (e: AudioEngine | null) => void;
   setAudioLoading: (audioLoading: AudioLoadingState) => void;
   togglePause: () => Promise<void>;
@@ -812,6 +814,7 @@ export const useStore = create<StoreState>((set, get) => ({
   selectedWallId: null,
   selectedLandmarkId: null,
   
+  soloedTrackId: null,
   worldTool: { kind: "none" },
   showConstraintZones: false,
   entered: false,
@@ -1674,6 +1677,11 @@ export const useStore = create<StoreState>((set, get) => ({
       : map.elevations;
     get().setMap({ preset: "custom", segments: [...map.segments, segment], elevations });
     set({ selectedMapPointKey: mapPointKey(end), selectedRoomId: null, selectedEntranceIndex: null, selectedId: null, selectedMapSegmentId: null, branchStartPointKey: null, selectedStart: false });
+  },
+
+  setSoloTrack: (id) => {
+    set({ soloedTrackId: id });
+    get().engine?.setSoloTrack(id);
   },
 
   setTrackVolume: (id, volume) => {
