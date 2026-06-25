@@ -388,22 +388,26 @@ export class AudioEngine {
     return buffer.duration;
   }
 
-  // A stem's timing offset in seconds (M7.1): positive plays later, negative
-  // earlier. The coarse (beat-snapped) and fine offsets sum, both in beats so
-  // they track tempo.
+  // A stem's timing offset in seconds (M7.1): the point in the stem's buffer it
+  // starts from at the top of the loop. A positive offset starts that much
+  // *into* the buffer (content heard earlier); negative starts behind. The
+  // coarse (beat-snapped) and fine offsets sum, both in beats so they track
+  // tempo.
   private offsetSeconds(def: TrackDef): number {
     return ((def.offsetBeats ?? 0) + (def.offsetFineBeats ?? 0)) * (60 / this.bpm);
   }
 
   // Where in a track's buffer to begin so it lands at the right point of the
-  // running loop, accounting for its timing offset. When looping, a later
-  // offset means starting that much *behind* the global phase so the content is
-  // heard later; the whole thing wraps within the loop. When not looping, the
-  // offset is ignored and playback simply tracks elapsed time.
+  // running loop, accounting for its timing offset. When looping, the offset is
+  // added to the global phase: a stem with offset O sits where it would be if it
+  // had started playing from buffer position O at the top of the loop, so
+  // changing O live jumps it to global-phase + O; the whole thing wraps within
+  // the loop. When not looping, the offset is ignored and playback simply tracks
+  // elapsed time.
   private loopPhase(t: LiveTrack, when: number): number {
     const len = this.regionLength(t.buffer);
     if (!this.loopEnabled) return Math.min(Math.max(0, when - this.loopStartTime), len - 0.001);
-    const elapsed = when - this.loopStartTime - this.offsetSeconds(t.def);
+    const elapsed = when - this.loopStartTime + this.offsetSeconds(t.def);
     return (((elapsed % len) + len) % len);
   }
 

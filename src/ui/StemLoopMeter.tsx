@@ -66,7 +66,8 @@ export function StemLoopMeter({ track, expandable = true }: { track: TrackDef; e
   const custom = track.loopStart != null || track.loopEnd != null;
   // Coarse (beat-snapped) timing offset, set by clicking the meter, drawn as a
   // distinct bar. The fine offset (slider) adds to it for the audio phase and
-  // the playhead mapping, which subtracts the total from the loop position.
+  // the playhead mapping, which adds the total to the loop position so the stem
+  // reads as starting from buffer position `offset` at the top of the loop.
   const offsetBeatsCoarse = track.offsetBeats ?? 0;
   const offsetSec = (offsetBeatsCoarse + (track.offsetFineBeats ?? 0)) * beatLength;
 
@@ -78,7 +79,7 @@ export function StemLoopMeter({ track, expandable = true }: { track: TrackDef; e
     const tick = () => {
       const p = loopProgress();
       if (p && p.duration > 0) {
-        const pos = (((p.position - offsetSec) % p.duration) + p.duration) % p.duration;
+        const pos = (((p.position + offsetSec) % p.duration) + p.duration) % p.duration;
         let src: number | null;
         if (repeat) src = inSec + (pos % regionLen);
         else src = pos < regionLen ? inSec + pos : null;

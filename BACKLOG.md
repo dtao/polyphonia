@@ -125,7 +125,7 @@ earlier ones.
 - [ ] P40 Customize shape somehow based on audio waveform (like a unique signature - every customized shape should be different in a deterministic way)
 - [ ] P41 Stalactite/stalagmite shapes - come up from the base, or down from above, pulsing (length changing) with the music
 - [x] P42 Get rid of location rings (except in Edit mode)
-- [ ] P43 Fix timing issue with adding stems to composition with many stems (loop seems off, need to refresh to fix)
+- [x] P43 Fix timing issue with adding stems to composition with many stems (loop seems off, need to refresh to fix)
 - [x] P44 When editing start/end of track, control should snap to whole number of beats (not just for offset, but for full clip as well)
 - [x] P45 Loop bar should probably have a fill-width editor to make it much easier to make precise adjustments
 - [x] P46 Ability to pause/unpause music
