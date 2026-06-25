@@ -58,6 +58,16 @@ export interface AuthUser {
 }
 
 export async function signInWithEmail(email: string): Promise<void> {
+  // In dev, call Supabase directly — the function server isn't running and
+  // the allowlist is a production-only concern.
+  if ((import.meta as any).env?.DEV) {
+    const { error } = await supabase().auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: window.location.origin },
+    });
+    if (error) throw error;
+    return;
+  }
   const res = await fetch("/api/signin", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

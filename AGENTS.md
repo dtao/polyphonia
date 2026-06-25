@@ -269,9 +269,10 @@ Publish reuses a stable `publishedId` (so re-publishing keeps the same link) and
 
 ## Deployment
 
-Netlify (config in `netlify.toml`; SPA fallback in `public/_redirects` so
-`/c/:id`, `/gallery`, and `/artist/:slug` deep-links resolve). Set the two
-`VITE_*` env vars in the Netlify dashboard for Git-based builds.
+Netlify (config in `netlify.toml`; SPA fallback and `/api/signin` function
+redirect are both defined there — deep-links for `/c/:id`, `/gallery`, and
+`/artist/:slug` all resolve). Set the two `VITE_*` env vars in the Netlify
+dashboard for Git-based builds.
 
 ## Where to look next
 

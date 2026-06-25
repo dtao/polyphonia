@@ -1,7 +1,15 @@
-# Netlify build settings. The SPA fallback for /c/:id lives in public/_redirects
-# (which is copied into the publish dir, so it also works for CLI/drag-drop deploys).
+# Netlify build and dev settings.
 [build]
   command = "npm run build"
   publish = "dist"
   functions = "netlify/functions"
 
+[[redirects]]
+  from = "/api/signin"
+  to = "/.netlify/functions/signin"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
