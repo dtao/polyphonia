@@ -14,7 +14,10 @@ these spatial compositions.
   adaptive lower-cost panning on mobile/low-power devices, plus distance
   falloff), thickness-aware room/tunnel/wall occlusion for muffled obstructed
   stems, room reverb, and
-  every stem kept sample-locked in sync. Square/hex tiled maps can also opt into
+  every stem kept sample-locked in sync. On WebXR headsets (Apple Vision Pro,
+  Meta Quest, …) shared compositions offer a fully **immersive VR** mode:
+  look around freely and pinch-and-hold (or hold a controller trigger) to
+  glide where you're looking. Square/hex tiled maps can also opt into
   experimental movement modes: **AR Walk** uses Android WebXR pose tracking for
   room-scale walking, while **Geo Drive** uses GPS movement at 100 ft per unit
   for car-scale exploration.
@@ -122,6 +125,15 @@ Audio quality can be A/B tested with `audioQuality=full` or
   **▶ Auto-pilot** — the experience rides the route hands-free, and any
   movement input takes control back.
   On square/hex tiled maps, **AR Walk** can use Android WebXR pose tracking as the movement source; it renders the Polyphonia environment (not the live camera passthrough) so the space is fully immersive while you physically walk. **Geo Drive** uses device GPS as the movement source for driving; movement direction sets listener facing, and 100 real-world feet maps to 1 Polyphonia unit.
+  On a WebXR-capable headset (Apple Vision Pro's Safari, Meta Quest's browser),
+  a shared composition's entry screen offers **Enter Immersive** instead: a
+  fully immersive VR session dropping you in at the composition start, facing
+  the authored direction. Look around freely; pinch and hold (Vision Pro) or
+  hold a controller trigger to glide where you're looking, or use a controller
+  thumbstick. Movement follows the same walkable map, doors, and path-loop
+  wrapping as desktop Explore. Exit with the headset's system gesture (the
+  Digital Crown on Vision Pro) — playback continues in the flat window, and an
+  **Immersive** button re-enters.
 - **Edit** (toggle with the button or `Tab`): `WASD` pan · `Q`/`E` lower/raise
   elevation · drag to orbit/turn · scroll to zoom · click a pillar to select, then drag the gizmo to
   move it. Selected stems show Near/Far rings and a rolloff gradient on the

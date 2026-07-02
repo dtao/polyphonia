@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { autopilotCapture, useStore, viewState, touchMove, arWalk, geoWalk, loopWrap } from "../store";
+import { autopilotCapture, useStore, viewState, touchMove, arWalk, geoWalk, loopWrap, vrExplore } from "../store";
 import { sampleAutopilotRoute } from "../composition";
 import { MapSupport, mapSupportAt, stepOnMap, surfaceHeightOnSupport, wrapLoopPosition } from "../map";
 import { generatedGroundHeight } from "../worldgen/sampler";
@@ -172,7 +172,9 @@ export function Player() {
   // lattice offset, FogSync) would otherwise render one frame behind on a
   // loop-wrap teleport — a single-frame flicker. Every other useFrame in the
   // app uses the default priority, where execution order is mount order; keep
-  // it that way so this stays the lone exception.
+  // it that way so the only exceptions are this and <VRExploreSession>, which
+  // owns movement (and can wrap the loop) in immersive VR and so must run in
+  // the same slot — it mounts later, so it runs after this within the slot.
   useFrame((_, dt) => {
     if (!entered) return; // no movement until the experience has started
     const lookSmoothing = 34;
@@ -189,7 +191,11 @@ export function Player() {
 
     const previous: [number, number] = [camera.position.x, camera.position.z];
     let geoFacing: [number, number] | null = null;
-    if (arWalk.active) {
+    if (arWalk.active || vrExplore.active) {
+      // An XR session owns movement (and, for VR, the camera pose — its frame
+      // callback mounts after this one and overwrites what we set here). Keep
+      // mirroring viewState so the flat view resumes in place when the
+      // session ends.
       geoWalk.pendingX = 0;
       geoWalk.pendingZ = 0;
       camera.position.x = viewState.x;
@@ -304,7 +310,7 @@ export function Player() {
     if (geoFacing && geoLen > 0.01) {
       viewState.fx = geoFacing[0] / geoLen;
       viewState.fz = geoFacing[1] / geoLen;
-    } else if (len > 0 && !arWalk.active) {
+    } else if (len > 0 && !arWalk.active && !vrExplore.active) {
       viewState.fx = forward.current.x / len;
       viewState.fz = forward.current.z / len;
     }

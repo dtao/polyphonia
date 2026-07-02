@@ -9,10 +9,10 @@
         "dev",
         "--",
         "--port",
-        "$PORT"
+        "5173",
+        "--strictPort"
       ],
-      "port": 5173,
-      "autoPort": true
+      "port": 5173
     }
   ]
 }

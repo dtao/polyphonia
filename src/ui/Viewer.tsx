@@ -9,6 +9,7 @@ import { TouchControls, isTouchDevice } from "./TouchControls";
 import { AudioLoadingOverlay } from "./AudioLoadingOverlay";
 import { ARWalkControls } from "./ARWalkControls";
 import { GeoWalkControls } from "./GeoWalkControls";
+import { VRExploreControls, startVRExplore, useVRExploreSupported } from "./VRExploreControls";
 import { AudioEngine } from "../audio/AudioEngine";
 
 type Status = "loading" | "ready" | "notfound" | "error";
@@ -26,6 +27,7 @@ export function Viewer() {
   const [audioReady, setAudioReady] = useState(false);
   const preloadedEngineRef = useRef<AudioEngine | null>(null);
   const touch = isTouchDevice();
+  const vrSupported = useVRExploreSupported();
 
   useEffect(() => {
     let cancelled = false;
@@ -105,6 +107,14 @@ export function Viewer() {
       .catch((e) => console.error("Failed to start audio", e));
   }
 
+  // Request the WebXR session synchronously in the click (it needs the user
+  // activation), then start audio; the two proceed in parallel and the session
+  // begins moving the listener once the engine arrives.
+  function enterImmersive() {
+    startVRExplore();
+    enter();
+  }
+
   const loadingPercent =
     audioLoading.status === "loading" && audioLoading.total > 0
       ? Math.min(100, Math.max(6, (audioLoading.loaded / audioLoading.total) * 100))
@@ -126,6 +136,7 @@ export function Viewer() {
       {status === "ready" && entered && touch && <TouchControls />}
       {status === "ready" && entered && <ARWalkControls map={comp.map} />}
       {status === "ready" && entered && <GeoWalkControls map={comp.map} />}
+      {status === "ready" && entered && <VRExploreControls />}
 
       {status === "ready" && !entered && (
         <div style={overlay}>
@@ -154,17 +165,39 @@ export function Viewer() {
           {audioLoading.status === "error" && (
             <div style={{ color: "#ff9b8f", fontSize: 13 }}>{audioLoading.message ?? "Audio couldn't be loaded."}</div>
           )}
-          <button
-            id="enter-btn"
-            style={{ ...button, ...(audioReady ? null : buttonDisabled) }}
-            onClick={enter}
-            disabled={!audioReady}
-          >
-            ▶ Enter
-          </button>
-          <p style={{ opacity: 0.45, fontSize: 13 }}>
-            {touch ? "Joystick to move · drag to look around" : "WASD to move · mouse to look · Esc to release cursor"}
-          </p>
+          {vrSupported ? (
+            <>
+              {/* No id="enter-btn" here: that id arms pointer lock (see
+                  Player), which has no business in an immersive session. */}
+              <button
+                style={{ ...button, ...(audioReady ? null : buttonDisabled) }}
+                onClick={enterImmersive}
+                disabled={!audioReady}
+              >
+                ◎ Enter Immersive
+              </button>
+              <button id="enter-btn" style={{ ...windowedButton, ...(audioReady ? null : buttonDisabled) }} onClick={enter} disabled={!audioReady}>
+                enter in this window instead
+              </button>
+              <p style={{ opacity: 0.45, fontSize: 13 }}>
+                Look around · pinch and hold (or hold trigger) to glide where you're looking
+              </p>
+            </>
+          ) : (
+            <>
+              <button
+                id="enter-btn"
+                style={{ ...button, ...(audioReady ? null : buttonDisabled) }}
+                onClick={enter}
+                disabled={!audioReady}
+              >
+                ▶ Enter
+              </button>
+              <p style={{ opacity: 0.45, fontSize: 13 }}>
+                {touch ? "Joystick to move · drag to look around" : "WASD to move · mouse to look · Esc to release cursor"}
+              </p>
+            </>
+          )}
         </div>
       )}
 
@@ -240,6 +273,17 @@ const button: React.CSSProperties = {
 const buttonDisabled: React.CSSProperties = {
   opacity: 0.4,
   cursor: "default",
+};
+
+// Secondary entry on VR-capable devices: flat, in-window playback.
+const windowedButton: React.CSSProperties = {
+  padding: "6px 14px",
+  fontSize: 13,
+  borderRadius: 999,
+  border: "1px solid rgba(255,255,255,0.18)",
+  background: "transparent",
+  color: "rgba(255,255,255,0.7)",
+  cursor: "pointer",
 };
 
 const loadingBlock: React.CSSProperties = {

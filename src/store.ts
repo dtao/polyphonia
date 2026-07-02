@@ -143,6 +143,19 @@ export const geoWalk = {
   pendingZ: 0,
 };
 
+// Immersive VR explore (<VRExploreSession>): the WebXR headset owns the real
+// camera; the session feeds pinch/trigger/thumbstick locomotion through the
+// same map wrapping/clamping as keyboard movement, and the scene group is
+// offset/rotated by render* so the virtual eye coincides with the physical
+// head. Kept non-reactive for the same reason as arWalk.
+export const vrExplore = {
+  active: false,
+  renderX: 0,
+  renderY: 0,
+  renderZ: 0,
+  renderYaw: 0,
+};
+
 type Falloff = Pick<TrackDef, "refDistance" | "maxDistance" | "rolloff">;
 
 export type Mode = "explore" | "edit";

@@ -2,7 +2,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import * as THREE from "three";
-import { arWalk, loopPreviewGroups, loopWrap, markerAnimateFns, useStore, viewState } from "../store";
+import { arWalk, loopPreviewGroups, loopWrap, markerAnimateFns, useStore, viewState, vrExplore } from "../store";
 import { TrackMarker } from "./TrackMarker";
 import { Player } from "./Player";
 import { EditControls } from "./EditControls";
@@ -14,6 +14,7 @@ import { EnvironmentScene, environmentBackground } from "./EnvironmentScene";
 import { MapScene } from "./MapScene";
 import { DebugSampler } from "./DebugSampler";
 import { ARWalkSession } from "./ARWalkSession";
+import { VRExploreSession } from "./VRExploreSession";
 import { CompositionMap, LoopPreviewTransform, fadeRadiiAt, loopPreviewElevationOffset, tiledMapTransforms, transformLoopPoint } from "../map";
 import { TrackDef } from "../composition";
 import { AudioEngine } from "../audio/AudioEngine";
@@ -44,7 +45,7 @@ export function Scene() {
   const [viewer, setViewer] = useState<[number, number]>([0, 0]);
   const previewGroup = useRef<THREE.Group>(null);
   useFrame(() => {
-    const next: [number, number] = arWalk.active ? [viewState.x, viewState.z] : [camera.position.x, camera.position.z];
+    const next: [number, number] = arWalk.active || vrExplore.active ? [viewState.x, viewState.z] : [camera.position.x, camera.position.z];
     setViewer((current) => (Math.hypot(current[0] - next[0], current[1] - next[1]) > VIEWER_SAMPLE_DISTANCE ? next : current));
   });
   // Dragging the debug radius slider doesn't move the viewer, so without this
@@ -115,6 +116,7 @@ export function Scene() {
       <StemAnimationDriver />
       <ListenerSync />
       <ARWalkSession />
+      <VRExploreSession />
       <ARBackdrop />
       <DebugSampler />
       {debugEnabled() && <FadeRadiusDebug />}
@@ -218,9 +220,12 @@ function ARWorldTransform({ children }: { children: ReactNode }) {
   useFrame(() => {
     const g = group.current;
     if (!g) return;
-    if (arWalk.active) {
-      g.position.set(arWalk.renderX, arWalk.renderY, arWalk.renderZ);
-      g.rotation.set(0, arWalk.renderYaw, 0);
+    // AR Walk and immersive VR both let the headset own the real camera and
+    // move the world instead; their sessions publish the same render offsets.
+    const walk = arWalk.active ? arWalk : vrExplore.active ? vrExplore : null;
+    if (walk) {
+      g.position.set(walk.renderX, walk.renderY, walk.renderZ);
+      g.rotation.set(0, walk.renderYaw, 0);
     } else {
       g.position.set(0, 0, 0);
       g.rotation.set(0, 0, 0);
@@ -410,7 +415,7 @@ function FadeRadiusDriver({ map }: { map: CompositionMap }) {
   const camera = useThree((s) => s.camera);
   useEffect(() => () => setCompositionFadeRadii(null, null), []);
   useFrame(() => {
-    const at: [number, number] = arWalk.active ? [viewState.x, viewState.z] : [camera.position.x, camera.position.z];
+    const at: [number, number] = arWalk.active || vrExplore.active ? [viewState.x, viewState.z] : [camera.position.x, camera.position.z];
     const radii = fadeRadiiAt(map, at);
     if (!radii) return;
     setCompositionFadeRadii(Math.round(radii.inner), Math.round(radii.outer));
