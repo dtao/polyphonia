@@ -436,3 +436,84 @@ describe("spatial tiling", () => {
     expect(Math.cos(wrapped!.yawDelta)).toBeCloseTo(1);
   });
 });
+
+// A curved platform edge (circle/hex) bows away from the straight end line of
+// an adjoining path strip, leaving a sub-unit unwalkable gap at the strip's
+// corners. Transitions must tolerate gaps up to the player's collision radius
+// or small per-frame steps (VR glide ≈ 0.07 units) pin the walker against an
+// invisible wall off the path centerline.
+describe("platform transition gap tolerance", () => {
+  const circle: MapPlatform = {
+    id: "disc",
+    center: [0, -73],
+    rotation: 0,
+    shape: "circle",
+    width: 66,
+    depth: 66,
+    elevation: 0,
+    attachment: { segmentId: "approach", end: "end" },
+  };
+
+  function discMap(extra: Partial<CompositionMap> = {}): CompositionMap {
+    return normalizeMap({
+      preset: "custom",
+      segments: [{ id: "approach", start: [0, 0], end: [0, -40], width: 7.5 }],
+      rooms: [],
+      platforms: [circle],
+      walls: [],
+      tiling: noTiling,
+      wallHeight: 2,
+      start: { position: [0, -10], direction: [0, -1] },
+      ...extra,
+    });
+  }
+
+  // Glide straight along -z in VR-sized steps, carrying support like the
+  // player does; returns the final step after `steps` frames.
+  function glide(map: CompositionMap, from: [number, number], support: ReturnType<typeof stepOnMap>["support"], steps = 200) {
+    let step = { position: from, support };
+    for (let i = 0; i < steps; i++) {
+      step = stepOnMap(map, step.position, [step.position[0], step.position[1] - 0.05], step.support);
+    }
+    return step;
+  }
+
+  it("enters an attached circle platform from the strip's corner", () => {
+    const map = discMap();
+    // Lateral offset 3 of a 3.75 half-width: the circle edge is ~0.14 units
+    // past the strip end line here — wider than one 0.05 step.
+    const step = glide(map, [3, -38], { kind: "segment", segmentId: "approach" });
+    expect(step.support).toEqual({ kind: "platform", platformId: "disc" });
+    expect(step.position[1]).toBeLessThan(-40.5);
+  });
+
+  it("exits a circle platform onto an adjoining strip's corner", () => {
+    const map = discMap({
+      segments: [
+        { id: "approach", start: [0, 0], end: [0, -40], width: 7.5 },
+        { id: "away", start: [0, -106], end: [0, -140], width: 7.5 },
+      ],
+    });
+    // The away strip starts on the circle's south boundary; at lateral 3 the
+    // curved edge leaves the same sub-step gap in reverse.
+    const step = glide(map, [3, -104], { kind: "platform", platformId: "disc" });
+    expect(step.support).toEqual({ kind: "segment", segmentId: "away" });
+    expect(step.position[1]).toBeLessThan(-106.5);
+  });
+
+  it("still refuses a platform at an incompatible elevation", () => {
+    const sunken: MapPlatform = { ...circle, attachment: undefined, elevation: -50 };
+    const map = discMap({ platforms: [sunken] });
+    const step = glide(map, [3, -38], { kind: "segment", segmentId: "approach" });
+    expect(step.support).toEqual({ kind: "segment", segmentId: "approach" });
+  });
+
+  it("still refuses a platform beyond the collision radius", () => {
+    const far: MapPlatform = { ...circle, attachment: undefined, center: [0, -78] };
+    const map = discMap({ platforms: [far] });
+    // Gap from strip end (-40) to the circle's near edge (-45) is 5 units.
+    const step = glide(map, [0, -38], { kind: "segment", segmentId: "approach" });
+    expect(step.support).toEqual({ kind: "segment", segmentId: "approach" });
+    expect(step.position[1]).toBeGreaterThan(-40.5);
+  });
+});

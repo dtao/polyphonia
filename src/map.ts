@@ -1579,13 +1579,24 @@ function transitionSupport(map: CompositionMap, support: MapSupport, previous: [
   // Guard against teleporting to a platform whose 2D footprint overlaps the
   // current path at a very different elevation (same root cause as the
   // segment-above/below-segment fix that introduced nearSharedEndpoint).
+  // A curved platform edge bows away from an adjoining strip's straight end
+  // line, leaving a sub-unit gap at the strip's corners that a single
+  // (frame-sized) step can't cross — the walker would pin there as if against
+  // an invisible wall. Tolerate gaps up to the collision radius (the body
+  // already overlaps the platform) by snapping onto the nearest point inside.
   for (const platform of map.platforms) {
     if (support.kind === "platform" && support.platformId === platform.id) continue;
-    if (platformContains(platform, attempted)) {
+    let entry: [number, number] | null = platformContains(platform, attempted) ? attempted : null;
+    if (!entry) {
+      const snapped = closestPointInPlatform(platform, attempted);
+      const gap = Math.hypot(attempted[0] - snapped[0], attempted[1] - snapped[1]);
+      if (gap <= PLAYER_COLLISION_RADIUS) entry = snapped;
+    }
+    if (entry) {
       const currentHeight = surfaceHeightOnSupport(map, previous, support);
       const platformHeight = platformElevation(map, platform);
       if (Math.abs(platformHeight - currentHeight) > 1.5) continue;
-      return { position: attempted, support: { kind: "platform", platformId: platform.id } };
+      return { position: entry, support: { kind: "platform", platformId: platform.id } };
     }
   }
   if (support.kind === "platform") {
@@ -1593,6 +1604,25 @@ function transitionSupport(map: CompositionMap, support: MapSupport, previous: [
     if (segment) return { position: attempted, support: { kind: "segment", segmentId: segment.id } };
     const room = map.rooms.find((r) => movementRoomContains(r, attempted, previous));
     if (room) return { position: attempted, support: { kind: "room", roomId: room.id } };
+    // The corner gap in reverse: leaving the platform for a strip that meets
+    // its curved edge. Snap into the nearest strip within the collision
+    // radius, but only at a compatible elevation (unlike strict containment
+    // above, a snapped exit extends reach, so keep it conservative).
+    const platform = map.platforms.find((p) => p.id === support.platformId);
+    if (platform) {
+      const platformHeight = platformElevation(map, platform);
+      let best: { position: [number, number]; segmentId: string } | null = null;
+      let bestDistance = PLAYER_COLLISION_RADIUS;
+      for (const candidate of map.segments) {
+        const snapped = closestPointInSegment(attempted, candidate);
+        const distance = Math.hypot(attempted[0] - snapped[0], attempted[1] - snapped[1]);
+        if (distance > bestDistance) continue;
+        if (Math.abs(segmentHeightAt(map, candidate, snapped) - platformHeight) > 1.5) continue;
+        bestDistance = distance;
+        best = { position: snapped, segmentId: candidate.id };
+      }
+      if (best) return { position: best.position, support: { kind: "segment", segmentId: best.segmentId } };
+    }
     return null;
   }
 

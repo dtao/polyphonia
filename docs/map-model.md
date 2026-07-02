@@ -96,6 +96,11 @@ Movement is handled by `stepOnMap(map, previous, attempted)`:
 3. `transitionSupport` handles valid transitions: path→room (through a doorway),
    room→path, segment→adjacent segment (at shared endpoints), and
    anything→platform (when the footprint overlaps at a compatible elevation).
+   Platform entry/exit tolerates an unwalkable gap up to the player collision
+   radius, snapping to the nearest point inside the target: a curved platform
+   edge bows away from an adjoining strip's straight end line, and the
+   sub-unit gap at the strip corners would otherwise be uncrossable for steps
+   smaller than the gap (VR glide moves ~0.07 units/frame).
 4. Walls and closed doors are hard stops via `stepHitsRoomWall`.
 5. `clampToMap` finds the nearest walkable point when the attempted position is
    completely outside the map.
