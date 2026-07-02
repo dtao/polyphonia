@@ -14,6 +14,8 @@ import { AudioEngine } from "../audio/AudioEngine";
 
 type Status = "loading" | "ready" | "notfound" | "error";
 
+const commitLabel = __POLYPHONIA_COMMIT__ === "unknown" ? "commit unknown" : `commit ${__POLYPHONIA_COMMIT__}`;
+
 // Read-only viewer for a shared composition (/c/:id). Reuses the engine and
 // explore controls; no editing, and nothing is persisted to the local library.
 export function Viewer() {
@@ -201,6 +203,10 @@ export function Viewer() {
         </div>
       )}
 
+      {/* Deployed-build fingerprint so on-device testing (e.g. a headset after
+          a redeploy) can confirm which commit is actually running. */}
+      {status === "ready" && !entered && <div style={versionTag}>{commitLabel}</div>}
+
       {/* Home link in the corner — pre-enter it floats above the overlay; post-enter
           it sits above the HUD text since the HUD is pointer-events:none */}
       {(status === "ready" || status === "loading") && (
@@ -273,6 +279,19 @@ const button: React.CSSProperties = {
 const buttonDisabled: React.CSSProperties = {
   opacity: 0.4,
   cursor: "default",
+};
+
+// Matches the editor entry screen's version tag (EntryScreen.tsx).
+const versionTag: React.CSSProperties = {
+  position: "absolute",
+  right: 16,
+  bottom: 12,
+  color: "rgba(255,255,255,0.38)",
+  fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+  fontSize: 11,
+  letterSpacing: 0,
+  pointerEvents: "none",
+  zIndex: 10,
 };
 
 // Secondary entry on VR-capable devices: flat, in-window playback.

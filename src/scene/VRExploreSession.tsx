@@ -6,6 +6,7 @@ import {
   VR_EXPLORE_STATUS_EVENT,
   VR_EXPLORE_STOP_EVENT,
   VRExploreStatus,
+  applyVRAudioSessionOverride,
   flatHeading,
   idleVRExploreStatus,
   renderTranslationFor,
@@ -99,6 +100,7 @@ export function VRExploreSession() {
     }
     try {
       dispatchStatus({ state: "starting" });
+      applyVRAudioSessionOverride();
       // No await before requestSession: it must spend the click's user
       // activation (support was already checked by the UI that shows the
       // button).

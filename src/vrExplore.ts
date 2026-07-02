@@ -17,6 +17,31 @@ export function vrExploreSupported(): Promise<boolean> {
   return xr.isSessionSupported("immersive-vr").catch(() => false);
 }
 
+// Diagnostic for visionOS window-anchored audio: Safari spatializes a tab's
+// audio output as a source at the window's position in the room, which in an
+// immersive session leaves the whole mix sounding pinned where the window was.
+// WebKit's AudioSession API can switch the output route/category, which may
+// bypass that spatialization. Opt in from the URL on-device, e.g.
+// ?vrAudioSession=play-and-record (also try "playback" / "ambient").
+// Deliberately readable in production builds — this is tested on a headset
+// against deployed builds, where dev-only flags are unreachable.
+export function applyVRAudioSessionOverride(): void {
+  if (typeof window === "undefined") return;
+  const type = new URLSearchParams(window.location.search).get("vrAudioSession");
+  if (!type) return;
+  const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+  if (!session) {
+    console.warn("vrAudioSession: navigator.audioSession unavailable");
+    return;
+  }
+  try {
+    session.type = type;
+    console.log(`vrAudioSession: set audio session type to "${type}"`);
+  } catch (err) {
+    console.warn(`vrAudioSession: failed to set type "${type}"`, err);
+  }
+}
+
 // --- Heading math shared by <VRExploreSession> ---------------------------------
 //
 // Conventions (locked down by vrExplore.test.ts):
